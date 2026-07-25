@@ -1,0 +1,22 @@
+name: CI
+
+# Runs on every PR and on pushes to main. This is the quality gate that
+# branch protection requires to pass before a PR can be merged.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run build
