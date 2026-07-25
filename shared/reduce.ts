@@ -133,6 +133,87 @@ function apply(room: Room, ev: RoomEvent): Room {
   }
 }
 
-function tick(room: Room, _now: number): Room {
+/**
+ * Deadlines are absolute, so a late alarm still lands in the right phase —
+ * `now >= endsAt` rather than an equality check.
+ */
+function tick(room: Room, now: number): Room {
+  const phase = room.phase;
+  if (phase.name === "countdown" && now >= phase.endsAt) {
+    return { ...room, phase: { name: "playing", endsAt: now + room.durationSec * 1_000 } };
+  }
+  if (phase.name === "playing" && now >= phase.endsAt) {
+    return { ...room, phase: { name: "timesup", endsAt: now + TIMESUP_MS } };
+  }
+  if (phase.name === "timesup" && now >= phase.endsAt) {
+    return {
+      ...room,
+      phase: {
+        name: "scoring",
+        results: scoreRound({ players: room.players, entries: room.entries }),
+      },
+    };
+  }
   return room;
+}
+
+export type RejectReason =
+  | "not-playing" | "empty" | "too-long" | "duplicate" | "limit";
+
+export type SubmitResult = {
+  room: Room;
+  accepted: boolean;
+  reason?: RejectReason;
+};
+
+/**
+ * Kept out of `reduce` because it is the only mutation that touches the
+ * server-only entries map, and it is the only one that answers back.
+ */
+export function submitEntry(
+  room: Room,
+  playerId: PlayerId,
+  text: string,
+  now: number,
+): SubmitResult {
+  if (room.phase.name !== "playing") {
+    return { room, accepted: false, reason: "not-playing" };
+  }
+  const trimmed = text.trim();
+  if (trimmed === "") return { room, accepted: false, reason: "empty" };
+  if (trimmed.length > MAX_ENTRY_LEN) {
+    return { room, accepted: false, reason: "too-long" };
+  }
+
+  const norm = normalize(trimmed);
+  // Punctuation-only survives trim() but normalizes to nothing.
+  if (norm === "") return { room, accepted: false, reason: "empty" };
+
+  const own = room.entries[playerId] ?? [];
+  if (own.length >= MAX_ENTRIES) return { room, accepted: false, reason: "limit" };
+  if (own.some((e) => normalize(e.text) === norm)) {
+    return { room, accepted: false, reason: "duplicate" };
+  }
+
+  const entry: Entry = { text: trimmed, at: now };
+  return {
+    room: {
+      ...room,
+      entries: { ...room.entries, [playerId]: [...own, entry] },
+      lastActivityAt: now,
+    },
+    accepted: true,
+  };
+}
+
+/**
+ * One alarm serves two jobs: advancing a timed phase, and reaping a room
+ * nobody came back to.
+ */
+export function nextAlarmAt(room: Room): number {
+  const phase = room.phase;
+  if (phase.name === "countdown" || phase.name === "playing" || phase.name === "timesup") {
+    return phase.endsAt;
+  }
+  return room.lastActivityAt + IDLE_REAP_MS;
 }
