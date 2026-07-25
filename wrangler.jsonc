@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "w104",
+  "main": "party/server.ts",
+  "compatibility_date": "2026-07-25",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true
+  },
+  // The realtime room server. Each room is one Durable Object instance.
+  "durable_objects": {
+    "bindings": [{ "name": "W104", "class_name": "W104" }]
+  },
+  // `new_sqlite_classes` (not `new_classes`) is required for Durable Objects on
+  // the Cloudflare free plan. Do not change to new_classes — it needs a paid plan.
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["W104"] }]
+}
