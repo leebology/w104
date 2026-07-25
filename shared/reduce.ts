@@ -3,7 +3,7 @@ import type { Entry, Player, PlayerId, Room } from "./state";
 
 export const COUNTDOWN_MS = 5_000;
 export const TIMESUP_MS = 3_000;
-export const IDLE_REAP_MS = 4 * 60 * 60 * 1_000;
+export const IDLE_REAP_MS = 1 * 60 * 60 * 1_000;
 export const MAX_ENTRY_LEN = 64;
 export const MAX_ENTRIES = 200;
 export const MIN_PLAYERS = 2;
