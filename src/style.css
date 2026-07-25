@@ -29,6 +29,7 @@ main.centered {
 h1 { margin: 0; font-size: 1.75rem; letter-spacing: -0.02em; }
 .huge { font-size: clamp(3rem, 22vw, 12rem); line-height: 1; }
 .hint { margin: 0; opacity: 0.65; font-size: 0.9rem; }
+.tagline { margin: 0; opacity: 0.65; font-size: 0.9rem; }
 .error, .reject { margin: 0; color: crimson; }
 
 /* Host screen is read from across a room, so everything scales up. */
