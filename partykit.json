@@ -1,5 +1,0 @@
-{
-  "$schema": "https://www.partykit.io/schema.json",
-  "name": "w104",
-  "main": "party/server.ts"
-}

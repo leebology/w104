@@ -1,9 +1,10 @@
 node_modules
 dist
-.partykit
+.wrangler
 .vercel
 *.local
 .env
 .env.*
 !.env.example
+.dev.vars
 .DS_Store

@@ -8,7 +8,8 @@ screen runs the show.
 ## Stack
 
 - **Web app** — Vite + TypeScript, deployed to Vercel at https://w104.leebo.io
-- **Realtime server** — PartyKit (on Cloudflare), one authoritative room per game
+- **Realtime server** — PartyServer on a Cloudflare Worker; one SQLite Durable
+  Object per room (authoritative room state)
 
 ## Local development
 
@@ -16,7 +17,7 @@ Requires Node 22+ (`.nvmrc`). Two terminals:
 
 ```bash
 npm install
-npm run dev:party    # realtime server on :1999
+npm run dev:party    # wrangler dev — realtime server on :8787
 npm run dev          # web app on :5173
 ```
 
@@ -27,5 +28,5 @@ current smoke test proving the realtime loop works end to end.
 
 Push a branch, open a PR against `main`, get a Vercel preview URL, merge when CI
 is green. Merges to `main` auto-deploy the web app (Vercel) and the server
-(GitHub Actions). Full setup and the everyday workflow are in
+(GitHub Actions → `wrangler deploy`). Full setup and the everyday workflow are in
 [HOSTING.md](HOSTING.md).

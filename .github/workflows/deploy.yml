@@ -1,24 +1,24 @@
-name: Deploy PartyKit
+name: Deploy Worker
 
 # The web app is deployed by Vercel's own Git integration (no workflow needed).
-# This workflow deploys the realtime server to PartyKit whenever main updates.
+# This workflow deploys the realtime server (Cloudflare Worker) on push to main.
 on:
   push:
     branches: [main]
+  workflow_dispatch: # allow manual "Run workflow" from the Actions tab
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    timeout-minutes: 5 # a missing/invalid credential must fail fast, never hang
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx partykit deploy
+      - run: npx wrangler deploy
         env:
-          PARTYKIT_TOKEN: ${{ secrets.PARTYKIT_TOKEN }}
-          PARTYKIT_LOGIN: ${{ secrets.PARTYKIT_LOGIN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

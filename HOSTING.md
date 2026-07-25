@@ -1,25 +1,26 @@
 # Hosting & deployment
 
 This document is the one-time setup runbook plus the everyday workflow. Once
-the setup steps are done, contributors only ever need the "Everyday workflow"
-and "Local development" sections.
+setup is done, contributors only need the "Everyday workflow" and "Local
+development" sections.
 
 ## Architecture
 
 Two independent pieces, deployed to two hosts, both on free tiers:
 
-| Piece            | What it is                          | Host                | URL                              |
-| ---------------- | ----------------------------------- | ------------------- | -------------------------------- |
-| Web app          | Vite + TypeScript static frontend   | Vercel              | `https://w104.leebo.io`          |
-| Realtime server  | PartyKit (one room instance / game) | Cloudflare/PartyKit | `wss://w104.leebology.partykit.dev` |
+| Piece           | What it is                              | Host              | URL                              |
+| --------------- | --------------------------------------- | ----------------- | -------------------------------- |
+| Web app         | Vite + TypeScript static frontend       | Vercel            | `https://w104.leebo.io`          |
+| Realtime server | PartyServer on a Cloudflare Worker;     | Cloudflare        | `wss://w104.liam-donaher.workers.dev` |
+|                 | one SQLite Durable Object per room       |                   |                                  |
 
 The browser loads the web app from Vercel, then opens a WebSocket to the
-PartyKit server. They are separate origins — that is fine and intentional. Your
-main site at `leebo.io` is never touched.
+Cloudflare Worker. They are separate origins — that is intentional. Your main
+site at `leebo.io` is never touched.
 
 ```
 Player phones ─┐
-               ├─► wss://w104.leebology.partykit.dev  (PartyKit, Cloudflare)
+               ├─► wss://w104.liam-donaher.workers.dev  (Cloudflare Worker, PartyServer)
 Big screen ────┘
        │  loads UI from
        └─► https://w104.leebo.io  (Vercel)
@@ -27,79 +28,74 @@ Big screen ────┘
 leebo.io (your portfolio) — untouched
 ```
 
+> Why PartyServer and not PartyKit? PartyKit's shared hosting is full, and its
+> CLI can only create key-value Durable Objects, which Cloudflare's free plan no
+> longer allows. PartyServer is PartyKit's Cloudflare-maintained successor: same
+> room model, deployed as a normal Worker via Wrangler, with the DO pinned to the
+> SQLite backend (`new_sqlite_classes` in `wrangler.jsonc`) that the free plan
+> requires.
+
 ---
 
 ## One-time setup
 
-Do these once. Steps 1–2 stand up the two hosts; steps 3–5 wire up automated
-deploys so contributors never touch a dashboard again.
-
 ### 1. Web app on Vercel (subdomain `w104.leebo.io`)
 
-1. In Vercel, **Add New → Project** and import `leebology/w104` from GitHub.
-2. Framework preset: **Vite** (auto-detected). Build command `npm run build`,
-   output directory `dist` — both defaults, leave as-is.
-3. Add an environment variable (used at build time):
+1. In Vercel, **Add New → Project** and import `leebology/w104`.
+2. Framework preset **Vite** (auto-detected). Leave build command / output dir at
+   defaults (`npm run build` → `dist`).
+3. Add an environment variable (Production + Preview + Development):
    - **Key:** `VITE_PARTYKIT_HOST`
-   - **Value:** `w104.leebology.partykit.dev`
-     (this is `<partykit.json name>.<your-partykit-login>.partykit.dev`; the
-     login is your GitHub username, `leebology`.)
-   - Apply to **Production, Preview, and Development**.
-4. Deploy. Confirm the app loads at the temporary `*.vercel.app` URL.
-5. **Project → Settings → Domains → Add** `w104.leebo.io`.
-   - Because `leebo.io` already lives on Vercel, Vercel will offer to create the
-     DNS record for you automatically — accept it. (A subdomain can point to a
-     different Vercel project than the apex; they don't conflict.)
-   - If your DNS is instead managed at your registrar, add the exact record
-     Vercel shows — typically a `CNAME` from `w104` to `cname.vercel-dns.com`.
-6. Wait for the certificate to issue, then load `https://w104.leebo.io`.
+   - **Value:** `w104.liam-donaher.workers.dev` (your Worker's URL — the
+     `<worker-name>.<your-workers.dev-subdomain>` from step 2 below)
+4. **Settings → Domains → Add** `w104.leebo.io`; accept the DNS record Vercel
+   offers (or add the shown `CNAME` at your registrar).
 
-> The status will read "disconnected" until the PartyKit server exists (step 2).
+### 2. Realtime server on Cloudflare (Wrangler)
 
-### 2. Realtime server on PartyKit
+You need a free Cloudflare account with a `workers.dev` subdomain enabled
+(**Workers & Pages** → pick a subdomain once, e.g. `liam-donaher`).
 
-PartyKit runs on Cloudflare's free tier and uses your GitHub login for auth.
-Run locally, from the repo root:
+Get two credentials:
 
-```bash
-npx partykit login      # opens a browser, authorizes as leebology (one time)
-npx partykit deploy      # first deploy — creates the project
+- **Account ID** — Workers & Pages overview, right sidebar.
+- **API token** — https://dash.cloudflare.com/profile/api-tokens → Create Token →
+  **"Edit Cloudflare Workers"** template.
+
+Deploy from the repo root (PowerShell):
+
+```powershell
+$env:CLOUDFLARE_ACCOUNT_ID = "<account id>"
+$env:CLOUDFLARE_API_TOKEN  = "<api token>"
+npm run deploy:party        # = wrangler deploy
 ```
 
-The deploy prints the server URL: `https://w104.leebology.partykit.dev`. That
-must match the `VITE_PARTYKIT_HOST` you set in Vercel. Reload `w104.leebo.io`;
-status should now read **connected**, and opening a second tab should bump the
-"connected" count.
+The output prints the Worker URL, e.g. `https://w104.liam-donaher.workers.dev`.
+That host (without `https://`) must equal the `VITE_PARTYKIT_HOST` you set in
+Vercel. Reload `w104.leebo.io`; status should read **connected**, and a second
+tab should bump the count.
 
-### 3. PartyKit deploy token for CI
+> Do **not** use Cloudflare's dashboard "Create application / Connect to Git"
+> flow — `wrangler deploy` (and CI) creates the Worker. That dashboard pipeline
+> would be a second, conflicting deploy path.
 
-So GitHub Actions can deploy the server on merge (instead of you running
-`partykit deploy` by hand):
+### 3. GitHub secrets (for CI deploys)
 
-```bash
-npx partykit token generate
-```
-
-This prints a `PARTYKIT_LOGIN` (your username) and a `PARTYKIT_TOKEN` (secret —
-anyone with it can deploy as you; never commit it).
-
-### 4. GitHub secrets
-
-Add both values at **repo → Settings → Secrets and variables → Actions → New
-repository secret**, or via the CLI:
+The deploy workflow needs the same two Cloudflare values as repo secrets:
 
 ```bash
-gh secret set PARTYKIT_LOGIN --body "leebology"
-gh secret set PARTYKIT_TOKEN --body "<paste the token>"
+gh secret set CLOUDFLARE_ACCOUNT_ID --body "<account id>"
+gh secret set CLOUDFLARE_API_TOKEN   # paste when prompted (hidden input)
 ```
 
-Now `.github/workflows/deploy.yml` will deploy the server on every push to
-`main`.
+The API token is a powerful credential — it lives only here (GitHub Actions),
+never in a committed file or a shared `.env`. Contributors don't need it; local
+dev uses a local server (see below). `.github/workflows/deploy.yml` then deploys
+the Worker on every push to `main` (and via the Actions tab's "Run workflow").
 
-### 5. Branch protection (so friends merge via reviewed PRs)
+### 4. Branch protection (reviewed PRs into main)
 
-Protect `main` so all changes go through a PR whose CI passes. Easiest after the
-first PR has run CI once (so the check name "check" is registered):
+Easiest after the first PR has run CI once (so the `check` context exists):
 
 ```bash
 gh api -X PUT repos/leebology/w104/branches/main/protection \
@@ -111,8 +107,8 @@ gh api -X PUT repos/leebology/w104/branches/main/protection \
   -f "restrictions=null"
 ```
 
-Bump `required_approving_review_count` to `1` if you want a review required
-before merge. Add collaborators at **repo → Settings → Collaborators**.
+Set `required_approving_review_count` to `1` to require a review. Add friends at
+**repo → Settings → Collaborators**.
 
 ---
 
@@ -120,36 +116,35 @@ before merge. Add collaborators at **repo → Settings → Collaborators**.
 
 1. Branch off `main`: `git checkout -b my-feature`
 2. Push and open a PR against `main`.
-3. **CI** runs `typecheck` + `build` on the PR. **Vercel** posts a unique
-   **preview URL** for that PR — click it to try the change live.
-4. Merge when CI is green (and reviewed, if required). On merge to `main`:
+3. **CI** runs `typecheck` + `build`; **Vercel** posts a preview URL for the PR.
+4. Merge when green. On merge to `main`:
    - Vercel deploys the web app to `https://w104.leebo.io`.
-   - GitHub Actions deploys the PartyKit server.
+   - GitHub Actions runs `wrangler deploy` for the Worker.
 
-No one needs dashboard access to contribute — just push branches and open PRs.
+No dashboard access needed to contribute — just push branches and open PRs.
 
 ---
 
 ## Local development
 
-Requires Node 22+ (`.nvmrc` pins it). Two terminals:
+Requires Node 22+ (`.nvmrc`). Two terminals:
 
 ```bash
 npm install
-npm run dev:party    # terminal 1 — realtime server on http://127.0.0.1:1999
-npm run dev          # terminal 2 — web app on http://localhost:5173
+npm run dev:party    # wrangler dev — realtime server on http://127.0.0.1:8787
+npm run dev          # web app on http://localhost:5173
 ```
 
-The app auto-connects to the local PartyKit server (no env var needed). Open the
-web app in two browser windows to see presence/waves sync.
+The app auto-connects to the local Worker (no credentials, no env var needed).
+Open two browser windows to see presence/waves sync.
 
 ---
 
 ## Costs & limits
 
-Everything above is free tier. Things to keep an eye on as usage grows:
+All free tier:
 
-- **Vercel Hobby** — free for non-commercial use; generous static-bandwidth
-  limits.
-- **PartyKit / Cloudflare free tier** — fine for party-sized rooms; check
-  current Workers/Durable Objects free-tier limits before any public launch.
+- **Vercel Hobby** — free for non-commercial use.
+- **Cloudflare Workers + SQLite Durable Objects free tier** — fine for
+  party-sized rooms. Review current Workers/DO free-tier limits before any public
+  launch.

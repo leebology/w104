@@ -1,11 +1,19 @@
-import type * as Party from "partykit/server";
+import { Server, routePartykitRequest } from "partyserver";
+import type { Connection } from "partyserver";
 
-// One instance of this class exists per room. It is the authoritative
-// owner of that room's state — the pattern every real game will build on.
-export default class Server implements Party.Server {
-  constructor(readonly room: Party.Room) {}
+// Durable Object binding declared in wrangler.jsonc.
+export interface Env {
+  W104: DurableObjectNamespace;
+}
 
-  onConnect(connection: Party.Connection) {
+type ClientMessage = { type: "wave" };
+
+// One instance of this class exists per room. It is the authoritative owner of
+// that room's state — the pattern every real game will build on. PartyServer's
+// Server base class IS a Cloudflare Durable Object; wrangler.jsonc pins it to
+// the SQLite storage backend, which is what the free plan requires.
+export class W104 extends Server {
+  onConnect(connection: Connection) {
     // Tell the newcomer the current headcount, and update everyone else.
     connection.send(JSON.stringify({ type: "presence", count: this.count() }));
     this.broadcastPresence();
@@ -15,20 +23,29 @@ export default class Server implements Party.Server {
     this.broadcastPresence();
   }
 
-  onMessage(message: string, sender: Party.Connection) {
-    const data = JSON.parse(message) as { type: string };
+  onMessage(connection: Connection, message: string | ArrayBuffer) {
+    if (typeof message !== "string") return;
+    const data = JSON.parse(message) as ClientMessage;
     if (data.type === "wave") {
-      this.room.broadcast(JSON.stringify({ type: "wave", from: sender.id }));
+      this.broadcast(JSON.stringify({ type: "wave", from: connection.id }));
     }
   }
 
   private count(): number {
-    return [...this.room.getConnections()].length;
+    return [...this.getConnections()].length;
   }
 
   private broadcastPresence(): void {
-    this.room.broadcast(
-      JSON.stringify({ type: "presence", count: this.count() }),
-    );
+    this.broadcast(JSON.stringify({ type: "presence", count: this.count() }));
   }
 }
+
+// Worker entrypoint: route /parties/:party/:room to the right room instance.
+export default {
+  async fetch(request, env) {
+    return (
+      (await routePartykitRequest(request, env)) ??
+      new Response("Not Found", { status: 404 })
+    );
+  },
+} satisfies ExportedHandler<Env>;
