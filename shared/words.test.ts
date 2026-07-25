@@ -22,6 +22,12 @@ test("a random source returning almost 1 stays in bounds", () => {
   );
 });
 
+test("a random source returning exactly 1 stays in bounds", () => {
+  expect(makeRoomCode(() => 1)).toBe(
+    CODE_WORDS[CODE_WORDS.length - 1].toUpperCase(),
+  );
+});
+
 test("the list is long enough that collisions are rare", () => {
   expect(CODE_WORDS.length).toBeGreaterThanOrEqual(64);
 });
