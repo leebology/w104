@@ -6,4 +6,8 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   build: { outDir: "dist" },
+  // host: true binds to 0.0.0.0 (not just localhost) so the dev server is
+  // reachable from phones on the same wifi. See .env.example for the other
+  // half of LAN testing (VITE_PARTYKIT_HOST).
+  server: { host: true },
 });

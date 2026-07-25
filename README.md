@@ -19,10 +19,15 @@ Requires Node 22+ (`.nvmrc`). Two terminals:
 npm install
 npm run dev:party    # wrangler dev — realtime server on :8787
 npm run dev          # web app on :5173
+npm test             # 65 tests
 ```
 
-Open the web app in two windows to see the connection count sync — that's the
-current smoke test proving the realtime loop works end to end.
+Open three tabs — `http://localhost:5173/?p=1` (creates the lobby; this is
+the shared/TV screen and doesn't play), then `?p=2` and `?p=3` (join it) —
+that's the current smoke test proving the realtime loop works end to end. The
+`?p=` value namespaces each tab's localStorage so they don't fight over one
+seat. Three real devices on the same wifi work too, and are the better test —
+see [HOSTING.md](HOSTING.md#testing-on-phones) for the LAN setup.
 
 ## Deploying
 
