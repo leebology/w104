@@ -3,6 +3,7 @@ import { Countdown } from "../shared/Countdown";
 import { TimesUp } from "../shared/TimesUp";
 import { HostLobby } from "./HostLobby";
 import { HostPlaying } from "./HostPlaying";
+import { HostScoring } from "./HostScoring";
 
 export function HostView({ state }: { state: ClientState; onLeave: () => void }) {
   const room = state.room!;
@@ -21,7 +22,7 @@ export function HostView({ state }: { state: ClientState; onLeave: () => void })
       );
     case "timesup":
       return <TimesUp />;
-    default:
-      return <main><h1>{room.phase.name}</h1></main>;
+    case "scoring":
+      return <HostScoring results={room.phase.results} />;
   }
 }

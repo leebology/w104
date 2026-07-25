@@ -4,6 +4,7 @@ import { Countdown } from "../shared/Countdown";
 import { TimesUp } from "../shared/TimesUp";
 import { PlayerLobby } from "./PlayerLobby";
 import { PlayerPlaying } from "./PlayerPlaying";
+import { PlayerScoring } from "./PlayerScoring";
 
 export function PlayerView({ state }: { state: ClientState; onLeave: () => void }) {
   const room = state.room!;
@@ -24,7 +25,7 @@ export function PlayerView({ state }: { state: ClientState; onLeave: () => void 
       );
     case "timesup":
       return <TimesUp />;
-    default:
-      return <main><h1>{room.phase.name}</h1></main>;
+    case "scoring":
+      return <PlayerScoring results={room.phase.results} playerId={getPlayerId()} />;
   }
 }
