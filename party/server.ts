@@ -259,8 +259,19 @@ export class W104 extends Server<Env> {
 // Worker entrypoint: route /parties/:party/:room to the right room instance.
 export default {
   async fetch(request, env) {
+    // PartyServer takes the connection id from `_pk`, and partysocket mints one
+    // `_pk` per socket instance and reuses it on every auto-reconnect. Two
+    // sockets would then share an id in a Map keyed by it, and the stale one's
+    // cleanup would evict its live replacement. Dropping the parameter makes
+    // PartyServer mint a fresh id per connection instead, so that cannot arise.
+    const url = new URL(request.url);
+    let req = request;
+    if (url.searchParams.has("_pk")) {
+      url.searchParams.delete("_pk");
+      req = new Request(url, request);
+    }
     return (
-      (await routePartykitRequest(request, env)) ??
+      (await routePartykitRequest(req, env)) ??
       new Response("Not Found", { status: 404 })
     );
   },
