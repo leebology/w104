@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { getPlayerId } from "../../net/identity";
 import type { ClientState } from "../../net/room";
 import { Countdown } from "../shared/Countdown";
@@ -6,7 +7,7 @@ import { PlayerLobby } from "./PlayerLobby";
 import { PlayerPlaying } from "./PlayerPlaying";
 import { PlayerScoring } from "./PlayerScoring";
 
-export function PlayerView({ state }: { state: ClientState; onLeave: () => void }) {
+export function PlayerView({ state }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
   switch (room.phase.name) {
     case "lobby":

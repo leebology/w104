@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import type { ClientState } from "../../net/room";
 import { Countdown } from "../shared/Countdown";
 import { TimesUp } from "../shared/TimesUp";
@@ -5,7 +6,7 @@ import { HostLobby } from "./HostLobby";
 import { HostPlaying } from "./HostPlaying";
 import { HostScoring } from "./HostScoring";
 
-export function HostView({ state }: { state: ClientState; onLeave: () => void }) {
+export function HostView({ state }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
   switch (room.phase.name) {
     case "lobby":
