@@ -110,8 +110,8 @@ npm run deploy:party        # = wrangler deploy
 
 The output prints the Worker URL, e.g. `https://w104.liam-donaher.workers.dev`.
 That host (without `https://`) must equal the `VITE_PARTYKIT_HOST` you set in
-Vercel. Reload `w104.leebo.io`; status should read **connected**, and a second
-tab should bump the count.
+Vercel. Reload `w104.leebo.io`, create a lobby, then join it with the room
+code from a second tab and confirm that player appears on the host's roster.
 
 > Do **not** use Cloudflare's dashboard "Create application / Connect to Git"
 > flow — `wrangler deploy` (and CI) creates the Worker. That dashboard pipeline
