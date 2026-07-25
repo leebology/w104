@@ -12,6 +12,15 @@ export interface Env {
 
 type ConnState = { playerId: PlayerId; role: "player" | "host" };
 
+const MAX_NAME_LEN = 20;
+/**
+ * No emoji has a natural length: 🙂 is 2 UTF-16 units, a flag sequence 6, a
+ * family with skin tones 11 or more. 16 clears every real sequence and still
+ * caps a hostile one.
+ */
+const MAX_EMOJI_LEN = 16;
+const DEFAULT_EMOJI = "🙂";
+
 /**
  * One instance per room; the room code is this object's name. Authoritative
  * owner of all state — clients only ever send requests. All game rules live in
@@ -30,8 +39,10 @@ export class W104 extends Server<Env> {
     const playerId = url.searchParams.get("playerId");
     const role = url.searchParams.get("role") === "host" ? "host" : "player";
     const intent = url.searchParams.get("intent");
-    const name = (url.searchParams.get("name") ?? "").slice(0, 20);
-    const emoji = url.searchParams.get("emoji") ?? "🙂";
+    // `null` means the parameter was absent; "" means it was sent empty. Only
+    // the first case falls back to the stored profile.
+    const nameParam = url.searchParams.get("name");
+    const emojiParam = url.searchParams.get("emoji");
     const now = Date.now();
 
     if (!playerId) {
@@ -49,13 +60,21 @@ export class W104 extends Server<Env> {
       return this.reject(conn, "no-such-room", "No game with that code.");
     }
 
-    const known =
-      this.room.hostId === playerId || this.room.players.some((p) => p.id === playerId);
+    const existing = this.room.players.find((p) => p.id === playerId);
+    const known = this.room.hostId === playerId || existing !== undefined;
     if (!known && this.room.phase.name !== "lobby") {
       return this.reject(conn, "game-in-progress", "That game is already running.");
     }
 
     conn.setState({ playerId, role });
+
+    // `join` applies name and emoji unconditionally, so a connect that omits
+    // them must re-supply what this player already had rather than blank it.
+    const name = (nameParam ?? existing?.name ?? "").slice(0, MAX_NAME_LEN);
+    const emoji = (emojiParam ?? existing?.emoji ?? DEFAULT_EMOJI).slice(
+      0,
+      MAX_EMOJI_LEN,
+    );
 
     this.room =
       role === "host"
@@ -105,8 +124,8 @@ export class W104 extends Server<Env> {
         this.room = reduce(this.room, {
           t: "setProfile",
           playerId,
-          name: msg.name.slice(0, 20),
-          emoji: msg.emoji,
+          name: msg.name.slice(0, MAX_NAME_LEN),
+          emoji: msg.emoji.slice(0, MAX_EMOJI_LEN),
           now,
         });
         break;
@@ -158,6 +177,10 @@ export class W104 extends Server<Env> {
     if (now >= this.room.lastActivityAt + IDLE_REAP_MS) {
       await this.ctx.storage.deleteAll();
       this.room = null;
+      // Sockets outlive the room they were opened for. Left connected they
+      // would sit on a lobby that no longer exists, and would receive the
+      // broadcasts of whatever party reuses this code next.
+      this.closeAll("no-such-room", "This game expired.");
       return;
     }
 
@@ -172,8 +195,20 @@ export class W104 extends Server<Env> {
 
   private async persist(): Promise<void> {
     if (!this.room) return;
-    await this.ctx.storage.put("room", this.room);
-    await this.ctx.storage.setAlarm(nextAlarmAt(this.room));
+    const pending = this.room;
+    try {
+      await this.ctx.storage.put("room", pending);
+    } catch (err) {
+      // A rejected write must not leave this object serving a room it never
+      // stored: partyserver swallows the rejection, so memory would silently
+      // diverge from disk and every later persist would fail the same way.
+      // Roll back to stored truth and log; the caller's broadcast then carries
+      // what is actually on disk.
+      console.error(`W104 ${this.name}: persist failed, rolling back room`, err);
+      this.room = (await this.ctx.storage.get<Room>("room")) ?? null;
+      return;
+    }
+    await this.ctx.storage.setAlarm(nextAlarmAt(pending));
   }
 
   private broadcastState(): void {
@@ -196,9 +231,14 @@ export class W104 extends Server<Env> {
     conn.close();
   }
 
+  /**
+   * Object identity, not connection id: partysocket reuses its `_pk` across
+   * auto-reconnects, so a replaced socket and its replacement share an id and
+   * an id comparison would mistake the live socket for the dead one.
+   */
   private hasOtherConnection(playerId: PlayerId, except: Connection<ConnState>): boolean {
     for (const other of this.getConnections<ConnState>()) {
-      if (other.id !== except.id && other.state?.playerId === playerId) return true;
+      if (other !== except && other.state?.playerId === playerId) return true;
     }
     return false;
   }
@@ -206,6 +246,12 @@ export class W104 extends Server<Env> {
   private closeConnectionsFor(playerId: PlayerId): void {
     for (const conn of this.getConnections<ConnState>()) {
       if (conn.state?.playerId === playerId) conn.close();
+    }
+  }
+
+  private closeAll(code: ErrorCode, message: string): void {
+    for (const conn of this.getConnections<ConnState>()) {
+      this.reject(conn, code, message);
     }
   }
 }
