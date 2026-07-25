@@ -69,3 +69,127 @@ describe("isMatch", () => {
     expect(isMatch("adele", "adele")).toBe(true);
   });
 });
+
+const players = [
+  { id: "a", name: "Akshay", emoji: "🐙", ready: true, connected: true },
+  { id: "b", name: "Aidan", emoji: "🦊", ready: true, connected: true },
+  { id: "c", name: "Liam", emoji: "🐸", ready: true, connected: true },
+];
+
+const at = (n: number) => ({ at: n });
+
+describe("scoreRound", () => {
+  test("a word only one player wrote is unique", () => {
+    const results = scoreRound({
+      players,
+      entries: {
+        a: [{ text: "Zendaya", ...at(1) }],
+        b: [{ text: "Adele", ...at(2) }],
+        c: [],
+      },
+    });
+    const a = results.players.find((p) => p.id === "a")!;
+    expect(a.total).toBe(1);
+    expect(a.unique).toBe(1);
+    expect(a.entries[0]).toEqual({ text: "Zendaya", unique: true, alsoBy: [] });
+  });
+
+  test("a shared word scores for nobody and carries the other emoji", () => {
+    const results = scoreRound({
+      players,
+      entries: {
+        a: [{ text: "Adele", ...at(1) }],
+        b: [{ text: "adele", ...at(2) }],
+        c: [],
+      },
+    });
+    const a = results.players.find((p) => p.id === "a")!;
+    expect(a.unique).toBe(0);
+    expect(a.entries[0].unique).toBe(false);
+    expect(a.entries[0].alsoBy).toEqual(["🦊"]);
+  });
+
+  test("a typo still counts as the same word", () => {
+    const results = scoreRound({
+      players,
+      entries: {
+        a: [{ text: "Zendaya", ...at(1) }],
+        b: [{ text: "Zendya", ...at(2) }],
+        c: [],
+      },
+    });
+    expect(results.players.find((p) => p.id === "a")!.unique).toBe(0);
+  });
+
+  test("three players on one word list both other emoji", () => {
+    const results = scoreRound({
+      players,
+      entries: {
+        a: [{ text: "Adele", ...at(1) }],
+        b: [{ text: "adele", ...at(2) }],
+        c: [{ text: "ADELE", ...at(3) }],
+      },
+    });
+    expect(results.players.find((p) => p.id === "a")!.entries[0].alsoBy.sort())
+      .toEqual(["🐸", "🦊"]);
+  });
+
+  test("a player repeating a word does not inflate their total", () => {
+    const results = scoreRound({
+      players,
+      entries: {
+        a: [{ text: "Adele", ...at(1) }, { text: "adele", ...at(2) }],
+        b: [],
+        c: [],
+      },
+    });
+    const a = results.players.find((p) => p.id === "a")!;
+    expect(a.total).toBe(1);
+    expect(a.unique).toBe(1);
+  });
+
+  test("blank entries are discarded", () => {
+    const results = scoreRound({
+      players,
+      entries: { a: [{ text: "   ", ...at(1) }], b: [], c: [] },
+    });
+    expect(results.players.find((p) => p.id === "a")!.total).toBe(0);
+  });
+
+  test("short lookalikes both score", () => {
+    const results = scoreRound({
+      players,
+      entries: {
+        a: [{ text: "Anne", ...at(1) }],
+        b: [{ text: "Anna", ...at(2) }],
+        c: [],
+      },
+    });
+    expect(results.players.find((p) => p.id === "a")!.unique).toBe(1);
+    expect(results.players.find((p) => p.id === "b")!.unique).toBe(1);
+  });
+
+  test("a player with no entries scores zero", () => {
+    const results = scoreRound({
+      players,
+      entries: { a: [{ text: "Adele", ...at(1) }], b: [], c: [] },
+    });
+    const c = results.players.find((p) => p.id === "c")!;
+    expect(c.total).toBe(0);
+    expect(c.unique).toBe(0);
+    expect(c.entries).toEqual([]);
+  });
+
+  test("entries stay in submission order", () => {
+    const results = scoreRound({
+      players,
+      entries: {
+        a: [{ text: "Cher", ...at(3) }, { text: "Adele", ...at(1) }],
+        b: [],
+        c: [],
+      },
+    });
+    expect(results.players.find((p) => p.id === "a")!.entries.map((e) => e.text))
+      .toEqual(["Adele", "Cher"]);
+  });
+});
