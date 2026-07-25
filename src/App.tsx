@@ -74,6 +74,19 @@ export default function App() {
     setSession(null);
   }
 
+  // A kick is the one error whose destination is the first screen rather than
+  // an ErrorScreen with a Back button: the room is gone for this device, so it
+  // does the same teardown `leave()` does. In an effect, not in render — the
+  // render body must not close the socket or set state. Closing here is UX,
+  // not enforcement: the server's kicked list already refuses the reconnect,
+  // so it does not matter that partysocket may have reconnected first.
+  const errorCode = client.error?.code ?? null;
+  useEffect(() => {
+    if (errorCode !== "kicked") return;
+    roomStore.disconnect();
+    setSession(null);
+  }, [errorCode]);
+
   if (!session) return <Landing onCreate={createLobby} onJoin={joinLobby} />;
 
   const outOfCodeAttempts =
@@ -83,7 +96,13 @@ export default function App() {
     return <ErrorScreen message={NO_CODE_MESSAGE} onBack={leave} />;
   }
 
-  if (client.error && client.error.code !== "room-exists") {
+  // `room-exists` is routine (the retry effect above handles it) and `kicked`
+  // is on its way to Landing via its own effect; every other code is terminal.
+  if (
+    client.error &&
+    client.error.code !== "room-exists" &&
+    client.error.code !== "kicked"
+  ) {
     return <ErrorScreen message={client.error.message} onBack={leave} />;
   }
   if (!client.room) return <Connecting />;

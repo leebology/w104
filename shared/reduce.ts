@@ -105,10 +105,17 @@ function apply(room: Room, ev: RoomEvent): Room {
     case "kick": {
       if (ev.playerId !== room.hostId) return room;
       const { [ev.targetId]: _removed, ...entries } = room.entries;
+      // Removing the player is not enough on its own: their socket
+      // auto-reconnects and the lobby would re-admit them as a newcomer. The
+      // ban is what makes a kick stick, so it outlives the round — `newGame`
+      // deliberately does not clear it.
       return {
         ...room,
         players: room.players.filter((p) => p.id !== ev.targetId),
         entries,
+        kicked: room.kicked.includes(ev.targetId)
+          ? room.kicked
+          : [...room.kicked, ev.targetId],
       };
     }
 

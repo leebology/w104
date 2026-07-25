@@ -74,10 +74,17 @@ describe("lobby", () => {
     expect(room.entries.p1).toBeUndefined();
   });
 
+  test("a kick records the target so they cannot rejoin", () => {
+    let room = seed(2);
+    room = reduce(room, { t: "kick", playerId: "host", targetId: "p1", now: 2100 });
+    expect(room.kicked).toEqual(["p1"]);
+  });
+
   test("a player cannot kick", () => {
     let room = seed(2);
     room = reduce(room, { t: "kick", playerId: "p0", targetId: "p1", now: 2100 });
     expect(room.players).toHaveLength(2);
+    expect(room.kicked).toEqual([]);
   });
 
   test("rejoining reclaims the existing seat rather than adding one", () => {
@@ -148,6 +155,19 @@ describe("round progression", () => {
     expect(room.phase.name).toBe("lobby");
     expect(room.entries).toEqual({});
     expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("a new game does not un-kick anyone", () => {
+    let room = playing();
+    const playEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: playEnd });
+    const upEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: upEnd });
+
+    room = reduce(room, { t: "kick", playerId: "host", targetId: "p1", now: upEnd + 50 });
+    room = reduce(room, { t: "newGame", playerId: "host", now: upEnd + 100 });
+    expect(room.kicked).toEqual(["p1"]);
+    expect(room.players.map((p) => p.id)).toEqual(["p0"]);
   });
 });
 

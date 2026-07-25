@@ -34,10 +34,17 @@ export type Room = {
   lastActivityAt: number;
   /** Everyone's words. Server-side only — see Global Constraints. */
   entries: Record<PlayerId, Entry[]>;
+  /**
+   * Players the host has kicked. Server-side only: the connection gate reads
+   * it, no screen renders it. An array, not a Set — Durable Object storage
+   * serializes as JSON and a Set would come back empty. The ban lasts for the
+   * room's lifetime; there is no un-kick in v1.
+   */
+  kicked: PlayerId[];
 };
 
 /** Broadcast to every connection. Safe for all eyes. */
-export type RoomState = Omit<Room, "entries" | "lastActivityAt"> & {
+export type RoomState = Omit<Room, "entries" | "lastActivityAt" | "kicked"> & {
   serverTime: number;
 };
 
@@ -51,11 +58,17 @@ export function createRoom(code: string, now: number): Room {
     durationSec: DEFAULT_DURATION_SEC,
     lastActivityAt: now,
     entries: {},
+    kicked: [],
   };
 }
 
-/** Strips the two server-only fields. This function is the privacy boundary. */
+/** Strips the server-only fields. This function is the privacy boundary. */
 export function toRoomState(room: Room, now: number): RoomState {
-  const { entries: _entries, lastActivityAt: _lastActivityAt, ...rest } = room;
+  const {
+    entries: _entries,
+    lastActivityAt: _lastActivityAt,
+    kicked: _kicked,
+    ...rest
+  } = room;
   return { ...rest, serverTime: now };
 }

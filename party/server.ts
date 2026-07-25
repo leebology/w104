@@ -31,7 +31,19 @@ export class W104 extends Server<Env> {
   private room: Room | null = null;
 
   async onStart(): Promise<void> {
-    this.room = (await this.ctx.storage.get<Room>("room")) ?? null;
+    this.room = await this.load();
+  }
+
+  /**
+   * `get<Room>` is an unchecked cast over whatever JSON is on disk, and a room
+   * written before `kicked` existed has no such key. Filling it in on the way
+   * out means the rest of the class — and all of shared/ — can treat the field
+   * as always present.
+   */
+  private async load(): Promise<Room | null> {
+    const stored = await this.ctx.storage.get<Room>("room");
+    if (!stored) return null;
+    return { ...stored, kicked: stored.kicked ?? [] };
   }
 
   async onConnect(conn: Connection<ConnState>, ctx: ConnectionContext): Promise<void> {
@@ -58,6 +70,13 @@ export class W104 extends Server<Env> {
       this.room = createRoom(this.name, now);
     } else if (!this.room) {
       return this.reject(conn, "no-such-room", "No game with that code.");
+    }
+
+    // Before any phase gate and before `join` can seat them: partysocket
+    // reconnects on its own, and in the lobby the join below would otherwise
+    // welcome a kicked player straight back in as a newcomer.
+    if (this.room.kicked.includes(playerId)) {
+      return this.reject(conn, "kicked", "The host removed you from this game.");
     }
 
     const existing = this.room.players.find((p) => p.id === playerId);
@@ -135,10 +154,23 @@ export class W104 extends Server<Env> {
       case "startGame":
         this.room = reduce(this.room, { t: "startGame", playerId, now });
         break;
-      case "kick":
+      case "kick": {
+        const before = this.room;
         this.room = reduce(this.room, { t: "kick", playerId, targetId: msg.targetId, now });
-        this.closeConnectionsFor(msg.targetId);
+        // Only tear down the target's sockets if the kick actually applied —
+        // `reduce` ignores a kick from a non-host, and a bare close would
+        // otherwise disconnect someone the room still considers a player.
+        if (this.room !== before) {
+          // Tell them why before the socket goes away, so their device can
+          // return to the first screen instead of showing a bare close.
+          this.rejectConnectionsFor(
+            msg.targetId,
+            "kicked",
+            "The host removed you from this game.",
+          );
+        }
         break;
+      }
       case "newGame":
         this.room = reduce(this.room, { t: "newGame", playerId, now });
         break;
@@ -205,7 +237,7 @@ export class W104 extends Server<Env> {
       // Roll back to stored truth and log; the caller's broadcast then carries
       // what is actually on disk.
       console.error(`W104 ${this.name}: persist failed, rolling back room`, err);
-      this.room = (await this.ctx.storage.get<Room>("room")) ?? null;
+      this.room = await this.load();
       return;
     }
     await this.ctx.storage.setAlarm(nextAlarmAt(pending));
@@ -243,9 +275,13 @@ export class W104 extends Server<Env> {
     return false;
   }
 
-  private closeConnectionsFor(playerId: PlayerId): void {
+  private rejectConnectionsFor(
+    playerId: PlayerId,
+    code: ErrorCode,
+    message: string,
+  ): void {
     for (const conn of this.getConnections<ConnState>()) {
-      if (conn.state?.playerId === playerId) conn.close();
+      if (conn.state?.playerId === playerId) this.reject(conn, code, message);
     }
   }
 
