@@ -8,6 +8,33 @@ export type Entry = {
   at: number;   // server receipt timestamp, ms
 };
 
+export type MatchSettings = {
+  /** 1..MAX_ROUND_COUNT. How many rounds this match runs. */
+  roundCount: number;
+  /** MIN_DURATION_SEC..MAX_DURATION_SEC. Seconds of typing per round. */
+  durationSec: number;
+};
+
+/** One player's outcome in one round. */
+export type RoundPlace = {
+  unique: number;
+  total: number;
+  /** 1-based finishing position. Ties share a place; see shared/standings.ts. */
+  place: number;
+};
+
+/**
+ * One completed round. Aggregates only — never words — so this is safe to
+ * carry in RoomState and cheap to rebroadcast on every state push.
+ *
+ * Deliberately carries no round number: its index in `Room.history` is its
+ * round number, and a stored copy could disagree with the index.
+ */
+export type RoundSummary = {
+  category: string;
+  places: Record<PlayerId, RoundPlace>;
+};
+
 export type Player = {
   id: PlayerId;
   name: string;
