@@ -21,7 +21,7 @@
 - **Anything persisted must survive JSON.** Use `Record` and array, never `Map` or `Set`. Add a defaulting fallback in `load()` for every new field.
 - **Durable Objects must stay on `new_sqlite_classes`** in `wrangler.jsonc`. Do not touch this.
 - **`npm run typecheck` runs TWO tsc projects** — `tsconfig.json` (src + shared, DOM libs) and `tsconfig.worker.json` (party + shared, workers-types). A change to `shared/` must typecheck under both. Always run the full `npm run typecheck`, never a single project.
-- **`npm test` must stay green after every task.** It runs `shared/**/*.test.ts` only (70 tests before this plan starts).
+- **`npm test`, `npm run typecheck` and `npm run build` must all be green at every commit.** `npm test` runs `shared/**/*.test.ts` only (70 tests before this plan starts). Some tasks are deliberately red *between* steps — Task 3 Step 7 expects a typecheck failure that Step 11 resolves — but nothing is committed red.
 - **Commits stage explicit paths — never `git add -A`.** The untracked working notes `Project W-104.md` and `W104 Party Game Wireframes.zip` must stay untracked.
 - **No loose hex values in `src/style.css`.** Every colour and shape constant is already a token in `:root`. Use the tokens.
 - **The host screen must never scroll.** `.screen--host` is `height: 100dvh; overflow: hidden`. Overflow scrolls inside its own box.
@@ -696,6 +696,7 @@ Adds the `standings` phase and the three host events that drive it, widens `star
 - Modify: `src/screens/host/HostScoring.tsx` — footer button
 - Modify: `src/screens/host/HostView.tsx` — `standings` case
 - Modify: `src/screens/player/PlayerView.tsx` — `standings` case
+- Create: `src/components/BadgeStrip.tsx`
 - Create: `src/screens/host/HostStandings.tsx`
 - Create: `src/screens/player/PlayerStandings.tsx`
 - Test: `shared/reduce.test.ts`
@@ -1196,11 +1197,38 @@ In `src/screens/host/HostScoring.tsx`, change the footer button:
         </button>
 ```
 
-- [ ] **Step 9: Create `src/screens/host/HostStandings.tsx`**
+- [ ] **Step 9: Create the badge strip and `src/screens/host/HostStandings.tsx`**
 
-Structure and behaviour only — Task 4 adds the badge component and the CSS.
+Structure and behaviour only — Task 4 adds the CSS.
 
-This screen renders during `standings` **and** during an inter-round
+First `src/components/BadgeStrip.tsx`, shared by both standings screens so the
+markup is written once:
+
+```tsx
+/**
+ * One chip per round played, showing that round's finishing place. Gold for a
+ * win, cream otherwise — the strip is the score, not decoration, so a run of
+ * wins should read across a room at a glance.
+ */
+export function BadgeStrip({ places }: { places: number[] }) {
+  if (places.length === 0) return null;
+  return (
+    <ol className="badge-strip">
+      {places.map((place, i) => (
+        <li
+          className={place === 1 ? "badge badge--first" : "badge"}
+          key={i}
+          title={`Round ${i + 1}: ${place}`}
+        >
+          {place}
+        </li>
+      ))}
+    </ol>
+  );
+}
+```
+
+Then the host screen. It renders during `standings` **and** during an inter-round
 `countdown`, so it takes the same optional `countdown` prop `HostLobby` does —
 un-readying during that countdown still cancels it, and the room needs to see
 the number ticking down.
@@ -1209,6 +1237,7 @@ the number ticking down.
 import { useRemaining } from "../../net/clock";
 import { computeStandings } from "../../../shared/standings";
 import { currentRound, matchComplete } from "../../../shared/state";
+import { BadgeStrip } from "../../components/BadgeStrip";
 import { RoomChip } from "../../components/RoomChip";
 import { roomStore } from "../../net/room";
 import type { RoomState } from "../../../shared/state";
@@ -1243,11 +1272,7 @@ export function HostStandings({ room, countdown }: Props) {
             <span className="standing-card__place">{s.place}</span>
             <span className="standing-card__avatar">{s.emoji}</span>
             <span className="standing-card__name">{s.name}</span>
-            <ol className="badge-strip">
-              {s.badges.map((place, i) => (
-                <li className="badge" key={i}>{place}</li>
-              ))}
-            </ol>
+            <BadgeStrip places={s.badges} />
             <span className="standing-card__points">{s.points}</span>
           </li>
         ))}
@@ -1301,6 +1326,7 @@ Renders during `standings` and during an inter-round `countdown`, same as
 import { useRemaining } from "../../net/clock";
 import { computeStandings } from "../../../shared/standings";
 import { matchComplete } from "../../../shared/state";
+import { BadgeStrip } from "../../components/BadgeStrip";
 import { roomStore } from "../../net/room";
 import type { PlayerId, RoomState } from "../../../shared/state";
 
@@ -1328,11 +1354,7 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
         <section className="card player-standings__me">
           <span className="player-standings__place">{me.place}</span>
           <span className="player-standings__name">{me.emoji} {me.name}</span>
-          <ol className="badge-strip">
-            {me.badges.map((place, i) => (
-              <li className="badge" key={i}>{place}</li>
-            ))}
-          </ol>
+          <BadgeStrip places={me.badges} />
           <span className="player-standings__points">{me.points} pts</span>
         </section>
       )}
@@ -1435,7 +1457,7 @@ Verify: three players ready up → round plays → results → "Standings" → s
 - [ ] **Step 14: Commit**
 
 ```bash
-git add shared/state.ts shared/reduce.ts shared/reduce.test.ts shared/protocol.ts party/server.ts src/screens/host/HostScoring.tsx src/screens/host/HostStandings.tsx src/screens/host/HostView.tsx src/screens/player/PlayerStandings.tsx src/screens/player/PlayerView.tsx
+git add shared/state.ts shared/reduce.ts shared/reduce.test.ts shared/protocol.ts party/server.ts src/components/BadgeStrip.tsx src/screens/host/HostScoring.tsx src/screens/host/HostStandings.tsx src/screens/host/HostView.tsx src/screens/player/PlayerStandings.tsx src/screens/player/PlayerView.tsx
 git commit -m "feat: add the standings phase and multi-round match flow
 
 Readiness now governs every round start, not just the first: the standings
@@ -1450,17 +1472,14 @@ Replaces newGame with showStandings and backToLobby."
 
 ### Task 4: Style the standings screens
 
-Adds the badge strip component and every new CSS rule. Purely presentational — no logic changes.
+Every new CSS rule for the screens Task 3 built. Purely presentational — this task touches exactly one file and changes no logic.
 
 **Files:**
-- Create: `src/components/BadgeStrip.tsx`
-- Modify: `src/screens/host/HostStandings.tsx` — use `BadgeStrip`
-- Modify: `src/screens/player/PlayerStandings.tsx` — use `BadgeStrip`
 - Modify: `src/style.css` — append the new rules
 
 **Interfaces:**
-- Consumes: `Standing` from `shared/standings.ts` (Task 1); the screens from Task 3
-- Produces: `BadgeStrip` component; CSS classes `.host-standings`, `.standings-list`, `.standing-card`, `.badge-strip`, `.badge`, `.player-standings`
+- Consumes: the class names already used by `HostStandings`, `PlayerStandings` and `BadgeStrip` from Task 3
+- Produces: CSS classes `.host-standings`, `.standings-list`, `.standing-card`, `.badge-strip`, `.badge`, `.badge--first`, `.player-standings`
 
 **Design constraints — read before writing any CSS:**
 - Every colour and shape value must come from an existing `:root` token in `src/style.css`. No loose hex values, no new tokens.
@@ -1469,37 +1488,7 @@ Adds the badge strip component and every new CSS rule. Purely presentational —
 - Match the existing card idiom: `--border` (3px solid ink), `--radius` (14px), `--shadow-card` (6px 6px 0 ink), `--display` font for numerals.
 - Never cream on cream. Gold carries `--ink-gold` text, cream carries `--ink`.
 
-- [ ] **Step 1: Create `src/components/BadgeStrip.tsx`**
-
-```tsx
-/**
- * One chip per round played, showing that round's finishing place. Gold for a
- * win, cream otherwise — the strip is the score, so a run of golds should read
- * across a room at a glance.
- */
-export function BadgeStrip({ places }: { places: number[] }) {
-  if (places.length === 0) return null;
-  return (
-    <ol className="badge-strip">
-      {places.map((place, i) => (
-        <li
-          className={place === 1 ? "badge badge--first" : "badge"}
-          key={i}
-          title={`Round ${i + 1}: ${place}`}
-        >
-          {place}
-        </li>
-      ))}
-    </ol>
-  );
-}
-```
-
-- [ ] **Step 2: Use it in both screens**
-
-In `src/screens/host/HostStandings.tsx` and `src/screens/player/PlayerStandings.tsx`, replace the inline `<ol className="badge-strip">…</ol>` blocks with `<BadgeStrip places={s.badges} />` (and `<BadgeStrip places={me.badges} />` respectively), adding the import.
-
-- [ ] **Step 3: Append the CSS to `src/style.css`**
+- [ ] **Step 1: Append the CSS to `src/style.css`**
 
 Add at the end of the file, following the existing section-comment style:
 
@@ -1677,7 +1666,7 @@ Add at the end of the file, following the existing section-comment style:
 }
 ```
 
-- [ ] **Step 4: Verify no loose hex values were introduced**
+- [ ] **Step 2: Verify no loose hex values were introduced**
 
 ```bash
 grep -nE '#[0-9a-fA-F]{3,8}\b' src/style.css | grep -v '^\s*[0-9]*:\s*--'
@@ -1685,7 +1674,7 @@ grep -nE '#[0-9a-fA-F]{3,8}\b' src/style.css | grep -v '^\s*[0-9]*:\s*--'
 
 Expected: only the token definitions in the `:root` block at the top of the file. Any hit inside a rule you just wrote is a defect — replace it with the matching token.
 
-- [ ] **Step 5: Typecheck and build**
+- [ ] **Step 3: Typecheck and build**
 
 ```bash
 npm run typecheck && npm run build
@@ -1693,10 +1682,10 @@ npm run typecheck && npm run build
 
 Expected: green.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
-git add src/components/BadgeStrip.tsx src/screens/host/HostStandings.tsx src/screens/player/PlayerStandings.tsx src/style.css
+git add src/style.css
 git commit -m "style: dress the standings screens in the Ok, Name One system
 
 The badge strip is the score, not decoration, so a win reads gold and a run of
