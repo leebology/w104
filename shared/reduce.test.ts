@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { createRoom } from "./state";
 import type { Room } from "./state";
-import { COUNTDOWN_MS, IDLE_REAP_MS, MAX_ENTRIES, MAX_ENTRY_LEN, TIMESUP_MS, nextAlarmAt, reduce, submitEntry } from "./reduce";
+import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, TIMESUP_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
 
 /** A room with `n` joined players, none ready, plus a host. */
 function seed(n: number, now = 1000): Room {
@@ -53,6 +53,37 @@ describe("lobby", () => {
     expect(room.phase.name).toBe("countdown");
   });
 
+  test("the host can start with just one player", () => {
+    let room = seed(1);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2000 });
+    expect(room.phase).toEqual({ name: "countdown", endsAt: 2000 + COUNTDOWN_MS });
+  });
+
+  test("the host cannot start with zero players", () => {
+    let room = seed(0);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2000 });
+    expect(room.phase.name).toBe("lobby");
+  });
+
+  test("the host can cancel a countdown they started solo", () => {
+    let room = seed(1);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2000 });
+    room = reduce(room, { t: "cancelStart", playerId: "host", now: 2100 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("a player cannot cancel a countdown", () => {
+    let room = readyAll(seed(2), 2000);
+    room = reduce(room, { t: "cancelStart", playerId: "p0", now: 2100 });
+    expect(room.phase.name).toBe("countdown");
+  });
+
+  test("cancelling outside a countdown does nothing", () => {
+    const room = seed(2);
+    expect(reduce(room, { t: "cancelStart", playerId: "host", now: 2000 })).toBe(room);
+  });
+
   test("a player cannot press the host's start button", () => {
     let room = seed(3);
     room = reduce(room, { t: "startGame", playerId: "p0", now: 2000 });
@@ -96,6 +127,26 @@ describe("lobby", () => {
     expect(room.players).toHaveLength(2);
     expect(room.players[0].connected).toBe(true);
     expect(room.players[0].emoji).toBe("🦊");
+  });
+
+  test("a full room turns away newcomers", () => {
+    let room = seed(MAX_PLAYERS);
+    room = reduce(room, {
+      t: "join", playerId: "late", name: "Late", emoji: "🐙", now: 2000,
+    });
+    expect(room.players).toHaveLength(MAX_PLAYERS);
+    expect(room.players.some((p) => p.id === "late")).toBe(false);
+  });
+
+  test("a full room still lets a seated player reconnect", () => {
+    const last = `p${MAX_PLAYERS - 1}`;
+    let room = seed(MAX_PLAYERS);
+    room = reduce(room, { t: "disconnect", playerId: last, now: 2000 });
+    room = reduce(room, {
+      t: "join", playerId: last, name: "Back", emoji: "🦊", now: 2100,
+    });
+    expect(room.players).toHaveLength(MAX_PLAYERS);
+    expect(room.players.find((p) => p.id === last)!.connected).toBe(true);
   });
 });
 
@@ -155,6 +206,18 @@ describe("round progression", () => {
     expect(room.phase.name).toBe("lobby");
     expect(room.entries).toEqual({});
     expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("a new game advances the round counter", () => {
+    let room = playing();
+    expect(room.round).toBe(1);
+    const playEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: playEnd });
+    const upEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: upEnd });
+
+    room = reduce(room, { t: "newGame", playerId: "host", now: upEnd + 100 });
+    expect(room.round).toBe(2);
   });
 
   test("a new game does not un-kick anyone", () => {
@@ -234,5 +297,111 @@ describe("nextAlarmAt", () => {
   test("targets the idle reap in the lobby", () => {
     const room = seed(2, 5_000);
     expect(nextAlarmAt(room)).toBe(room.lastActivityAt + IDLE_REAP_MS);
+  });
+});
+
+describe("alarmOutcome", () => {
+  /**
+   * The regression this function exists for. A round is 30s and the idle
+   * horizon is 15s, so a room whose players go quiet for the back half of a
+   * round is "stale" at the exact moment the round is due to end. Reaping
+   * logic must not get to decide that before the phase deadline does, or the
+   * round hangs on 0:00 until a second alarm re-fires.
+   */
+  test("ends a round on the first alarm even when the room looks stale", () => {
+    const room = playing();
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    // Nobody has typed since the round began: well past the idle horizon.
+    expect(endsAt).toBeGreaterThan(room.lastActivityAt + IDLE_REAP_MS);
+
+    const outcome = alarmOutcome(room, endsAt, true);
+    expect(outcome.action).toBe("advance");
+    expect((outcome as { room: Room }).room.phase.name).toBe("timesup");
+  });
+
+  test("advancing a phase wins over reaping even with nobody connected", () => {
+    let room = playing();
+    room = { ...room, players: room.players.map((p) => ({ ...p, connected: false })) };
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+
+    expect(alarmOutcome(room, endsAt, false).action).toBe("advance");
+  });
+
+  test("a stale lobby with someone still connected is touched, not reaped", () => {
+    const room = seed(2, 5_000);
+    const outcome = alarmOutcome(room, 5_000 + IDLE_REAP_MS, true);
+    expect(outcome.action).toBe("touch");
+    expect((outcome as { room: Room }).room.lastActivityAt).toBe(5_000 + IDLE_REAP_MS);
+  });
+
+  test("a stale lobby nobody is connected to is reaped", () => {
+    const room = seed(2, 5_000);
+    expect(alarmOutcome(room, 5_000 + IDLE_REAP_MS, false).action).toBe("reap");
+  });
+
+  test("an alarm with nothing to do just re-arms", () => {
+    const room = seed(2, 5_000);
+    expect(alarmOutcome(room, 6_000, true).action).toBe("rearm");
+  });
+});
+
+describe("the host leaving", () => {
+  test("only the host may end the game", () => {
+    const room = seed(2);
+    expect(canEndGame(room, "host")).toBe(true);
+    expect(canEndGame(room, "p0")).toBe(false);
+  });
+
+  test("a player disconnecting leaves no host mark", () => {
+    const room = reduce(seed(2), { t: "disconnect", playerId: "p0", now: 2_000 });
+    expect(room.hostGoneAt).toBeNull();
+    expect(room.players.find((p) => p.id === "p0")?.connected).toBe(false);
+  });
+
+  test("the host disconnecting stamps the moment they went", () => {
+    const room = reduce(seed(2), { t: "disconnect", playerId: "host", now: 2_000 });
+    expect(room.hostGoneAt).toBe(2_000);
+  });
+
+  test("the room dies once the host has been gone for the grace window", () => {
+    const room = reduce(seed(2), { t: "disconnect", playerId: "host", now: 2_000 });
+    const outcome = alarmOutcome(room, 2_000 + HOST_GRACE_MS, true);
+    expect(outcome.action).toBe("reap");
+    expect((outcome as { reason: string }).reason).toBe("host-left");
+  });
+
+  test("players still connected do not keep a hostless room alive", () => {
+    // The distinction from the idle reaper, which `touch`es a stale room when
+    // anyone is still connected. A host who left takes the room regardless.
+    const room = reduce(seed(2), { t: "disconnect", playerId: "host", now: 2_000 });
+    expect(alarmOutcome(room, 2_000 + HOST_GRACE_MS, true).action).toBe("reap");
+  });
+
+  test("a host back inside the window keeps the room", () => {
+    let room = reduce(seed(2), { t: "disconnect", playerId: "host", now: 2_000 });
+    room = reduce(room, { t: "claimHost", playerId: "host", now: 5_000 });
+    expect(room.hostGoneAt).toBeNull();
+    expect(alarmOutcome(room, 2_000 + HOST_GRACE_MS, true).action).not.toBe("reap");
+  });
+
+  test("the grace window is not up yet, so nothing is reaped", () => {
+    const room = reduce(seed(2), { t: "disconnect", playerId: "host", now: 2_000 });
+    expect(alarmOutcome(room, 2_000 + HOST_GRACE_MS - 1, true).action).not.toBe("reap");
+  });
+
+  test("the host deadline pulls the alarm in ahead of a phase deadline", () => {
+    // A host who drops mid-round: the round has 30s to run but the room only
+    // has HOST_GRACE_MS left, so the alarm has to fire at the earlier of the
+    // two or the reap would wait for the round to finish first.
+    const room = reduce(playing(), { t: "disconnect", playerId: "host", now: 4_000 });
+    expect(nextAlarmAt(room)).toBe(4_000 + HOST_GRACE_MS);
+  });
+
+  test("a hostless room ends rather than advancing its round", () => {
+    const room = reduce(playing(), { t: "disconnect", playerId: "host", now: 4_000 });
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    // Well past both the grace window and the round's own deadline.
+    expect(endsAt).toBeGreaterThan(4_000 + HOST_GRACE_MS);
+    expect(alarmOutcome(room, endsAt, true).action).toBe("reap");
   });
 });

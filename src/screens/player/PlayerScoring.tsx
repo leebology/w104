@@ -1,28 +1,54 @@
-import type { PlayerId } from "../../../shared/state";
+import { WordList } from "../../components/WordList";
+import type { PlayerId, RoomState } from "../../../shared/state";
 import type { Results } from "../../../shared/scoring";
 
-export function PlayerScoring({ results, playerId }: { results: Results; playerId: PlayerId }) {
+type Props = { room: RoomState; results: Results; playerId: PlayerId };
+
+/** Your own results, on your own phone — the same two cards as one host column. */
+export function PlayerScoring({ room, results, playerId }: Props) {
   const me = results.players.find((p) => p.id === playerId);
-  if (!me) return <main><p>You weren't in this round.</p></main>;
+  if (!me) {
+    return (
+      <main className="screen screen--centered">
+        <div className="card centered-card">
+          <p className="notice">You weren’t in this round.</p>
+          <p className="notice notice--dim">Hang on for the next one.</p>
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <main>
-      <h1>{me.emoji} {me.name}</h1>
-      <p className="score">
-        <strong>{me.unique}</strong> unique · {me.total} total
+    <main className="screen screen--mobile screen--locked player-scoring">
+      <div className="card id-card">
+        <div className="id-card__row">
+          <span className="id-card__avatar">{me.emoji}</span>
+          <div className="id-card__who">
+            <span className="id-card__name">{me.name}</span>
+            <span className="id-card__meta">
+              ROOM {room.code} · ROUND {room.round}
+            </span>
+          </div>
+          <div className="id-card__stats">
+            <div className="stat">
+              <span className="stat__num stat__num--unique">{me.unique}</span>
+              <span className="stat__label">UNIQUE</span>
+            </div>
+            <div className="stat">
+              <span className="stat__num">{me.total}</span>
+              <span className="stat__label">TOTAL</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="card list-card">
+        <WordList entries={me.entries} size={19} />
+      </div>
+
+      <p className="player-scoring__footer">
+        Waiting for the host to start a new round…
       </p>
-      <ol className="entries">
-        {me.entries.map((entry, i) => (
-          <li key={i} className={entry.unique ? "" : "struck"}>
-            <span>{entry.text}</span>
-            {entry.alsoBy.length > 0 && (
-              <span className="alsoBy">{entry.alsoBy.join(" ")}</span>
-            )}
-          </li>
-        ))}
-      </ol>
-      {me.entries.length === 0 && <p className="hint">No words this round.</p>}
-      <p className="hint">Waiting for the host to start a new game…</p>
     </main>
   );
 }

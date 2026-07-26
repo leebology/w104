@@ -1,6 +1,8 @@
 import { Server, routePartykitRequest } from "partyserver";
 import type { Connection, ConnectionContext, WSMessage } from "partyserver";
-import { nextAlarmAt, reduce, submitEntry, IDLE_REAP_MS } from "../shared/reduce";
+import {
+  alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry, MAX_PLAYERS,
+} from "../shared/reduce";
 import type { ClientMessage, ErrorCode, ServerMessage } from "../shared/protocol";
 import { createRoom, toRoomState } from "../shared/state";
 import type { PlayerId, Room } from "../shared/state";
@@ -10,7 +12,7 @@ export interface Env {
   W104: DurableObjectNamespace;
 }
 
-type ConnState = { playerId: PlayerId; role: "player" | "host" };
+type ConnState = { playerId: PlayerId; role: "player" | "host"; session: string };
 
 const MAX_NAME_LEN = 20;
 /**
@@ -29,6 +31,16 @@ const DEFAULT_EMOJI = "🙂";
  */
 export class W104 extends Server<Env> {
   private room: Room | null = null;
+  /**
+   * In-memory only, not persisted: which session ids were live for a kicked
+   * player at the moment of the kick. Lets a deliberate rejoin (a new
+   * `connect()` call mints a new session id) back in while a kicked socket's
+   * own automatic reconnect — which resends the same session id — stays
+   * blocked. If the object hibernates and loses this, a stale reconnect can
+   * slip through; for a casual party game that failure mode (occasionally
+   * early, never permanently stuck) is the acceptable side to fail on.
+   */
+  private kickedSessions = new Map<PlayerId, Set<string>>();
 
   async onStart(): Promise<void> {
     this.room = await this.load();
@@ -36,14 +48,19 @@ export class W104 extends Server<Env> {
 
   /**
    * `get<Room>` is an unchecked cast over whatever JSON is on disk, and a room
-   * written before `kicked` existed has no such key. Filling it in on the way
-   * out means the rest of the class — and all of shared/ — can treat the field
-   * as always present.
+   * written before `kicked`, `round` or `hostGoneAt` existed has no such key.
+   * Filling them in on the way out means the rest of the class — and all of
+   * shared/ — can treat the fields as always present.
    */
   private async load(): Promise<Room | null> {
     const stored = await this.ctx.storage.get<Room>("room");
     if (!stored) return null;
-    return { ...stored, kicked: stored.kicked ?? [] };
+    return {
+      ...stored,
+      kicked: stored.kicked ?? [],
+      round: stored.round ?? 1,
+      hostGoneAt: stored.hostGoneAt ?? null,
+    };
   }
 
   async onConnect(conn: Connection<ConnState>, ctx: ConnectionContext): Promise<void> {
@@ -55,6 +72,7 @@ export class W104 extends Server<Env> {
     // the first case falls back to the stored profile.
     const nameParam = url.searchParams.get("name");
     const emojiParam = url.searchParams.get("emoji");
+    const session = url.searchParams.get("session") ?? "";
     const now = Date.now();
 
     if (!playerId) {
@@ -76,7 +94,18 @@ export class W104 extends Server<Env> {
     // reconnects on its own, and in the lobby the join below would otherwise
     // welcome a kicked player straight back in as a newcomer.
     if (this.room.kicked.includes(playerId)) {
-      return this.reject(conn, "kicked", "The host removed you from this game.");
+      const banned = this.kickedSessions.get(playerId);
+      if (!banned || banned.has(session)) {
+        return this.reject(conn, "kicked", "The host removed you from this game.");
+      }
+      // A session id the ban never recorded means this is a deliberate new
+      // connection — Landing → Join again — not the kicked socket retrying
+      // itself. Let them back in and lift the ban.
+      this.room = {
+        ...this.room,
+        kicked: this.room.kicked.filter((id) => id !== playerId),
+      };
+      this.kickedSessions.delete(playerId);
     }
 
     const existing = this.room.players.find((p) => p.id === playerId);
@@ -85,7 +114,15 @@ export class W104 extends Server<Env> {
       return this.reject(conn, "game-in-progress", "That game is already running.");
     }
 
-    conn.setState({ playerId, role });
+    // Only newcomers are capped. Someone already seated — including the tenth
+    // player reconnecting after their phone locked — is `known` and skips
+    // this, so the cap can never lock a player out of their own room. The
+    // host holds no player slot, hence the role check.
+    if (!known && role === "player" && this.room.players.length >= MAX_PLAYERS) {
+      return this.reject(conn, "room-full", "That room is full.");
+    }
+
+    conn.setState({ playerId, role, session });
 
     // `join` applies name and emoji unconditionally, so a connect that omits
     // them must re-supply what this player already had rather than blank it.
@@ -138,6 +175,18 @@ export class W104 extends Server<Env> {
       return; // No broadcast: entry counts are deliberately not published.
     }
 
+    // Ends the room outright rather than producing a new state, so it cannot
+    // go through `reduce` and the shared persist/broadcast tail below — there
+    // is nothing left to persist or broadcast.
+    if (msg.type === "endGame") {
+      if (!canEndGame(this.room, playerId)) return;
+      // The host asked for this and is already on their way back to Landing;
+      // telling them the host left would put the other players' banner on the
+      // screen of the person who pressed the button.
+      await this.endRoom("host-left", "The host ended the game.", conn);
+      return;
+    }
+
     switch (msg.type) {
       case "setProfile":
         this.room = reduce(this.room, {
@@ -154,6 +203,9 @@ export class W104 extends Server<Env> {
       case "startGame":
         this.room = reduce(this.room, { t: "startGame", playerId, now });
         break;
+      case "cancelStart":
+        this.room = reduce(this.room, { t: "cancelStart", playerId, now });
+        break;
       case "kick": {
         const before = this.room;
         this.room = reduce(this.room, { t: "kick", playerId, targetId: msg.targetId, now });
@@ -161,6 +213,14 @@ export class W104 extends Server<Env> {
         // `reduce` ignores a kick from a non-host, and a bare close would
         // otherwise disconnect someone the room still considers a player.
         if (this.room !== before) {
+          // Record every session currently live for the target before
+          // closing them, so onConnect can tell their socket auto-retrying
+          // (same session) apart from a deliberate rejoin (a new one).
+          const sessions = new Set<string>();
+          for (const c of this.getConnections<ConnState>()) {
+            if (c.state?.playerId === msg.targetId) sessions.add(c.state.session);
+          }
+          this.kickedSessions.set(msg.targetId, sessions);
           // Tell them why before the socket goes away, so their device can
           // return to the first screen instead of showing a bare close.
           this.rejectConnectionsFor(
@@ -204,23 +264,34 @@ export class W104 extends Server<Env> {
    */
   async onAlarm(): Promise<void> {
     if (!this.room) return;
-    const now = Date.now();
 
-    if (now >= this.room.lastActivityAt + IDLE_REAP_MS) {
-      await this.ctx.storage.deleteAll();
-      this.room = null;
-      // Sockets outlive the room they were opened for. Left connected they
-      // would sit on a lobby that no longer exists, and would receive the
-      // broadcasts of whatever party reuses this code next.
-      this.closeAll("no-such-room", "This game expired.");
-      return;
+    // Which of the alarm's two jobs this is — advancing a phase or reaping an
+    // abandoned room — is decided in `shared/`, where it is under test. This
+    // method only carries the decision out.
+    const outcome = alarmOutcome(this.room, Date.now(), this.hasAnyConnection());
+    switch (outcome.action) {
+      case "advance":
+        this.room = outcome.room;
+        await this.persist();
+        this.broadcastState();
+        return;
+      case "touch":
+        this.room = outcome.room;
+        await this.persist();
+        return;
+      case "rearm":
+        // Nothing changed, but persisting is what re-arms the next alarm.
+        await this.persist();
+        return;
+      case "reap":
+        // Sockets outlive the room they were opened for. Left connected they
+        // would sit on a lobby that no longer exists, and would receive the
+        // broadcasts of whatever party reuses this code next.
+        await (outcome.reason === "host-left"
+          ? this.endRoom("host-left", "The host ended the game.")
+          : this.endRoom("no-such-room", "This game expired."));
+        return;
     }
-
-    const next = reduce(this.room, { t: "tick", now });
-    const changed = next !== this.room;
-    this.room = next;
-    await this.persist();
-    if (changed) this.broadcastState();
   }
 
   // ---- plumbing ----
@@ -275,6 +346,11 @@ export class W104 extends Server<Env> {
     return false;
   }
 
+  private hasAnyConnection(): boolean {
+    for (const _ of this.getConnections<ConnState>()) return true;
+    return false;
+  }
+
   private rejectConnectionsFor(
     playerId: PlayerId,
     code: ErrorCode,
@@ -285,9 +361,23 @@ export class W104 extends Server<Env> {
     }
   }
 
-  private closeAll(code: ErrorCode, message: string): void {
+  /**
+   * Deletes the room and hangs up on everyone still holding a socket to it.
+   * Storage first: if the delete throws, the sockets stay open on a room that
+   * still exists, which is recoverable — closing first and then failing to
+   * delete would strand a live room nobody is connected to.
+   */
+  private async endRoom(
+    code: ErrorCode,
+    message: string,
+    /** The connection that asked for this, if any; closed without the error. */
+    except?: Connection<ConnState>,
+  ): Promise<void> {
+    await this.ctx.storage.deleteAll();
+    this.room = null;
     for (const conn of this.getConnections<ConnState>()) {
-      this.reject(conn, code, message);
+      if (conn === except) conn.close();
+      else this.reject(conn, code, message);
     }
   }
 }

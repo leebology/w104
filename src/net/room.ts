@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 import type { ClientMessage, ErrorCode, ServerMessage } from "../../shared/protocol";
 import type { RejectReason } from "../../shared/reduce";
 import type { Entry, RoomState } from "../../shared/state";
+import { randomUUID } from "./identity";
 
 // Set by Vercel in production; falls back to the local `wrangler dev` server.
 // On a phone this MUST be the host machine's LAN IP — 127.0.0.1 would mean
@@ -20,6 +21,14 @@ export type ClientState = {
   clockOffset: number;
   error: { code: ErrorCode; message: string } | null;
   rejected: string | null;
+  /**
+   * Bumped on every rejection, including a repeat of one already showing.
+   * The banner is keyed on it so React remounts the element and replays its
+   * fade — typing the same duplicate twice is exactly when a player most
+   * needs to see the message again, and an unchanged string would sit there
+   * mid-fade instead.
+   */
+  rejectedSeq: number;
 };
 
 export type ConnectOptions = {
@@ -46,6 +55,7 @@ const EMPTY: ClientState = {
   clockOffset: 0,
   error: null,
   rejected: null,
+  rejectedSeq: 0,
 };
 
 export class RoomStore {
@@ -70,9 +80,16 @@ export class RoomStore {
     this.disconnect();
     this.state = EMPTY;
 
+    // A fresh id per connect() call, distinct from playerId: partysocket
+    // reuses the same query — including this — across its own automatic
+    // reconnects of one socket, so the server can tell "the socket that just
+    // got kicked is retrying itself" (same session) apart from "the player
+    // deliberately came back through Landing and connected again" (new
+    // session), and only the latter lifts a kick.
     const query: Record<string, string> = {
       playerId: opts.playerId,
       role: opts.role,
+      session: randomUUID(),
     };
     if (opts.intent) query.intent = opts.intent;
     if (opts.name) query.name = opts.name;
@@ -136,11 +153,15 @@ export class RoomStore {
       case "state": {
         const wasScoring = this.state.room?.phase.name === "scoring";
         const nowLobby = msg.state.phase.name === "lobby";
+        const freshRound = wasScoring && nowLobby;
         this.set({
           room: msg.state,
           clockOffset: msg.state.serverTime - Date.now(),
           // A new game wipes the local list; the server already cleared its own.
-          entries: wasScoring && nowLobby ? [] : this.state.entries,
+          entries: freshRound ? [] : this.state.entries,
+          // Otherwise a rejection from the last round (e.g. "You already wrote
+          // that.") would still be showing when the next one starts.
+          rejected: freshRound ? null : this.state.rejected,
         });
         break;
       }
@@ -158,6 +179,7 @@ export class RoomStore {
           this.set({
             entries: this.state.entries.filter((e) => e.seq !== msg.seq),
             rejected: msg.reason ? REJECTIONS[msg.reason] : "Not accepted.",
+            rejectedSeq: this.state.rejectedSeq + 1,
           });
         }
         break;

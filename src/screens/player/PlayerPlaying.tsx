@@ -1,63 +1,60 @@
-import { useEffect, useRef, useState } from "react";
-import { useRemaining } from "../../net/clock";
-import { roomStore } from "../../net/room";
+import { useEffect, useRef } from "react";
 import type { LocalEntry } from "../../net/room";
 
 type Props = {
   category: string;
-  endsAt: number;
-  offset: number;
   entries: LocalEntry[];
-  rejected: string | null;
 };
 
-export function PlayerPlaying({ category, endsAt, offset, entries, rejected }: Props) {
-  const [text, setText] = useState("");
-  const remaining = useRemaining(endsAt, offset);
+/**
+ * No clock here on purpose. The countdown lives on the TV, where everyone
+ * reads it at once; on the phone it only competed with the one thing this
+ * screen is for, which is getting words down.
+ */
+export function PlayerPlaying({ category, entries }: Props) {
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
   }, [entries.length]);
 
+  // Sizing against the on-screen keyboard is `.screen--locked` plus
+  // src/viewport.ts, applied to every locked screen rather than measured in
+  // here: this component used to set its own height from `visualViewport`,
+  // which shrank the screen but left the page behind it full height, so the
+  // area below the list stayed as visible dead space. The entry input lives
+  // outside this component (see PlayerView) so it can stay mounted and focused
+  // across phase changes.
   return (
-    <main className="playing">
-      <header>
-        <span className="prompt">NAME A: <strong>{category}</strong></span>
-        <span className="timer">{remaining}</span>
-      </header>
+    <main className="screen screen--mobile screen--locked playing">
+      <div className="playing__head">
+        <span className="playing__name-a">NAME A:</span>
+        <div className="banner playing__banner">
+          <span className="banner__text">{category}</span>
+        </div>
+      </div>
 
-      <ol className="entries">
-        {entries.map((entry, i) => (
-          <li key={entry.seq ?? `${entry.at}-${i}`}>{entry.text}</li>
-        ))}
-      </ol>
-      <div ref={bottom} />
+      {/* Only ever this player's own words. Nothing here, and nothing in the
+          broadcast behind it, reveals what anyone else has written.
 
-      {rejected && <p className="reject">{rejected}</p>}
-
-      <form
-        className="entry-form"
-        onSubmit={(e) => {
-          // preventDefault keeps focus on the input, so the phone keyboard
-          // stays up between words.
-          e.preventDefault();
-          roomStore.submit(text);
-          setText("");
-        }}
-      >
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          autoFocus
-          autoComplete="off"
-          autoCorrect="on"
-          enterKeyHint="done"
-          maxLength={64}
-          aria-label={`Name a ${category}`}
-        />
-        <button type="submit">Add</button>
-      </form>
+          The card runs to the bottom of the screen and the entry input sits
+          over its last line, so typing reads as writing directly onto the
+          list. The input itself is still mounted in PlayerView — it has to
+          outlive this screen to keep the keyboard up — which is why the two
+          are aligned in CSS rather than nested here. */}
+      <div className="card playing__card">
+        <div className="word-list playing__list">
+          {entries.length === 0 && (
+            <p className="playing__empty">Type anything. Obvious answers score nothing.</p>
+          )}
+          {entries.map((entry, i) => (
+            <div className="word-row" key={entry.seq ?? `${entry.at}-${i}`}>
+              <span className="word">{entry.text}</span>
+            </div>
+          ))}
+          <div ref={bottom} />
+        </div>
+      </div>
     </main>
   );
 }

@@ -1,22 +1,42 @@
 import type { ReactElement } from "react";
+import { roomStore } from "../../net/room";
 import type { ClientState } from "../../net/room";
-import { Countdown } from "../shared/Countdown";
 import { TimesUp } from "../shared/TimesUp";
 import { HostLobby } from "./HostLobby";
 import { HostPlaying } from "./HostPlaying";
 import { HostScoring } from "./HostScoring";
 
-export function HostView({ state }: { state: ClientState; onLeave: () => void }): ReactElement {
+// The explicit ReactElement return type is what makes tsc flag an unhandled
+// phase — there is no noImplicitReturns in this repo, so dropping it would
+// make a missing case compile silently.
+export function HostView({ state, onLeave }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
+
+  // The host leaving is the end of the game, not just of their own session:
+  // without a host nobody can start the next round, so the room goes with
+  // them. Sent before `onLeave` closes the socket — after it there is nothing
+  // left to send it down. Wrapped here rather than in each screen so every
+  // host exit, present and future, ends the room.
+  const leave = () => {
+    roomStore.send({ type: "endGame" });
+    onLeave();
+  };
+
   switch (room.phase.name) {
     case "lobby":
-      return <HostLobby room={room} />;
+      return <HostLobby room={room} onLeave={leave} />;
     case "countdown":
-      return <Countdown endsAt={room.phase.endsAt} offset={state.clockOffset} />;
+      return (
+        <HostLobby
+          room={room}
+          countdown={{ endsAt: room.phase.endsAt, offset: state.clockOffset }}
+          onLeave={leave}
+        />
+      );
     case "playing":
       return (
         <HostPlaying
-          category={room.category}
+          room={room}
           endsAt={room.phase.endsAt}
           offset={state.clockOffset}
         />
@@ -24,6 +44,6 @@ export function HostView({ state }: { state: ClientState; onLeave: () => void })
     case "timesup":
       return <TimesUp />;
     case "scoring":
-      return <HostScoring results={room.phase.results} />;
+      return <HostScoring room={room} results={room.phase.results} />;
   }
 }

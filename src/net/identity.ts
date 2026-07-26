@@ -19,7 +19,7 @@ function key(field: string): string {
  * not dead code. Randomness quality doesn't matter: this id only namespaces a
  * seat in a party game.
  */
-function randomUUID(): string {
+export function randomUUID(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
   }

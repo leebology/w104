@@ -21,3 +21,9 @@ export function useRemaining(endsAt: number, offset: number): number {
 
   return remaining;
 }
+
+/** `m:ss` — the form the host timer's big numerals are drawn in. */
+export function formatClock(seconds: number): string {
+  const safe = Math.max(0, seconds);
+  return `${Math.floor(safe / 60)}:${String(safe % 60).padStart(2, "0")}`;
+}

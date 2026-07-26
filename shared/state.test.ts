@@ -11,6 +11,7 @@ function fullRoom(): Room {
     phase: { name: "playing", endsAt: 31_000 },
     category: "Bands",
     durationSec: 45,
+    round: 3,
     lastActivityAt: 2000,
     entries: { p0: [{ text: "Adele", at: 1500 }] },
     kicked: ["p1"],
@@ -32,6 +33,7 @@ describe("toRoomState", () => {
       "hostId",
       "phase",
       "players",
+      "round",
       "serverTime",
     ]);
   });
@@ -53,6 +55,7 @@ describe("toRoomState", () => {
       phase: { name: "playing", endsAt: 31_000 },
       category: "Bands",
       durationSec: 45,
+      round: 3,
       serverTime: 9000,
     });
   });
