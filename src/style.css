@@ -1,57 +1,1143 @@
+/* "Ok, Name One" — the design system from design_handoff_ok_name_one/.
+   Values here are final: the handoff's .dc.html is the source of truth for
+   anything numeric. Every colour and shape constant is a token; no rule below
+   should contain a loose hex value. */
+
 :root {
-  color-scheme: light dark;
-  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  /* Colour */
+  --pink: #E62E5C;        /* every screen background */
+  --cream: #FFF7E8;       /* cards, pills, text on pink */
+  --ink: #1A0710;         /* all borders, offset shadows, text on cream */
+  --ink-gold: #2A1400;    /* text sitting on gold */
+  --gold: #FFD400;        /* category banner, primary buttons */
+  --teal: #00A6A6;        /* timer fill, activity dots, "OK," plaque */
+  --cream-dim: rgba(255, 247, 232, 0.8); /* rules, quiet text on pink */
+  --ink-dim: #7A6A5C;     /* secondary text INSIDE cream cards */
+  --struck: #9C8B79;      /* duplicated words + their attribution emoji */
+  --card-rule: #E7D3BE;   /* hairlines and the timer track */
+  --code-empty: #F6D9C6;  /* unfilled room-code box */
+  --scroll-thumb: #C9B8A2;
+
+  /* Shape. Nothing here scales with the viewport — enlarging borders and
+     shadows on a big screen softens the flat-graphic look the design is
+     built on. Only type scales. */
+  --border: 3px solid var(--ink);
+  --border-heavy: 4px solid var(--ink);
+  --radius: 14px;
+  --shadow-card: 6px 6px 0 var(--ink);
+  --shadow-btn: 5px 5px 0 var(--ink);
+
+  --display: "Bungee", "Impact", ui-monospace, monospace;
+  --body: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  font-family: var(--body);
+  /* Deliberately no `color-scheme: light dark`: this is one committed look,
+     and letting the OS invert it breaks the never-cream-on-cream rule. */
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+/* The document never scrolls — not on any screen. Scrolling belongs to the
+   individual boxes that ask for it (the word list down, the avatar strip
+   sideways), never to the page, or the keyboard drags the whole layout up and
+   down and the control the player is reaching for goes with it. */
+html, body {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
   margin: 0;
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
+  background: var(--pink);
+  color: var(--cream);
+  font-family: var(--body);
+  -webkit-font-smoothing: antialiased;
+  /* A party game is never the page you want rubber-banding under your thumb. */
+  overscroll-behavior: none;
 }
 
-main {
+h1, h2, p, ul, ol { margin: 0; padding: 0; }
+ul, ol { list-style: none; }
+
+/* ---------------------------------------------------------------- screens */
+
+.screen {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--pink);
+}
+
+/* Phone screens were drawn at 390x844; the max-width keeps the composition
+   from stretching into nonsense on a tablet. */
+.screen--mobile {
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 52px 24px 30px;
+}
+
+/* The TV owns the viewport exactly — a host screen that scrolls is a host
+   screen nobody can read the bottom of. */
+.screen--host {
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+/* Phone screens that own the viewport exactly, the way `.screen--host` does
+   for the TV. Nothing on a player screen may push the page into scrolling,
+   because the control at the bottom (Ready up, the entry input) has to stay
+   reachable without one; anything that overflows scrolls inside its own box
+   instead.
+
+   Sized from the *visual* viewport, not `100dvh`, and pinned to it with
+   `position: fixed`. Both matter when the keyboard is up: `100dvh` still
+   measures the full screen, so the screen would keep its height and leave a
+   band of dead background below the fold, and a non-fixed screen would slide
+   as the browser scrolls the layout viewport around. `--vv-*` come from
+   src/viewport.ts and fall back to the pre-keyboard behaviour without it. */
+.screen--locked {
+  position: fixed;
+  top: var(--vv-top, 0px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 100%;
+  height: var(--vv-height, 100dvh);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.screen--centered {
+  justify-content: center;
+  align-items: center;
+  gap: 22px;
+  padding: 24px;
   text-align: center;
-  padding: 2rem;
-  max-width: 30rem;
 }
 
-h1 {
-  margin: 0 0 0.25rem;
-  font-size: 3rem;
-  letter-spacing: -0.03em;
+/* ------------------------------------------------------------- primitives */
+
+.card {
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
-.tagline {
-  margin: 0 0 2rem;
-  opacity: 0.7;
+.btn {
+  font: inherit;
+  font-family: var(--display);
+  font-size: 16px;
+  line-height: 1.06;
+  padding: 16px 30px;
+  border: var(--border-heavy);
+  border-radius: 99px;
+  background: var(--gold);
+  color: var(--ink-gold);
+  box-shadow: var(--shadow-btn);
+  cursor: pointer;
+  text-align: center;
+  /* Bungee is caps by design; this makes lowercase source strings match. */
+  text-transform: uppercase;
+  transition: transform 0.06s ease-out, box-shadow 0.06s ease-out;
 }
 
-.status {
+/* The button physically presses into its own shadow. */
+.btn:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn--secondary { background: var(--cream); color: var(--ink); }
+.btn--block { width: 100%; }
+
+.btn--small {
+  font-size: 13px;
+  padding: 10px 18px;
+  border-width: 3px;
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 16px;
+  border-radius: 99px;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+}
+
+.label {
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+
+/* Focus has to be visible against both pink and cream, so it is drawn in
+   teal with an ink ring rather than relying on the UA default. */
+:focus-visible {
+  outline: 3px solid var(--teal);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------- wordmark */
+
+/* A fixed unit, not two plaques that happen to sit near each other. `OK,` is
+   positioned against this box's left edge, so the box must be exactly as wide
+   as `NAME ONE!` — `max-content` — and must refuse to be resized by whatever
+   lays it out. Without `flex: 0 0 auto` the host header (a `space-between`
+   row) sizes it differently than the 390px phone column does, and the two
+   plaques visibly come apart. */
+.wordmark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: max-content;
+  flex: 0 0 auto;
+  /* Reserves the overhang *inside* this box instead of letting the `OK,`
+     plaque spill out of it. Locked screens and the host header both clip their
+     overflow, and a plaque hanging past their padding gets its corner shaved
+     off — so the logo carries its own room rather than borrowing the
+     container's. Kept in step with the negative margin on `__ok` below. */
+  padding-left: 24px;
+  /* Pulled into the side margins: the plaques are meant to feel oversized
+     for the page. */
+  margin: 0 -14px;
+}
+
+.wordmark__ok,
+.wordmark__name {
+  font-family: var(--display);
+  line-height: 1.06;
+  border: var(--border-heavy);
+}
+
+/* Deliberately hung off the left edge of the plaque below it. A fixed offset,
+   not a percentage, so the two plaques hold the same relationship at every
+   size — that overhang *is* the logo's shape. Exactly cancels the container's
+   padding-left, landing this plaque on the logo's own left edge. */
+.wordmark__ok {
+  align-self: flex-start;
+  margin-left: -24px;
+  background: var(--teal);
+  color: var(--cream);
+  border-radius: 8px;
+  padding: 4px 14px;
+  transform: rotate(-4deg);
+  box-shadow: 4px 4px 0 var(--ink);
+  font-size: 26px;
+  z-index: 2;
+}
+
+.wordmark__name {
+  background: var(--gold);
+  color: var(--ink-gold);
+  border-radius: 10px;
+  padding: 12px 18px;
+  transform: rotate(2deg);
+  box-shadow: 7px 7px 0 var(--ink);
+  margin-top: -6px;
+  font-size: 41px;
+  white-space: nowrap;
+}
+
+/* The overhang scales with the plaques, so the pair keeps its proportions. */
+.wordmark--small { padding-left: 16px; }
+
+.wordmark--small .wordmark__ok {
+  font-size: 18px;
+  box-shadow: 3px 3px 0 var(--ink);
+  margin-left: -16px;
+}
+.wordmark--small .wordmark__name { font-size: 28px; box-shadow: 5px 5px 0 var(--ink); }
+
+/* ---------------------------------------------------------------- landing */
+
+.landing { justify-content: center; gap: 32px; padding: 0 26px; }
+
+.code-card { padding: 20px; }
+
+.code-card__label {
+  font-family: var(--display);
+  font-size: 22px;
+  line-height: 1.06;
+  margin-bottom: 14px;
+}
+
+.code-boxes { display: flex; gap: 12px; }
+
+.code-box {
+  flex: 1;
+  min-width: 0;
+  aspect-ratio: 3 / 4;
+  border-radius: 12px;
+  border: var(--border-heavy);
+  background: var(--code-empty);
+  color: var(--ink);
+  font-family: var(--display);
+  /* Well clear of the 16px threshold below which iOS Safari zooms the page
+     in on focus. */
+  font-size: 30px;
+  text-align: center;
+  text-transform: uppercase;
+  padding: 0;
+  caret-color: var(--ink);
+}
+
+/* A typed box lifts off the page in gold; an empty one stays flat and sunken.
+   This is the only progress indicator on the join flow. */
+.code-box--filled {
+  background: var(--cream);
+  box-shadow: 4px 4px 0 var(--gold);
+}
+
+.code-card__error {
+  margin-top: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  /* Ink, not a new error colour — the design system has no red that isn't
+     already the page background. */
+  color: var(--ink);
+}
+
+.divider { display: flex; align-items: center; gap: 12px; }
+.divider::before,
+.divider::after {
+  content: "";
+  flex: 1;
+  height: 3px;
+  background: var(--cream-dim);
+}
+.divider span {
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  color: var(--cream);
+}
+
+.create-card__copy {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink-dim);
+  margin-bottom: 12px;
+}
+
+.version {
+  position: absolute;
+  left: 22px;
+  bottom: 16px;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--cream-dim);
+}
+
+/* ----------------------------------------------------------- host chrome */
+
+.host-header {
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 22px 34px;
+  flex: 0 0 auto;
+}
+
+.room-chip { gap: 14px; padding: 7px 18px; }
+
+.room-chip__label {
+  font-size: 14px;
+  color: var(--ink-dim);
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+}
+
+.room-chip__code {
+  font-family: var(--display);
+  font-size: 28px;
+  line-height: 1.06;
+  letter-spacing: 0.1em;
+}
+
+/* Centred on the header itself rather than between its neighbours, so it
+   stays put as the chip and the count change width. */
+.host-header__round {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-family: var(--display);
+  font-size: 18px;
+  letter-spacing: 0.14em;
+  color: var(--cream);
+  pointer-events: none;
+}
+
+.host-header__count {
+  font-size: 15px;
+  letter-spacing: 0.16em;
+  color: var(--cream);
+  white-space: nowrap;
+}
+
+.host-stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+/* The centrepiece: a gold block bleeding past both edges on a slight slant.
+   Also reused for the room code in the lobby and for TIME'S UP. */
+.banner {
+  position: absolute;
+  left: -40px;
+  right: -40px;
+  background: var(--gold);
+  color: var(--ink-gold);
+  transform: rotate(-2.5deg);
+  padding: 18px 0 22px;
+  text-align: center;
+  box-shadow: 0 12px 0 rgba(0, 0, 0, 0.25);
+}
+
+.banner__text {
+  font-family: var(--display);
+  font-size: clamp(64px, 11vw, 160px);
+  line-height: 1.12;
+  display: block;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
+.name-a {
+  position: absolute;
+  top: 26px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--display);
+  font-size: clamp(22px, 3.2vw, 38px);
+  line-height: 1.2;
+  letter-spacing: 0.18em;
+  color: var(--cream);
+  z-index: 3;
+}
+
+.roster-row {
+  position: absolute;
+  bottom: 22px;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 14px;
+  z-index: 3;
+}
+
+/* In the lobby the pills sit in the flow under the code rather than being
+   pinned to the bottom of a full-bleed stage. */
+.roster-row--inline { position: static; width: auto; max-width: 100%; }
+
+/* ------------------------------------------------------------ player pill */
+
+.player-pill__avatar { font-size: 22px; line-height: 1; }
+
+.player-pill__name {
+  font-family: var(--display);
+  font-size: 15px;
+  line-height: 1.06;
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The ONLY activity signal on the host screen. Decorative by design: it says
+   that someone is writing and must never encode how much. */
+.player-pill__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--teal);
+  flex: 0 0 auto;
+  animation: pulseDot var(--pulse, 1.2s) infinite;
+}
+
+.player-pill__ready { font-size: 14px; line-height: 1; }
+.player-pill__ready--waiting { color: var(--ink-dim); }
+
+.player-pill--offline { opacity: 0.45; }
+
+.player-pill__kick {
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid var(--ink);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.player-pill__kick:hover { background: var(--ink); color: var(--cream); }
+
+@keyframes pulseDot {
+  0%, 100% { opacity: 0.25; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+/* ------------------------------------------------------------- timer bar */
+
+.timer-bar {
+  flex: 0 0 auto;
+  height: 106px;
+  background: var(--cream);
+  color: var(--ink);
+  border-top: var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 32px;
+  gap: 24px;
+}
+
+.timer-bar__num {
+  font-family: var(--display);
+  font-size: clamp(34px, 4.7vw, 64px);
+  line-height: 1.06;
   font-variant-numeric: tabular-nums;
 }
 
-#count {
-  font-size: 1.5rem;
+.timer-track {
+  flex: 1;
+  height: 32px;
+  border-radius: 99px;
+  background: var(--card-rule);
+  overflow: hidden;
 }
 
-button {
+/* Width comes from the server's absolute deadline counted down locally —
+   never from a per-second broadcast. */
+.timer-track__fill {
+  height: 100%;
+  background: var(--teal);
+  transition: width 0.25s linear;
+}
+
+.timer-bar__label {
+  font-family: var(--display);
+  font-size: clamp(13px, 1.7vw, 20px);
+  line-height: 1.06;
+  white-space: nowrap;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------ host lobby */
+
+.host-lobby__stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  padding: 0 34px;
+}
+
+.host-lobby__join {
+  font-size: clamp(14px, 1.5vw, 18px);
+  letter-spacing: 0.16em;
+  color: var(--cream);
+  text-align: center;
+}
+
+/* The room code is the join affordance, so it gets the banner treatment the
+   category gets during a round. */
+.host-lobby__code {
+  position: relative;
+  left: auto;
+  right: auto;
+  align-self: stretch;
+  margin: 0 -74px;
+}
+
+.host-lobby__code .banner__text { letter-spacing: 0.1em; }
+
+.host-lobby__footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 0 34px 30px;
+}
+
+.host-lobby__hint {
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  color: var(--cream-dim);
+  text-align: center;
+}
+
+/* A countdown is a state change, not a notification — it takes the slant and
+   the gold so it reads from across the room. */
+.get-ready {
+  background: var(--gold);
+  color: var(--ink-gold);
+  border: var(--border-heavy);
+  border-radius: 10px;
+  padding: 12px 26px;
+  transform: rotate(-2.5deg);
+  box-shadow: var(--shadow-btn);
+  font-family: var(--display);
+  font-size: 24px;
+  line-height: 1.06;
+  text-align: center;
+}
+
+.get-ready--small { font-size: 17px; padding: 10px 20px; }
+
+/* ---------------------------------------------------------- host scoring */
+
+.host-scoring { padding: 24px 26px 18px; }
+
+.host-scoring__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+  flex: 0 0 auto;
+}
+
+.host-scoring__title {
+  font-family: var(--display);
+  font-size: clamp(20px, 2.7vw, 32px);
+  line-height: 1.06;
+  color: var(--cream);
+}
+
+/* Fixed-width columns, centred as a group, rather than stretching to fill
+   whatever width the TV has. --cols is set per render: one row up to five
+   players, two balanced rows up to the ten-player cap. `1fr` rows split the
+   height evenly, so a second row simply makes every card shorter. */
+.results {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 12px;
+  /* A fifth of the screen per card, expressed as a cap on the whole grid
+     rather than a fixed track width: five tracks of a literal 20vw come to
+     the entire viewport and then overflow it once gaps and the screen's own
+     padding are added. Capping and centring gives each card its fifth when
+     there is room and shrinks them together when there is not. */
+  width: 100%;
+  max-width: calc(var(--cols, 5) * 20vw);
+  margin: 0 auto;
+}
+
+/* Width follows from the height the row actually has, not the other way
+   round: a flat `width: 20vw` looks right for one row but overflows the TV
+   vertically at six-plus players, where two rows of portrait cards have to
+   share the same height. Deriving width from height means two rows shrink to
+   fit instead, and the 20vw cap is what holds a short row to the intended
+   fifth-of-the-screen rather than letting three cards sprawl. */
+/* Width comes from the column track; height fills whatever the row has. */
+.result-col {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.id-card { padding: 14px; flex: 0 0 auto; }
+
+.id-card__row { display: flex; align-items: center; gap: 10px; }
+.id-card__avatar { font-size: 30px; line-height: 1; }
+
+.id-card__who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.id-card__name {
+  font-family: var(--display);
+  font-size: 17px;
+  line-height: 1.06;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* One line, always: wrapping "ROOM JADE · ROUND 2" pushes the card taller
+   than the avatar and throws the row out of alignment. */
+.id-card__meta {
+  font-size: 11px;
+  color: var(--ink-dim);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.id-card__stats { display: flex; gap: 10px; text-align: center; flex: 0 0 auto; }
+
+.stat { display: flex; flex-direction: column; gap: 2px; }
+
+.stat__num {
+  font-family: var(--display);
+  font-size: 24px;
+  line-height: 1.06;
+  color: var(--ink-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The one number that matters is the only pink thing inside a cream card. */
+.stat__num--unique { color: var(--pink); }
+
+.stat__label { font-size: 9px; color: var(--ink-dim); letter-spacing: 0.1em; }
+
+.list-card { padding: 14px; flex: 1; min-height: 0; }
+
+.host-scoring__footer {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding-top: 16px;
+}
+
+/* -------------------------------------------------------------- word list */
+
+/* Scrolls in place: the surrounding layout must never grow, or twenty entries
+   would push the New Round button off a screen nobody can scroll. */
+.word-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+  padding-right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.word-list::-webkit-scrollbar { width: 6px; }
+.word-list::-webkit-scrollbar-track { background: transparent; }
+.word-list::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 99px;
+}
+
+.word-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: baseline;
+  line-height: 1.35;
+}
+
+.word {
+  font-size: var(--word-size, 16px);
+  font-weight: 600;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+
+/* Struck words carry no weight — they lost. */
+.word--struck {
+  font-weight: 400;
+  color: var(--struck);
+  text-decoration: line-through;
+}
+
+.word-row__also {
+  font-size: calc(var(--word-size, 16px) - 3px);
+  color: var(--struck);
+  flex: 0 0 auto;
+}
+
+.word-list__empty { font-size: 15px; color: var(--ink-dim); }
+
+/* -------------------------------------------------------- player screens */
+
+.player-lobby { gap: 16px; }
+
+.player-lobby__room {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  color: var(--cream);
+  text-align: center;
+}
+
+.field__label {
+  font-family: var(--display);
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  margin-bottom: 10px;
+  display: block;
+}
+
+.field__input {
+  font-family: var(--body);
+  font-size: 18px;
+  font-weight: 600;
+  width: 100%;
+  padding: 12px 14px;
+  border: var(--border);
+  border-radius: 10px;
+  background: var(--cream);
+  color: var(--ink);
+}
+
+.field__input::placeholder { color: var(--ink-dim); }
+
+/* Three fixed rows that run off the side, rather than as many wrapped rows as
+   48 avatars need. Wrapping made the card grow tall enough to push Ready up
+   off the bottom of the phone; this way the card's height is constant and the
+   overflow is horizontal, which is the one direction a player may scroll. */
+.avatars {
+  display: grid;
+  grid-template-rows: repeat(3, 48px);
+  grid-auto-flow: column;
+  grid-auto-columns: 48px;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* Room for the scrollbar so it never sits on top of the bottom row. */
+  padding-bottom: 6px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.avatars::-webkit-scrollbar { height: 6px; }
+.avatars::-webkit-scrollbar-track { background: transparent; }
+.avatars::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 99px;
+}
+
+/* 48px square clears the 44px minimum hit target with room to spare. */
+.avatar {
   font: inherit;
-  padding: 0.6rem 1.4rem;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  background: transparent;
-  color: inherit;
+  font-size: 24px;
+  line-height: 1;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 3px solid transparent;
+  border-radius: 12px;
+  background: var(--card-rule);
   cursor: pointer;
 }
 
-button:hover {
-  background: color-mix(in srgb, currentColor 12%, transparent);
+.avatar--selected {
+  border: var(--border-heavy);
+  background: var(--cream);
+  box-shadow: 4px 4px 0 var(--gold);
 }
 
-ul {
-  list-style: none;
+.player-lobby__footer { margin-top: auto; display: flex; flex-direction: column; gap: 14px; }
+
+/* ------------------------------------------------------- player: playing */
+
+/* Banner pinned, list scrolls, and the list card runs all the way to the
+   bottom — the entry input overlays its last line rather than sitting in a
+   box of its own below it, which is where the vertical space went. The sizing
+   that survives the keyboard (fixed to the visual viewport, so the screen is
+   exactly the area left visible) is `.screen--locked`'s job. */
+.playing {
+  padding: 0 20px 20px;
+  gap: 14px;
+}
+
+.playing__head {
+  flex: 0 0 auto;
+  position: relative;
+  padding: 18px 0 10px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.playing__name-a {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.18em;
+  color: var(--cream);
+}
+
+/* Same slant and bleed as the host banner, sized for a phone. */
+.playing__banner {
+  position: relative;
+  left: auto;
+  right: auto;
+  align-self: stretch;
+  margin: 0 -30px;
+  padding: 10px 0 12px;
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.25);
+}
+
+.playing__banner .banner__text {
+  font-size: clamp(28px, 11vw, 46px);
+  margin-top: 0;
+}
+
+.playing__card { flex: 1; min-height: 0; padding: 14px 14px 14px 16px; }
+
+/* Anchored to the bottom, like a chat log: with few entries they sit just
+   above the input, and each new one pushes the list up rather than leaving a
+   stretched gap below the header. The bottom padding is the line the entry
+   input occupies — without it the newest word would land underneath it. */
+.playing__list { justify-content: flex-end; gap: 4px; padding-bottom: 26px; }
+
+.playing__list .word { font-size: 17px; }
+
+.playing__empty {
+  margin: auto 0 0;
+  font-size: 15px;
+  color: var(--ink-dim);
+  text-align: center;
+}
+
+/* Mounted for the player's whole time in the room (see PlayerView) so a tap
+   during the lobby can open the keyboard and have it survive into the round
+   — only ever repositioned here, never unmounted. Off-screen via opacity, not
+   display:none, since the latter would blur it and drop the keyboard. */
+/* Anchored to the bottom of the *visual* viewport rather than `bottom: 0`.
+   A fixed element resolves `bottom` against the layout viewport, which the
+   keyboard does not shrink — so `bottom: 0` puts the input behind the
+   keyboard, which is the one place it must never be. */
+/* Lands on the word list's own last line. The padding is what aligns it: both
+   this and the screen are centred at the same max-width, so 20px (the round
+   screen's side padding) + 3px (the card's border) + 16px (the card's inner
+   padding) puts the caret exactly under the words above it, and 20 + 3 + 14
+   from the bottom sets it on the card's last line. Keep these in step with
+   `.playing` and `.playing__card` or the caret drifts off the column. */
+.entry-overlay {
+  position: fixed;
+  left: 50%;
+  top: calc(var(--vv-top, 0px) + var(--vv-height, 100dvh));
+  transform: translate(-50%, -100%);
+  width: 100%;
+  max-width: 480px;
+  padding: 0 39px 37px;
+  z-index: 10;
+}
+
+.entry-overlay.offstage { opacity: 0; pointer-events: none; }
+
+/* No box of its own: the card behind it supplies the paper, so this is bare
+   text and a caret on the list's next line. */
+.entry-overlay input {
+  font-family: var(--body);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  width: 100%;
   padding: 0;
-  margin: 1.5rem 0 0;
-  opacity: 0.8;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  caret-color: var(--ink);
+  box-shadow: none;
+}
+
+/* The caret is the focus indicator here. A focus ring would draw a box around
+   what is meant to read as a line of the list — and this input holds focus for
+   the entire round, so the ring would never go away. */
+.entry-overlay input:focus,
+.entry-overlay input:focus-visible {
+  outline: none;
+}
+
+.entry-overlay input::placeholder { color: var(--ink-dim); font-weight: 400; }
+
+/* Interrupts a 30-second sprint, so it says its piece and gets out of the way
+   on its own — no dismissing, and nothing in the layout moves to accommodate
+   it. Skinny and slanted to match the category banner, straight across the
+   middle where the player is already looking. */
+.reject-banner {
+  position: fixed;
+  top: calc(var(--vv-top, 0px) + var(--vv-height, 100dvh) / 2);
+  left: -20px;
+  right: -20px;
+  transform: translateY(-50%) rotate(-2.5deg);
+  padding: 9px 20px 11px;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  text-align: center;
+  z-index: 15;
+  /* It sits over the list mid-round; it must never eat a tap. */
+  pointer-events: none;
+  animation: reject-fade 2s linear forwards;
+}
+
+/* Full opacity on the first frame — a message that fades *in* is a message
+   half-missed — then away over the two seconds that follow. */
+@keyframes reject-fade {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* ------------------------------------------------------- player: scoring */
+
+.player-scoring { gap: 16px; }
+
+.player-scoring .id-card { padding: 16px; }
+.player-scoring .id-card__avatar { font-size: 38px; }
+.player-scoring .id-card__name { font-size: 22px; }
+/* The handoff draws this at 12px, where "ROOM JADE · ROUND 2" overruns the
+   slot left by the stat pair by about two pixels and either wraps or clips.
+   11px keeps it on the one line the design shows, with room for a two-digit
+   round number. */
+.player-scoring .id-card__meta { font-size: 11px; }
+.player-scoring .id-card__stats { gap: 14px; }
+.player-scoring .stat__num { font-size: 30px; }
+.player-scoring .stat__label { font-size: 10px; }
+.player-scoring .list-card { padding: 16px; }
+
+.player-scoring__footer {
+  flex: 0 0 auto;
+  font-size: 14px;
+  color: var(--cream);
+  text-align: center;
+}
+
+/* --------------------------------------------------- times up / utility */
+
+.timesup { justify-content: center; overflow: hidden; }
+
+.timesup__banner {
+  position: relative;
+  left: auto;
+  right: auto;
+  width: 110%;
+  margin: 0 -5%;
+  padding: 26px 0 30px;
+}
+
+.timesup__banner .banner__text {
+  font-size: clamp(48px, 13vw, 150px);
+  margin-top: 0;
+  letter-spacing: 0.02em;
+}
+
+.notice { font-size: 16px; line-height: 1.45; color: var(--ink); }
+.notice--dim { color: var(--ink-dim); }
+
+.centered-card { width: 100%; max-width: 360px; text-align: center; gap: 16px; }
+
+/* Survives navigating back through Landing, so it sits above everything
+   rather than inside any one screen. */
+/* Overlays the top of the screen rather than pushing it down: locked screens
+   are fixed to the viewport, so a banner in normal flow would sit behind one
+   instead of above it. It only ever appears over Landing, whose content is
+   vertically centred and has room to spare up there. */
+.kicked-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.1em;
+  text-align: center;
+  padding: 12px 20px;
+}
+
+.back-pill {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  z-index: 5;
+  font-family: var(--display);
+  font-size: 12px;
+  line-height: 1;
+  padding: 9px 16px;
+  border: var(--border);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--cream);
+  cursor: pointer;
+}
+
+.back-pill:hover { background: var(--cream); color: var(--ink); }
+
+/* The pulse is the only motion in the app; freezing it visible keeps the
+   "who is here" signal without the animation. */
+@media (prefers-reduced-motion: reduce) {
+  .player-pill__dot { animation: none; opacity: 1; transform: none; }
+  .btn, .timer-track__fill { transition: none; }
+}
+
+/* Phones narrower than the 390px the design was drawn at. */
+@media (max-width: 360px) {
+  .screen--mobile { padding: 40px 16px 24px; }
+  .landing { padding: 0 18px; }
+  .wordmark__name { font-size: 34px; }
+  .code-card { padding: 16px; }
+  .code-boxes { gap: 8px; }
+  /* Below the 390px the design was drawn at, the stat pair leaves the
+     identity line too little room to hold "ROOM JADE · ROUND 3" on one line.
+     Wrapping it grows the card slightly; clipping it would hide the round
+     number outright, so this is the better of the two. */
+  .player-scoring .id-card__meta {
+    white-space: normal;
+    overflow: visible;
+  }
+}
+
+/* Laptop-sized "TV" — the host screens still have to hold together. */
+@media (max-width: 900px) {
+  .host-header { padding: 14px 18px; }
+  .room-chip { gap: 8px; padding: 6px 12px; }
+  .room-chip__label { font-size: 10px; letter-spacing: 0.1em; }
+  .room-chip__code { font-size: 20px; }
+  .host-header__round { font-size: 13px; }
+  .host-header__count { font-size: 12px; }
+  .timer-bar { height: 78px; padding: 0 18px; gap: 14px; }
+  .timer-track { height: 22px; }
+  .host-scoring { padding: 16px 16px 12px; }
+  .host-lobby__code { margin: 0 -50px; }
 }

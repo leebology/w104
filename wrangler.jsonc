@@ -13,5 +13,18 @@
   },
   // `new_sqlite_classes` (not `new_classes`) is required for Durable Objects on
   // the Cloudflare free plan. Do not change to new_classes — it needs a paid plan.
-  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["W104"] }]
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["W104"] }],
+  // Named environments do NOT inherit durable_objects bindings from the
+  // top level, so it must be repeated here. Migrations are top-level and
+  // apply to every environment already, so they are not repeated.
+  "env": {
+    "staging": {
+      "name": "w104-staging",
+      "workers_dev": true,
+      "observability": { "enabled": true },
+      "durable_objects": {
+        "bindings": [{ "name": "W104", "class_name": "W104" }]
+      }
+    }
+  }
 }
