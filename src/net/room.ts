@@ -151,17 +151,32 @@ export class RoomStore {
   private receive(msg: ServerMessage): void {
     switch (msg.type) {
       case "state": {
-        const wasScoring = this.state.room?.phase.name === "scoring";
-        const nowLobby = msg.state.phase.name === "lobby";
-        const freshRound = wasScoring && nowLobby;
+        // `history` only ever grows (banked one round at a time by
+        // showStandings) or resets to empty (backToLobby ending the match) —
+        // the only two places shared/reduce.ts touches it — so a length
+        // change is exactly "the round this client was typing in is now
+        // over," regardless of which phases happen to sit on either side of
+        // it. This used to be a direct `scoring -> lobby` phase check, which
+        // silently stopped firing the moment showStandings started landing
+        // on "standings" instead of "lobby"; keying off the data rather than
+        // the phase shape survives the next phase rename too.
+        //
+        // Guarded on `this.state.room` because the very first `state`
+        // message a freshly-connected socket receives has no previous room
+        // to diff against — comparing against nothing would read as a
+        // "change" and wipe out the entries `yourEntries` just populated a
+        // moment earlier, for a player rejoining mid-match.
+        const historyChanged =
+          this.state.room !== null &&
+          this.state.room.history.length !== msg.state.history.length;
         this.set({
           room: msg.state,
           clockOffset: msg.state.serverTime - Date.now(),
-          // A new game wipes the local list; the server already cleared its own.
-          entries: freshRound ? [] : this.state.entries,
+          // The server already cleared its own copy at showStandings/backToLobby.
+          entries: historyChanged ? [] : this.state.entries,
           // Otherwise a rejection from the last round (e.g. "You already wrote
           // that.") would still be showing when the next one starts.
-          rejected: freshRound ? null : this.state.rejected,
+          rejected: historyChanged ? null : this.state.rejected,
         });
         break;
       }
