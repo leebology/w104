@@ -946,6 +946,7 @@ describe("long rounds", () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 });
+```
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
