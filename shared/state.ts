@@ -48,7 +48,9 @@ export type Phase =
   | { name: "countdown"; endsAt: number }
   | { name: "playing"; endsAt: number }
   | { name: "timesup"; endsAt: number }
-  | { name: "scoring"; results: Results };
+  | { name: "scoring"; results: Results }
+  /** Match standings between rounds and at the end. Untimed; the host advances it. */
+  | { name: "standings" };
 
 /** Server-only. The Durable Object's complete picture. Never sent as-is. */
 export type Room = {

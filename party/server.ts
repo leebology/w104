@@ -244,8 +244,20 @@ export class W104 extends Server<Env> {
         }
         break;
       }
-      case "newGame":
-        this.room = reduce(this.room, { t: "newGame", playerId, now });
+      case "setSettings":
+        this.room = reduce(this.room, {
+          t: "setSettings",
+          playerId,
+          roundCount: msg.roundCount,
+          durationSec: msg.durationSec,
+          now,
+        });
+        break;
+      case "showStandings":
+        this.room = reduce(this.room, { t: "showStandings", playerId, now });
+        break;
+      case "backToLobby":
+        this.room = reduce(this.room, { t: "backToLobby", playerId, now });
         break;
     }
 

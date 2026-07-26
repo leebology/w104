@@ -58,7 +58,7 @@ export function HostScoring({ room, results }: Props) {
               </div>
             </div>
             {/* The list scrolls inside its card; the grid around it never
-                grows, so the New Round button stays on screen. */}
+                grows, so the Standings button stays on screen. */}
             <div className="card list-card">
               <WordList entries={p.entries} size={16} empty="Nothing written." />
             </div>
@@ -70,9 +70,9 @@ export function HostScoring({ room, results }: Props) {
         <button
           type="button"
           className="btn"
-          onClick={() => roomStore.send({ type: "newGame" })}
+          onClick={() => roomStore.send({ type: "showStandings" })}
         >
-          New round
+          Standings
         </button>
       </div>
     </main>

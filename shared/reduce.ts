@@ -1,5 +1,7 @@
 import { scoreRound, normalize } from "./scoring";
-import type { Entry, Player, PlayerId, Room } from "./state";
+import { placeRound } from "./standings";
+import { matchComplete, preRoundPhase } from "./state";
+import type { Entry, Player, PlayerId, Room, RoundSummary } from "./state";
 
 export const COUNTDOWN_MS = 5_000;
 export const TIMESUP_MS = 3_000;
@@ -35,7 +37,9 @@ export type RoomEvent =
   | { t: "cancelStart"; playerId: PlayerId; now: number }
   | { t: "kick"; playerId: PlayerId; targetId: PlayerId; now: number }
   | { t: "disconnect"; playerId: PlayerId; now: number }
-  | { t: "newGame"; playerId: PlayerId; now: number }
+  | { t: "setSettings"; playerId: PlayerId; roundCount?: number; durationSec?: number; now: number }
+  | { t: "showStandings"; playerId: PlayerId; now: number }
+  | { t: "backToLobby"; playerId: PlayerId; now: number }
   | { t: "tick"; now: number };
 
 const mapPlayer = (
@@ -54,18 +58,46 @@ function everyoneReady(room: Room): boolean {
 }
 
 /**
- * The lobby <-> countdown edge is derived, not commanded: any event that
+ * Settings arrive over a socket, so the stepper's restrictions are not a
+ * guarantee — a hand-rolled message must not be able to set a nine-hour
+ * round. Non-finite values fall back to what is already set rather than
+ * poisoning the room with NaN.
+ */
+function clampSetting(value: number | undefined, min: number, max: number, current: number): number {
+  if (value === undefined || !Number.isFinite(value)) return current;
+  return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+/**
+ * The pre-round <-> countdown edge is derived, not commanded: any event that
  * changes readiness re-evaluates it, so un-readying mid-countdown backs out
  * without needing its own case.
+ *
+ * "Pre-round" is the lobby before round one and the standings screen between
+ * rounds — readiness governs every round start, not just the first. The
+ * `matchComplete` guard is what stops readying up on the final standings from
+ * opening a countdown for a round that does not exist.
  */
 function settle(room: Room, now: number): Room {
-  if (room.phase.name === "lobby" && everyoneReady(room)) {
+  const phase = room.phase;
+  if (phase.name === "lobby" || phase.name === "standings") {
+    if (phase.name === "standings" && matchComplete(room)) return room;
+    if (!everyoneReady(room)) return room;
     return { ...room, phase: { name: "countdown", endsAt: now + COUNTDOWN_MS } };
   }
-  if (room.phase.name === "countdown" && !everyoneReady(room)) {
-    return { ...room, phase: { name: "lobby" } };
+  if (phase.name === "countdown" && !everyoneReady(room)) {
+    return { ...room, phase: backPhase(room) };
   }
   return room;
+}
+
+/**
+ * Written as an explicit ternary rather than `{ name: preRoundPhase(room) }`
+ * because TypeScript will not assign `{ name: "lobby" | "standings" }` to the
+ * `Phase` union.
+ */
+function backPhase(room: Room): Room["phase"] {
+  return preRoundPhase(room) === "lobby" ? { name: "lobby" } : { name: "standings" };
 }
 
 export function reduce(room: Room, ev: RoomEvent): Room {
@@ -119,7 +151,13 @@ function apply(room: Room, ev: RoomEvent): Room {
       };
 
     case "ready":
-      if (room.phase.name !== "lobby" && room.phase.name !== "countdown") return room;
+      if (
+        room.phase.name !== "lobby" &&
+        room.phase.name !== "countdown" &&
+        room.phase.name !== "standings"
+      ) {
+        return room;
+      }
       return {
         ...room,
         players: mapPlayer(room.players, ev.playerId, (p) => ({ ...p, ready: ev.ready })),
@@ -127,7 +165,10 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "startGame":
       if (ev.playerId !== room.hostId) return room;
-      if (room.phase.name !== "lobby") return room;
+      // Legal from the lobby and from standings between rounds — both are
+      // pre-round phases, and both open the same countdown.
+      if (room.phase.name !== "lobby" && room.phase.name !== "standings") return room;
+      if (room.phase.name === "standings" && matchComplete(room)) return room;
       // A deliberate host override: unlike the natural everyoneReady path,
       // this can start the countdown with just one connected player.
       if (room.players.filter((p) => p.connected).length < 1) return room;
@@ -146,7 +187,7 @@ function apply(room: Room, ev: RoomEvent): Room {
       // this cancel is meant to stop.
       return {
         ...room,
-        phase: { name: "lobby" },
+        phase: backPhase(room),
         players: room.players.map((p) => ({ ...p, ready: false })),
       };
     }
@@ -156,8 +197,8 @@ function apply(room: Room, ev: RoomEvent): Room {
       const { [ev.targetId]: _removed, ...entries } = room.entries;
       // Removing the player is not enough on its own: their socket
       // auto-reconnects and the lobby would re-admit them as a newcomer. The
-      // ban is what makes a kick stick, so it outlives the round — `newGame`
-      // deliberately does not clear it.
+      // ban is what makes a kick stick, so it outlives the round —
+      // `backToLobby` deliberately does not clear it.
       return {
         ...room,
         players: room.players.filter((p) => p.id !== ev.targetId),
@@ -178,14 +219,60 @@ function apply(room: Room, ev: RoomEvent): Room {
         hostGoneAt: ev.playerId === room.hostId ? ev.now : room.hostGoneAt,
       };
 
-    case "newGame":
+    case "setSettings": {
+      if (ev.playerId !== room.hostId) return room;
+      // Locked once the match starts: changing the round count mid-match
+      // would move the finish line under the players.
+      if (room.phase.name !== "lobby") return room;
+      const roundCount = clampSetting(
+        ev.roundCount, MIN_ROUND_COUNT, MAX_ROUND_COUNT, room.settings.roundCount,
+      );
+      const durationSec = clampSetting(
+        ev.durationSec, MIN_DURATION_SEC, MAX_DURATION_SEC, room.settings.durationSec,
+      );
+      if (
+        roundCount === room.settings.roundCount &&
+        durationSec === room.settings.durationSec
+      ) {
+        return room;
+      }
+      return { ...room, settings: { roundCount, durationSec } };
+    }
+
+    case "showStandings": {
       if (ev.playerId !== room.hostId) return room;
       if (room.phase.name !== "scoring") return room;
+      const summary: RoundSummary = {
+        category: room.category,
+        places: placeRound(room.phase.results),
+      };
+      // Clearing `ready` is not optional: everyone is still flagged ready from
+      // the round that just ended, and `settle` would fire the next countdown
+      // instantly, skipping the standings screen entirely.
+      //
+      // Clearing `entries` here is the single place the raw word store is
+      // emptied — the round is banked into history and the words have already
+      // been shown, so nothing reads it again.
+      return {
+        ...room,
+        phase: { name: "standings" },
+        history: [...room.history, summary],
+        entries: {},
+        players: room.players.map((p) => ({ ...p, ready: false })),
+      };
+    }
+
+    case "backToLobby":
+      if (ev.playerId !== room.hostId) return room;
+      if (room.phase.name !== "standings") return room;
+      // Settings survive — the host usually wants the same match again — and
+      // so does `kicked`, which is durable for the room's lifetime.
       return {
         ...room,
         phase: { name: "lobby" },
         players: room.players.map((p) => ({ ...p, ready: false })),
         entries: {},
+        history: [],
       };
 
     case "tick":

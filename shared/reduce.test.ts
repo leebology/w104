@@ -1,7 +1,7 @@
 import { describe, expect, test } from "vitest";
-import { createRoom, currentRound } from "./state";
+import { createRoom, currentRound, matchComplete, preRoundPhase } from "./state";
 import type { Room } from "./state";
-import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, TIMESUP_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
+import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, TIMESUP_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
 
 /** A room with `n` joined players, none ready, plus a host. */
 function seed(n: number, now = 1000): Room {
@@ -203,47 +203,6 @@ describe("round progression", () => {
     expect(p0.total).toBe(2);
     expect(p0.unique).toBe(1);
   });
-
-  test("a new game returns to the lobby and clears entries", () => {
-    let room = playing();
-    room = submitEntry(room, "p0", "Adele", 10_000).room;
-    const playEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: playEnd });
-    const upEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: upEnd });
-
-    room = reduce(room, { t: "newGame", playerId: "host", now: upEnd + 100 });
-    expect(room.phase.name).toBe("lobby");
-    expect(room.entries).toEqual({});
-    expect(room.players.every((p) => !p.ready)).toBe(true);
-  });
-
-  test("a new game leaves the round derived from history", () => {
-    let room = playing();
-    expect(currentRound(room)).toBe(1);
-    const playEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: playEnd });
-    const upEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: upEnd });
-
-    room = reduce(room, { t: "newGame", playerId: "host", now: upEnd + 100 });
-    // newGame does not bank a round; history is what moves the counter, and
-    // Task 3 replaces newGame with showStandings + backToLobby.
-    expect(currentRound(room)).toBe(1);
-  });
-
-  test("a new game does not un-kick anyone", () => {
-    let room = playing();
-    const playEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: playEnd });
-    const upEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: upEnd });
-
-    room = reduce(room, { t: "kick", playerId: "host", targetId: "p1", now: upEnd + 50 });
-    room = reduce(room, { t: "newGame", playerId: "host", now: upEnd + 100 });
-    expect(room.kicked).toEqual(["p1"]);
-    expect(room.players.map((p) => p.id)).toEqual(["p0"]);
-  });
 });
 
 describe("submitEntry", () => {
@@ -415,5 +374,236 @@ describe("the host leaving", () => {
     // Well past both the grace window and the round's own deadline.
     expect(endsAt).toBeGreaterThan(4_000 + HOST_GRACE_MS);
     expect(alarmOutcome(room, endsAt, true).action).toBe("reap");
+  });
+});
+
+/** A room parked on the scoring screen with one round's results in hand. */
+function scored(roundCount = 3): Room {
+  let room = playing();
+  room = { ...room, settings: { ...room.settings, roundCount } };
+  room = submitEntry(room, "p0", "Adele", 10_000).room;
+  room = submitEntry(room, "p0", "Beyonce", 10_100).room;
+  room = submitEntry(room, "p1", "Adele", 10_200).room;
+  const playEnd = (room.phase as { endsAt: number }).endsAt;
+  room = reduce(room, { t: "tick", now: playEnd });
+  const upEnd = (room.phase as { endsAt: number }).endsAt;
+  return reduce(room, { t: "tick", now: upEnd });
+}
+
+describe("setSettings", () => {
+  test("the host sets rounds and duration", () => {
+    const room = reduce(seed(2), {
+      t: "setSettings", playerId: "host", roundCount: 3, durationSec: 90, now: 2000,
+    });
+    expect(room.settings).toEqual({ roundCount: 3, durationSec: 90 });
+  });
+
+  test("a player cannot set settings", () => {
+    const before = seed(2);
+    const after = reduce(before, {
+      t: "setSettings", playerId: "p0", roundCount: 5, durationSec: 60, now: 2000,
+    });
+    expect(after).toBe(before);
+  });
+
+  test("settings cannot change once the match is under way", () => {
+    const before = playing();
+    const after = reduce(before, {
+      t: "setSettings", playerId: "host", roundCount: 5, durationSec: 60, now: 2000,
+    });
+    expect(after).toBe(before);
+  });
+
+  test("out-of-range values are clamped", () => {
+    const room = reduce(seed(2), {
+      t: "setSettings", playerId: "host", roundCount: 99, durationSec: 99_999, now: 2000,
+    });
+    expect(room.settings).toEqual({
+      roundCount: MAX_ROUND_COUNT, durationSec: MAX_DURATION_SEC,
+    });
+    const low = reduce(seed(2), {
+      t: "setSettings", playerId: "host", roundCount: 0, durationSec: 1, now: 2000,
+    });
+    expect(low.settings).toEqual({ roundCount: 1, durationSec: MIN_DURATION_SEC });
+  });
+
+  test("fractional values round and non-finite ones keep the current setting", () => {
+    const room = reduce(seed(2), {
+      t: "setSettings", playerId: "host", roundCount: 2.6, durationSec: Number.NaN, now: 2000,
+    });
+    expect(room.settings).toEqual({ roundCount: 3, durationSec: 30 });
+  });
+
+  test("setting the values they already hold is a no-op", () => {
+    const before = seed(2);
+    const after = reduce(before, {
+      t: "setSettings", playerId: "host", roundCount: 1, durationSec: 30, now: 2000,
+    });
+    expect(after).toBe(before);
+  });
+
+  test("an omitted field leaves that setting alone", () => {
+    let room = reduce(seed(2), {
+      t: "setSettings", playerId: "host", roundCount: 4, durationSec: 60, now: 2000,
+    });
+    room = reduce(room, { t: "setSettings", playerId: "host", durationSec: 45, now: 2100 });
+    expect(room.settings).toEqual({ roundCount: 4, durationSec: 45 });
+  });
+});
+
+describe("showStandings", () => {
+  test("banks the round, clears entries and un-readies everyone", () => {
+    const room = reduce(scored(), { t: "showStandings", playerId: "host", now: 50_000 });
+    expect(room.phase.name).toBe("standings");
+    expect(room.history).toHaveLength(1);
+    expect(room.history[0].category).toBe(room.category);
+    expect(room.history[0].places.p0.place).toBe(1);
+    expect(room.history[0].places.p1.place).toBe(2);
+    expect(room.entries).toEqual({});
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("banking a round advances the derived round number", () => {
+    const room = reduce(scored(), { t: "showStandings", playerId: "host", now: 50_000 });
+    expect(currentRound(room)).toBe(2);
+  });
+
+  test("a player cannot show standings", () => {
+    const before = scored();
+    expect(reduce(before, { t: "showStandings", playerId: "p0", now: 50_000 })).toBe(before);
+  });
+
+  test("standings can only be shown from the scoring screen", () => {
+    const before = playing();
+    expect(reduce(before, { t: "showStandings", playerId: "host", now: 50_000 })).toBe(before);
+  });
+});
+
+describe("between rounds", () => {
+  const toStandings = (roundCount = 3) =>
+    reduce(scored(roundCount), { t: "showStandings", playerId: "host", now: 50_000 });
+
+  test("everyone readying up opens the next countdown", () => {
+    const room = readyAll(toStandings(), 51_000);
+    expect(room.phase.name).toBe("countdown");
+    expect((room.phase as { endsAt: number }).endsAt).toBe(51_000 + COUNTDOWN_MS);
+  });
+
+  test("un-readying returns to standings, not the lobby", () => {
+    let room = readyAll(toStandings(), 51_000);
+    room = reduce(room, { t: "ready", playerId: "p0", ready: false, now: 51_500 });
+    expect(room.phase.name).toBe("standings");
+  });
+
+  test("the host cancelling returns to standings and un-readies everyone", () => {
+    let room = readyAll(toStandings(), 51_000);
+    room = reduce(room, { t: "cancelStart", playerId: "host", now: 51_500 });
+    expect(room.phase.name).toBe("standings");
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("the host can force-start the next round solo", () => {
+    let room = toStandings();
+    room = reduce(room, { t: "disconnect", playerId: "p1", now: 51_000 });
+    room = reduce(room, { t: "startGame", playerId: "host", now: 51_100 });
+    expect(room.phase.name).toBe("countdown");
+    expect(room.players.every((p) => p.ready)).toBe(true);
+  });
+
+  test("cancelling a countdown leaves the round number untouched", () => {
+    const standings = toStandings();
+    expect(currentRound(standings)).toBe(2);
+    let room = readyAll(standings, 51_000);
+    room = reduce(room, { t: "cancelStart", playerId: "host", now: 51_500 });
+    expect(currentRound(room)).toBe(2);
+  });
+
+  test("readying up on the final standings starts nothing", () => {
+    const room = readyAll(toStandings(1), 51_000);
+    expect(matchComplete(room)).toBe(true);
+    expect(room.phase.name).toBe("standings");
+  });
+
+  test("the host cannot force-start past the final round", () => {
+    const before = toStandings(1);
+    expect(reduce(before, { t: "startGame", playerId: "host", now: 51_000 })).toBe(before);
+  });
+
+  test("the next round runs on the configured duration", () => {
+    let room = toStandings();
+    room = { ...room, settings: { ...room.settings, durationSec: 60 } };
+    room = readyAll(room, 51_000);
+    const cdEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: cdEnd });
+    expect((room.phase as { endsAt: number }).endsAt).toBe(cdEnd + 60_000);
+  });
+});
+
+describe("backToLobby", () => {
+  const finished = () =>
+    reduce(scored(1), { t: "showStandings", playerId: "host", now: 50_000 });
+
+  test("resets the match but keeps settings and kicks", () => {
+    let room = finished();
+    room = reduce(room, { t: "kick", playerId: "host", targetId: "p1", now: 50_100 });
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 50_200 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.history).toEqual([]);
+    expect(room.entries).toEqual({});
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+    expect(room.settings.roundCount).toBe(1);
+    expect(room.kicked).toEqual(["p1"]);
+    expect(currentRound(room)).toBe(1);
+    expect(preRoundPhase(room)).toBe("lobby");
+  });
+
+  test("a player cannot end the match", () => {
+    const before = finished();
+    expect(reduce(before, { t: "backToLobby", playerId: "p0", now: 50_200 })).toBe(before);
+  });
+
+  test("only reachable from standings", () => {
+    const before = scored();
+    expect(reduce(before, { t: "backToLobby", playerId: "host", now: 50_200 })).toBe(before);
+  });
+});
+
+describe("long rounds", () => {
+  test("the entry cap still holds at the ten-minute duration", () => {
+    let room = seed(2);
+    room = reduce(room, {
+      t: "setSettings", playerId: "host", durationSec: MAX_DURATION_SEC, now: 1000,
+    });
+    room = readyAll(room, 1000);
+    const cdEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: cdEnd });
+
+    for (let i = 0; i < MAX_ENTRIES; i++) {
+      room = submitEntry(room, "p0", `word-${i}`, cdEnd + i).room;
+    }
+    const overflow = submitEntry(room, "p0", "one too many", cdEnd + MAX_ENTRIES);
+    expect(overflow.accepted).toBe(false);
+    expect(overflow.reason).toBe("limit");
+    expect(room.entries.p0).toHaveLength(MAX_ENTRIES);
+  });
+
+  test("scoring a full ten-player room stays fast", () => {
+    let room = seed(MAX_PLAYERS);
+    room = readyAll(room, 1000);
+    const cdEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: cdEnd });
+    for (const p of room.players) {
+      for (let i = 0; i < MAX_ENTRIES; i++) {
+        room = submitEntry(room, p.id, `${p.id}-word-${i}`, cdEnd + i).room;
+      }
+    }
+    const playEnd = (room.phase as { endsAt: number }).endsAt;
+    const started = Date.now();
+    room = reduce(room, { t: "tick", now: playEnd });
+    room = reduce(room, { t: "tick", now: (room.phase as { endsAt: number }).endsAt });
+    expect(room.phase.name).toBe("scoring");
+    // 10 x 200 entries is ~2M union-find comparisons. Generous ceiling: this
+    // is a regression guard against an accidental O(n^3), not a benchmark.
+    expect(Date.now() - started).toBeLessThan(5_000);
   });
 });

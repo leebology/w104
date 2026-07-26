@@ -8,7 +8,9 @@ export type ClientMessage =
   | { type: "cancelStart" }
   | { type: "kick"; targetId: PlayerId }
   | { type: "submitEntry"; text: string; seq: number }
-  | { type: "newGame" }
+  | { type: "setSettings"; roundCount?: number; durationSec?: number }
+  | { type: "showStandings" }
+  | { type: "backToLobby" }
   | { type: "endGame" };
 
 export type ServerMessage =
