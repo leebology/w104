@@ -9,9 +9,12 @@ w104 is a Jackbox-style party game: players join from their phones, one device
 list items in a category before a timer runs out; scoring is Boggle rules — a
 word scores only if no other player wrote it.
 
-v1 scope is one 30-second round, category "woman", scored and displayed. The
-long product wishlist (`Project W-104.md`, untracked) is deliberately *not*
-built — see "Out of scope" in the design spec before adding anything from it.
+v1 scope is a match of 1–10 rounds on the fixed category "woman", with the host
+setting round count and a per-round timer from 15 seconds to 10 minutes. This
+match structure has landed — see
+`docs/superpowers/specs/2026-07-26-match-structure-design.md`. The long product
+wishlist (`Project W-104.md`, untracked) is deliberately *not* built — see "Out
+of scope" in the design spec before adding anything from it.
 
 ## Commands
 
@@ -25,7 +28,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (70 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (129 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -69,9 +72,13 @@ replaced wholesale on each `state` push; every client action is a *request*.
   object for a no-op.
 - Phase transitions run off DO alarms, not client timers. `nextAlarmAt` serves
   double duty: the current phase deadline, or the idle-reap horizon.
-- The lobby↔countdown edge is *derived* in `settle()`, not commanded — anything
-  that changes readiness re-evaluates it. `startGame` is the one exception
-  (host solo-start bypasses `MIN_PLAYERS`), and `reduce` skips `settle` for it.
+- The pre-round↔countdown edge is *derived* in `settle()`, not commanded —
+  anything that changes readiness re-evaluates it. "Pre-round" covers both the
+  lobby before round one and the standings screen between rounds, guarded by
+  `matchComplete` so readying up on the final standings cannot open a countdown
+  for a round that does not exist. `startGame` is legal from both lobby and
+  standings and is still the one exception (host solo-start bypasses
+  `MIN_PLAYERS`), and `reduce` skips `settle` for it.
 - The server implements `onAlarm()`, **not** `alarm()`. PartyServer's own
   `alarm()` initializes the object then calls `onAlarm()`; overriding `alarm()`
   skips `onStart()` on a cold wake, `this.room` stays null, and the round hangs
@@ -87,7 +94,7 @@ replaced wholesale on each `state` push; every client action is a *request*.
   words rivals have. `submitEntry` deliberately does not broadcast.
 - **Timers broadcast an absolute `endsAt`, never per-second ticks.** Clients
   count down locally against `clockOffset` (`src/net/clock.ts`). Per-second
-  broadcasts put a 30-second game at the mercy of party wifi.
+  broadcasts put a round at the mercy of party wifi.
 - **Anything persisted must survive JSON.** DO storage serializes as JSON, so
   `entries` is a `Record` and `kicked` an array — a `Map`/`Set` comes back
   empty. Also add a defaulting fallback in `load()` for any new field, since
@@ -98,6 +105,13 @@ replaced wholesale on each `state` push; every client action is a *request*.
   no `--local-protocol https`.
 - The host is not a player. A natural start needs 2+ *connected* players all
   ready; the host's Start button force-readies everyone and can start solo.
+- **The round number is derived, never stored.** `currentRound(room)` is
+  `history.length + 1`. A stored counter would have to increment when an
+  inter-round countdown opens and decrement when it is cancelled; history only
+  grows, and only at `showStandings`, so deriving makes a cancel a real no-op.
+- **`Room.history` holds aggregates only, never words.** It rides in
+  `RoomState`, so an `entries` field on `RoundSummary` would leak every past
+  round to every socket — the same boundary `toRoomState` exists to hold.
 
 ### Identity, sessions, and kicks
 
@@ -113,8 +127,8 @@ Three distinct ids, easy to confuse:
   because it is reused across reconnects and would collide in PartyServer's
   connection map.
 
-A kick is durable for the room's lifetime (`newGame` does not clear it) and is
-enforced at the connect gate, before `join` can seat anyone.
+A kick is durable for the room's lifetime (`backToLobby` does not clear it) and
+is enforced at the connect gate, before `join` can seat anyone.
 
 ### Client
 
@@ -139,6 +153,9 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
 
 - `docs/superpowers/specs/2026-07-25-w104-mvp-design.md` — the design spec:
   decisions, rationale, failure-handling table. Read before non-trivial changes.
+- `docs/superpowers/specs/2026-07-26-match-structure-design.md` — the match
+  structure spec: host-set round count/timer, the standings phase, golf
+  placement scoring. Supersedes the single-round scope in the MVP spec above.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.
