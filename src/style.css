@@ -1141,3 +1141,175 @@ ul, ol { list-style: none; }
   .host-scoring { padding: 16px 16px 12px; }
   .host-lobby__code { margin: 0 -50px; }
 }
+
+/* ------------------------------------------------------- host standings */
+
+.host-standings {
+  padding: 0;
+}
+
+.host-standings__title {
+  font-family: var(--display);
+  font-size: clamp(18px, 2.2vw, 28px);
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+/* The list is the only thing allowed to scroll — the footer button has to
+   stay on screen at ten players. */
+.standings-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 28px;
+}
+
+.standing-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 18px;
+}
+
+.standing-card__place {
+  font-family: var(--display);
+  font-size: clamp(22px, 2.6vw, 34px);
+  color: var(--ink);
+  min-width: 1.6em;
+}
+
+.standing-card__avatar {
+  font-size: clamp(22px, 2.6vw, 34px);
+}
+
+.standing-card__name {
+  flex: 1;
+  font-weight: 700;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standing-card__points {
+  font-family: var(--display);
+  font-size: clamp(20px, 2.4vw, 30px);
+  color: var(--ink);
+}
+
+.host-standings__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 28px 26px;
+}
+
+.host-standings__hint {
+  color: var(--cream-dim);
+  font-size: 14px;
+}
+
+/* ------------------------------------------------------------- badges */
+
+.badge-strip {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: var(--border);
+  border-radius: 8px;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 14px;
+}
+
+.badge--first {
+  background: var(--gold);
+  color: var(--ink-gold);
+}
+
+/* ----------------------------------------------------- player standings */
+
+.player-standings {
+  gap: 16px;
+}
+
+.player-standings__room {
+  color: var(--cream-dim);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.player-standings__me {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px;
+}
+
+.player-standings__place {
+  font-family: var(--display);
+  font-size: 54px;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.player-standings__name {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.player-standings__points {
+  font-family: var(--display);
+  color: var(--ink-dim);
+}
+
+/* Scrolls inside its own box; the Ready button below must never be pushed
+   off a phone screen. */
+.player-standings__all {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.player-standings__all li {
+  display: grid;
+  grid-template-columns: 2em 1fr auto;
+  gap: 10px;
+  align-items: center;
+  color: var(--ink);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--card-rule);
+}
+
+.player-standings__all li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.player-standings__footer {
+  margin-top: auto;
+}
+
+.player-standings__hint {
+  color: var(--cream-dim);
+  text-align: center;
+  font-size: 14px;
+}
