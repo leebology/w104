@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createRoom, toRoomState } from "./state";
+import { createRoom, currentRound, matchComplete, preRoundPhase, toRoomState } from "./state";
 import type { Room } from "./state";
 
 /** A room with every server-only field non-empty, so stripping is observable. */
@@ -10,8 +10,8 @@ function fullRoom(): Room {
     players: [{ id: "p0", name: "P0", emoji: "🐙", ready: true, connected: true }],
     phase: { name: "playing", endsAt: 31_000 },
     category: "Bands",
-    durationSec: 45,
-    round: 3,
+    settings: { roundCount: 3, durationSec: 45 },
+    history: [],
     lastActivityAt: 2000,
     entries: { p0: [{ text: "Adele", at: 1500 }] },
     kicked: ["p1"],
@@ -29,12 +29,12 @@ describe("toRoomState", () => {
     expect(Object.keys(state).sort()).toEqual([
       "category",
       "code",
-      "durationSec",
+      "history",
       "hostId",
       "phase",
       "players",
-      "round",
       "serverTime",
+      "settings",
     ]);
   });
 
@@ -54,8 +54,8 @@ describe("toRoomState", () => {
       players: room.players,
       phase: { name: "playing", endsAt: 31_000 },
       category: "Bands",
-      durationSec: 45,
-      round: 3,
+      settings: { roundCount: 3, durationSec: 45 },
+      history: [],
       serverTime: 9000,
     });
   });
@@ -71,5 +71,34 @@ describe("toRoomState", () => {
 describe("createRoom", () => {
   test("starts with nobody kicked", () => {
     expect(createRoom("PLUM", 1000).kicked).toEqual([]);
+  });
+
+  test("starts on the default settings with no rounds played", () => {
+    const room = createRoom("PLUM", 1000);
+    expect(room.settings).toEqual({ roundCount: 1, durationSec: 30 });
+    expect(room.history).toEqual([]);
+  });
+});
+
+describe("derived match helpers", () => {
+  const view = (rounds: number, played: number) => ({
+    settings: { roundCount: rounds, durationSec: 30 },
+    history: Array.from({ length: played }, () => ({ category: "woman", places: {} })),
+  });
+
+  test("the current round is one past the rounds already banked", () => {
+    expect(currentRound(view(3, 0))).toBe(1);
+    expect(currentRound(view(3, 2))).toBe(3);
+  });
+
+  test("a match completes once history holds every round", () => {
+    expect(matchComplete(view(3, 2))).toBe(false);
+    expect(matchComplete(view(3, 3))).toBe(true);
+    expect(matchComplete(view(1, 1))).toBe(true);
+  });
+
+  test("the pre-round phase is the lobby only before the first round", () => {
+    expect(preRoundPhase(view(3, 0))).toBe("lobby");
+    expect(preRoundPhase(view(3, 1))).toBe("standings");
   });
 });

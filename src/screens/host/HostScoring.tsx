@@ -3,6 +3,7 @@ import { RoomChip } from "../../components/RoomChip";
 import { WordList } from "../../components/WordList";
 import { roomStore } from "../../net/room";
 import type { Results } from "../../../shared/scoring";
+import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
 import { HostHeader } from "./HostHeader";
 
@@ -26,7 +27,8 @@ export function HostScoring({ room, results }: Props) {
     <main className="screen screen--host host-scoring">
       <HostHeader
         left={<h1 className="host-scoring__title">Results · {room.category}</h1>}
-        round={room.round}
+        round={currentRound(room)}
+        of={room.settings.roundCount}
         right={<RoomChip code={room.code} />}
       />
 

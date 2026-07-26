@@ -2,6 +2,7 @@ import { useRemaining } from "../../net/clock";
 import { PlayerPill } from "../../components/Roster";
 import { Wordmark } from "../../components/Wordmark";
 import { roomStore } from "../../net/room";
+import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
 import { HostHeader, PlayerCount } from "./HostHeader";
 
@@ -28,7 +29,8 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
           instead — the join instruction below is louder than any chip. */}
       <HostHeader
         left={<Wordmark small />}
-        round={room.round}
+        round={currentRound(room)}
+        of={room.settings.roundCount}
         right={<PlayerCount n={room.players.length} />}
       />
 

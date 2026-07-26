@@ -1,5 +1,5 @@
 import type { Results } from "./scoring";
-import { DEFAULT_CATEGORY, DEFAULT_DURATION_SEC } from "./categories";
+import { DEFAULT_CATEGORY, DEFAULT_DURATION_SEC, DEFAULT_ROUND_COUNT } from "./categories";
 
 export type PlayerId = string;
 
@@ -57,13 +57,17 @@ export type Room = {
   players: Player[];
   phase: Phase;
   category: string;
-  durationSec: number;
+  settings: MatchSettings;
   /**
-   * 1-based, incremented by `newGame`. Purely for display — the host header
-   * and the player's scoring card both name the round — but it has to live
-   * here because nothing else survives a New Round.
+   * Every round already played, oldest first. Aggregates only — no words —
+   * so it rides in RoomState safely and cheaply.
+   *
+   * This is also the round counter: there is no stored `round`, because a
+   * stored one would have to increment when the inter-round countdown opens
+   * and decrement when it is cancelled. History only ever grows, and only at
+   * `showStandings`, so deriving from it makes cancelling a genuine no-op.
    */
-  round: number;
+  history: RoundSummary[];
   lastActivityAt: number;
   /** Everyone's words. Server-side only — see Global Constraints. */
   entries: Record<PlayerId, Entry[]>;
@@ -99,8 +103,11 @@ export function createRoom(code: string, now: number): Room {
     players: [],
     phase: { name: "lobby" },
     category: DEFAULT_CATEGORY,
-    durationSec: DEFAULT_DURATION_SEC,
-    round: 1,
+    settings: {
+      roundCount: DEFAULT_ROUND_COUNT,
+      durationSec: DEFAULT_DURATION_SEC,
+    },
+    history: [],
     lastActivityAt: now,
     entries: {},
     kicked: [],
@@ -118,4 +125,28 @@ export function toRoomState(room: Room, now: number): RoomState {
     ...rest
   } = room;
   return { ...rest, serverTime: now };
+}
+
+/**
+ * The fields the derived match helpers read. Typed as a subset so they work
+ * on a server-side `Room` and a client-side `RoomState` alike.
+ */
+type MatchView = Pick<Room, "history" | "settings">;
+
+/** 1-based. Derived, never stored — see `Room.history`. */
+export function currentRound(view: MatchView): number {
+  return view.history.length + 1;
+}
+
+/** Whether every round of the match has been played and banked. */
+export function matchComplete(view: MatchView): boolean {
+  return view.history.length >= view.settings.roundCount;
+}
+
+/**
+ * Which phase a cancelled countdown returns to. Derived rather than recorded
+ * on the countdown phase, so there is no second copy of the truth to drift.
+ */
+export function preRoundPhase(view: MatchView): "lobby" | "standings" {
+  return view.history.length === 0 ? "lobby" : "standings";
 }

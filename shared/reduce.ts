@@ -20,6 +20,11 @@ export const MIN_PLAYERS = 2;
  * legibility limit, not a capacity one.
  */
 export const MAX_PLAYERS = 10;
+export const MIN_ROUND_COUNT = 1;
+export const MAX_ROUND_COUNT = 10;
+/** 15 seconds to 10 minutes. */
+export const MIN_DURATION_SEC = 15;
+export const MAX_DURATION_SEC = 600;
 
 export type RoomEvent =
   | { t: "join"; playerId: PlayerId; name: string; emoji: string; now: number }
@@ -181,7 +186,6 @@ function apply(room: Room, ev: RoomEvent): Room {
         phase: { name: "lobby" },
         players: room.players.map((p) => ({ ...p, ready: false })),
         entries: {},
-        round: room.round + 1,
       };
 
     case "tick":
@@ -196,7 +200,10 @@ function apply(room: Room, ev: RoomEvent): Room {
 function tick(room: Room, now: number): Room {
   const phase = room.phase;
   if (phase.name === "countdown" && now >= phase.endsAt) {
-    return { ...room, phase: { name: "playing", endsAt: now + room.durationSec * 1_000 } };
+    return {
+      ...room,
+      phase: { name: "playing", endsAt: now + room.settings.durationSec * 1_000 },
+    };
   }
   if (phase.name === "playing" && now >= phase.endsAt) {
     return { ...room, phase: { name: "timesup", endsAt: now + TIMESUP_MS } };

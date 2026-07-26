@@ -1,4 +1,5 @@
 import { WordList } from "../../components/WordList";
+import { currentRound } from "../../../shared/state";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import type { Results } from "../../../shared/scoring";
 
@@ -26,7 +27,7 @@ export function PlayerScoring({ room, results, playerId }: Props) {
           <div className="id-card__who">
             <span className="id-card__name">{me.name}</span>
             <span className="id-card__meta">
-              ROOM {room.code} · ROUND {room.round}
+              ROOM {room.code} · ROUND {currentRound(room)}
             </span>
           </div>
           <div className="id-card__stats">

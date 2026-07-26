@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createRoom } from "./state";
+import { createRoom, currentRound } from "./state";
 import type { Room } from "./state";
 import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, TIMESUP_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
 
@@ -164,6 +164,16 @@ describe("round progression", () => {
     });
   });
 
+  test("the round runs for the configured duration", () => {
+    let room = seed(2);
+    room = { ...room, settings: { roundCount: 1, durationSec: 90 } };
+    room = readyAll(room, 1000);
+    const cdEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: cdEnd });
+    expect(room.phase.name).toBe("playing");
+    expect((room.phase as { endsAt: number }).endsAt).toBe(cdEnd + 90_000);
+  });
+
   test("an early tick changes nothing", () => {
     const room = reduce(readyAll(seed(2), 2000), { t: "tick", now: 3000 });
     expect(room.phase.name).toBe("countdown");
@@ -208,16 +218,18 @@ describe("round progression", () => {
     expect(room.players.every((p) => !p.ready)).toBe(true);
   });
 
-  test("a new game advances the round counter", () => {
+  test("a new game leaves the round derived from history", () => {
     let room = playing();
-    expect(room.round).toBe(1);
+    expect(currentRound(room)).toBe(1);
     const playEnd = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: playEnd });
     const upEnd = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: upEnd });
 
     room = reduce(room, { t: "newGame", playerId: "host", now: upEnd + 100 });
-    expect(room.round).toBe(2);
+    // newGame does not bank a round; history is what moves the counter, and
+    // Task 3 replaces newGame with showStandings + backToLobby.
+    expect(currentRound(room)).toBe(1);
   });
 
   test("a new game does not un-kick anyone", () => {

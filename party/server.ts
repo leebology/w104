@@ -6,6 +6,7 @@ import {
 import type { ClientMessage, ErrorCode, ServerMessage } from "../shared/protocol";
 import { createRoom, toRoomState } from "../shared/state";
 import type { PlayerId, Room } from "../shared/state";
+import { DEFAULT_DURATION_SEC, DEFAULT_ROUND_COUNT } from "../shared/categories";
 
 // Durable Object binding declared in wrangler.jsonc.
 export interface Env {
@@ -48,18 +49,30 @@ export class W104 extends Server<Env> {
 
   /**
    * `get<Room>` is an unchecked cast over whatever JSON is on disk, and a room
-   * written before `kicked`, `round` or `hostGoneAt` existed has no such key.
-   * Filling them in on the way out means the rest of the class — and all of
-   * shared/ — can treat the fields as always present.
+   * written before `kicked`, `settings`/`history` or `hostGoneAt` existed has
+   * no such key. Filling them in on the way out means the rest of the class —
+   * and all of shared/ — can treat the fields as always present.
    */
   private async load(): Promise<Room | null> {
     const stored = await this.ctx.storage.get<Room>("room");
     if (!stored) return null;
+    // Rooms written before this change carry `round` and a top-level
+    // `durationSec` instead of `settings`/`history`. Destructure the dead
+    // fields off rather than spreading them, so they cannot ride along into
+    // every broadcast.
+    const { round: _round, durationSec: legacyDuration, ...rest } = stored as Room & {
+      round?: number;
+      durationSec?: number;
+    };
     return {
-      ...stored,
-      kicked: stored.kicked ?? [],
-      round: stored.round ?? 1,
-      hostGoneAt: stored.hostGoneAt ?? null,
+      ...rest,
+      kicked: rest.kicked ?? [],
+      hostGoneAt: rest.hostGoneAt ?? null,
+      history: rest.history ?? [],
+      settings: rest.settings ?? {
+        roundCount: DEFAULT_ROUND_COUNT,
+        durationSec: legacyDuration ?? DEFAULT_DURATION_SEC,
+      },
     };
   }
 
