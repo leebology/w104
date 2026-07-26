@@ -1,9 +1,13 @@
 import { useRemaining } from "../../net/clock";
 import { PlayerPill } from "../../components/Roster";
+import { Stepper, formatDuration, stepDuration } from "../../components/Stepper";
 import { Wordmark } from "../../components/Wordmark";
 import { roomStore } from "../../net/room";
 import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
+import {
+  MAX_DURATION_SEC, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_ROUND_COUNT,
+} from "../../../shared/reduce";
 import { HostHeader, PlayerCount } from "./HostHeader";
 
 type Props = {
@@ -51,6 +55,27 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
             />
           ))}
         </ul>
+      </div>
+
+      <div className="host-lobby__settings">
+        <Stepper
+          label="ROUNDS"
+          value={room.settings.roundCount}
+          min={MIN_ROUND_COUNT}
+          max={MAX_ROUND_COUNT}
+          disabled={Boolean(countdown)}
+          onChange={(roundCount) => roomStore.send({ type: "setSettings", roundCount })}
+        />
+        <Stepper
+          label="TIMER"
+          value={room.settings.durationSec}
+          min={MIN_DURATION_SEC}
+          max={MAX_DURATION_SEC}
+          disabled={Boolean(countdown)}
+          step={stepDuration}
+          format={formatDuration}
+          onChange={(durationSec) => roomStore.send({ type: "setSettings", durationSec })}
+        />
       </div>
 
       <div className="host-lobby__footer">

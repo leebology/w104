@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useRemaining } from "../../net/clock";
 import { AVATARS, AvatarPicker } from "../../components/AvatarPicker";
+import { formatDuration } from "../../components/Stepper";
 import { saveProfile } from "../../net/identity";
 import { roomStore } from "../../net/room";
 import type { PlayerId, RoomState } from "../../../shared/state";
@@ -34,6 +35,11 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
       </button>
 
       <p className="player-lobby__room">ROOM {room.code}</p>
+      <p className="player-lobby__settings">
+        {room.settings.roundCount} {room.settings.roundCount === 1 ? "ROUND" : "ROUNDS"}
+        {" · "}
+        {formatDuration(room.settings.durationSec)}
+      </p>
 
       <section className="card">
         <label className="field__label" htmlFor="player-name">Your name</label>

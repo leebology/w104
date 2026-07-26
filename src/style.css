@@ -1313,3 +1313,92 @@ ul, ol { list-style: none; }
   text-align: center;
   font-size: 14px;
 }
+
+/* ------------------------------------------------------------ steppers */
+
+.host-lobby__settings {
+  display: flex;
+  justify-content: center;
+  gap: 18px;
+  padding: 0 28px 14px;
+  /* Capped so the room code, roster and Start button all still fit a 16:9
+     TV at MAX_PLAYERS — the host screen must never scroll. */
+  max-height: 96px;
+}
+
+.stepper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: var(--cream);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 8px 14px;
+}
+
+.stepper--disabled {
+  opacity: 0.55;
+}
+
+.stepper__label {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-dim);
+}
+
+.stepper__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stepper__btn {
+  width: 32px;
+  height: 32px;
+  border: var(--border);
+  border-radius: 8px;
+  background: var(--gold);
+  color: var(--ink-gold);
+  font-family: var(--display);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stepper__btn:disabled {
+  background: var(--code-empty);
+  color: var(--struck);
+  cursor: default;
+}
+
+.stepper__value {
+  width: 3.2em;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-family: var(--display);
+  font-size: 26px;
+  color: var(--ink);
+  padding: 0;
+}
+
+.stepper__value:focus {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.stepper__hint {
+  font-family: var(--display);
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.player-lobby__settings {
+  color: var(--cream-dim);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
