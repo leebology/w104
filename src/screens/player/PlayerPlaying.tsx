@@ -12,10 +12,17 @@ type Props = {
  * screen is for, which is getting words down.
  */
 export function PlayerPlaying({ category, entries }: Props) {
-  const bottom = useRef<HTMLDivElement>(null);
+  const list = useRef<HTMLDivElement>(null);
 
+  // Scrolls the list by its own `scrollTop`, never `scrollIntoView` on a
+  // trailing sentinel. `block: "end"` aligns the sentinel with the scrollport's
+  // bottom edge, which scrolls the list's reserved bottom padding — the strip
+  // the entry input sits over — clean out of view, and the newest word lands
+  // underneath the input. `scrollHeight` counts that padding, so this stops
+  // above it. It also cannot scroll the page, which `scrollIntoView` can.
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: "end" });
+    const el = list.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [entries.length]);
 
   // Sizing against the on-screen keyboard is `.screen--locked` plus
@@ -43,7 +50,7 @@ export function PlayerPlaying({ category, entries }: Props) {
           outlive this screen to keep the keyboard up — which is why the two
           are aligned in CSS rather than nested here. */}
       <div className="card playing__card">
-        <div className="word-list playing__list">
+        <div className="word-list playing__list" ref={list}>
           {entries.length === 0 && (
             <p className="playing__empty">Type anything. Obvious answers score nothing.</p>
           )}
@@ -52,7 +59,6 @@ export function PlayerPlaying({ category, entries }: Props) {
               <span className="word">{entry.text}</span>
             </div>
           ))}
-          <div ref={bottom} />
         </div>
       </div>
     </main>
