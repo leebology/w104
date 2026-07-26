@@ -255,8 +255,9 @@ is the single place the raw word store is emptied.
 ### Clamping lives in `reduce`, not the input
 
 The stepper UI restricts values, but a hand-rolled socket message must not be
-able to set a nine-hour round. `setSettings` clamps `roundCount` to
-`[1, 10]`, clamps `durationSec` to `[15, 600]`, and rejects non-integers.
+able to set a nine-hour round. `setSettings` rounds fractional values, ignores
+non-finite ones in favour of the current setting, and clamps `roundCount` to
+`[1, 10]` and `durationSec` to `[15, 600]`.
 
 Values are clamped, not snapped to the stepper grid: typing `37` gives a
 37-second round. The grid governs what `+`/`−` do, not what is legal.
