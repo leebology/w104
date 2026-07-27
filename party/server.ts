@@ -49,9 +49,10 @@ export class W104 extends Server<Env> {
 
   /**
    * `get<Room>` is an unchecked cast over whatever JSON is on disk, and a room
-   * written before `kicked`, `settings`/`history` or `hostGoneAt` existed has
-   * no such key. Filling them in on the way out means the rest of the class —
-   * and all of shared/ — can treat the fields as always present.
+   * written before `kicked`, `settings`/`history`, `hostGoneAt`, `votes`, or a
+   * countdown's `to` existed has no such key. Filling them in on the way out
+   * means the rest of the class — and all of shared/ — can treat the fields as
+   * always present.
    */
   private async load(): Promise<Room | null> {
     const stored = await this.ctx.storage.get<Room>("room");
@@ -73,6 +74,24 @@ export class W104 extends Server<Env> {
         roundCount: DEFAULT_ROUND_COUNT,
         durationSec: legacyDuration ?? DEFAULT_DURATION_SEC,
       },
+      // A room persisted mid-countdown before `to` existed has a countdown
+      // phase with no destination at all, and `tick` would route it nowhere and
+      // hang the room. "playing" is the only thing that countdown could have
+      // meant.
+      phase: (() => {
+        // `Phase` declares `to` as required, so without this cast TS treats
+        // `"to" in phase` as always true and narrows the `else` branch to
+        // `never`. The cast makes `to` optional just long enough to detect
+        // and backfill a pre-`to` countdown persisted to disk.
+        const phase = rest.phase as {
+          name: "countdown";
+          endsAt: number;
+          to?: "voting" | "playing";
+        };
+        return phase?.name === "countdown" && !("to" in phase)
+          ? { ...phase, to: "playing" as const }
+          : rest.phase;
+      })(),
     };
   }
 

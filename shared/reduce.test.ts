@@ -37,7 +37,7 @@ describe("lobby", () => {
 
   test("two ready players start the countdown", () => {
     const room = readyAll(seed(2), 2000);
-    expect(room.phase).toEqual({ name: "countdown", endsAt: 2000 + COUNTDOWN_MS });
+    expect(room.phase).toEqual({ name: "countdown", endsAt: 2000 + COUNTDOWN_MS, to: "playing" });
   });
 
   test("un-readying during the countdown cancels it", () => {
@@ -56,7 +56,7 @@ describe("lobby", () => {
   test("the host can start with just one player", () => {
     let room = seed(1);
     room = reduce(room, { t: "startGame", playerId: "host", now: 2000 });
-    expect(room.phase).toEqual({ name: "countdown", endsAt: 2000 + COUNTDOWN_MS });
+    expect(room.phase).toEqual({ name: "countdown", endsAt: 2000 + COUNTDOWN_MS, to: "playing" });
   });
 
   test("the host cannot start with zero players", () => {

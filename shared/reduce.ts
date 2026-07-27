@@ -83,7 +83,7 @@ function settle(room: Room, now: number): Room {
   if (phase.name === "lobby" || phase.name === "standings") {
     if (phase.name === "standings" && matchComplete(room)) return room;
     if (!everyoneReady(room)) return room;
-    return { ...room, phase: { name: "countdown", endsAt: now + COUNTDOWN_MS } };
+    return { ...room, phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to: "playing" } };
   }
   if (phase.name === "countdown" && !everyoneReady(room)) {
     return { ...room, phase: backPhase(room) };
@@ -175,7 +175,7 @@ function apply(room: Room, ev: RoomEvent): Room {
       return {
         ...room,
         players: room.players.map((p) => ({ ...p, ready: true })),
-        phase: { name: "countdown", endsAt: ev.now + COUNTDOWN_MS },
+        phase: { name: "countdown", endsAt: ev.now + COUNTDOWN_MS, to: "playing" },
       };
 
     case "cancelStart": {

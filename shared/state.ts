@@ -45,7 +45,13 @@ export type Player = {
 
 export type Phase =
   | { name: "lobby" }
-  | { name: "countdown"; endsAt: number }
+  /**
+   * Where this countdown lands. Stored rather than derived because two
+   * distinct countdowns now sit at `history.length === 0` — the one before
+   * voting and the one before round one — so there is nothing left to derive
+   * it from.
+   */
+  | { name: "countdown"; endsAt: number; to: "voting" | "playing" }
   | { name: "playing"; endsAt: number }
   | { name: "timesup"; endsAt: number }
   | { name: "scoring"; results: Results }
