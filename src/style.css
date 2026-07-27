@@ -1520,18 +1520,6 @@ ul, ol { list-style: none; }
 
 /* ------------------------------------------------------------ steppers */
 
-.host-lobby__settings {
-  display: flex;
-  justify-content: center;
-  gap: 18px;
-  padding: 0 28px 14px;
-  /* Natural height, never squeezed. A capped band stretched both cards into a
-     box shorter than their content, and the TIMER card's "1:00" hint spilled
-     out past its own bottom border. Pressure at MAX_PLAYERS belongs on the
-     stage instead — it is `flex: 1; min-height: 0` and its roster scrolls. */
-  flex: 0 0 auto;
-}
-
 .stepper {
   display: flex;
   flex-direction: column;

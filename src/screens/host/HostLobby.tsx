@@ -1,14 +1,13 @@
+import { useEffect, useState } from "react";
 import { useRemaining } from "../../net/clock";
 import { PlayerPill } from "../../components/Roster";
-import { Stepper, formatDuration, stepDuration } from "../../components/Stepper";
 import { Wordmark } from "../../components/Wordmark";
 import { roomStore } from "../../net/room";
 import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
-import {
-  MAX_DURATION_SEC, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_ROUND_COUNT,
-} from "../../../shared/reduce";
 import { HostHeader, PlayerCount } from "./HostHeader";
+import { GameModesDrawer } from "./GameModesDrawer";
+import { GameSettingsDrawer } from "./GameSettingsDrawer";
 
 type Props = {
   room: RoomState;
@@ -17,10 +16,33 @@ type Props = {
   onLeave: () => void;
 };
 
+type OpenDrawer = "modes" | "settings" | null;
+
 export function HostLobby({ room, countdown, onLeave }: Props) {
   const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   const host = typeof location === "undefined" ? "" : location.host.toUpperCase();
   const waiting = room.players.length === 0;
+  const [drawer, setDrawer] = useState<OpenDrawer>(null);
+
+  // Only the null <-> open transitions cross the wire: switching straight from
+  // one drawer to the other must not flap the server flag, which would drop and
+  // re-derive the countdown for no reason.
+  const openDrawer = (next: Exclude<OpenDrawer, null>) => {
+    if (drawer === null) roomStore.send({ type: "setConfiguring", open: true });
+    setDrawer(next);
+  };
+  const closeDrawer = () => {
+    if (drawer !== null) roomStore.send({ type: "setConfiguring", open: false });
+    setDrawer(null);
+  };
+
+  // The server flag outlives this screen — the host leaving the lobby with a
+  // drawer open would hold the next countdown down forever.
+  useEffect(() => {
+    return () => {
+      roomStore.send({ type: "setConfiguring", open: false });
+    };
+  }, []);
 
   return (
     <main className="screen screen--host">
@@ -57,26 +79,20 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
         </ul>
       </div>
 
-      <div className="host-lobby__settings">
-        <Stepper
-          label="ROUNDS"
-          value={room.settings.roundCount}
-          min={MIN_ROUND_COUNT}
-          max={MAX_ROUND_COUNT}
-          disabled={Boolean(countdown)}
-          onChange={(roundCount) => roomStore.send({ type: "setSettings", values: { roundCount } })}
-        />
-        <Stepper
-          label="TIMER"
-          value={room.settings.durationSec}
-          min={MIN_DURATION_SEC}
-          max={MAX_DURATION_SEC}
-          disabled={Boolean(countdown)}
-          step={stepDuration}
-          format={formatDuration}
-          onChange={(durationSec) => roomStore.send({ type: "setSettings", values: { durationSec } })}
-        />
-      </div>
+      <button
+        type="button"
+        className="drawer-tab drawer-tab--left"
+        onClick={() => openDrawer("modes")}
+      >
+        Game modes
+      </button>
+      <button
+        type="button"
+        className="drawer-tab drawer-tab--right"
+        onClick={() => openDrawer("settings")}
+      >
+        Game settings
+      </button>
 
       <div className="host-lobby__footer">
         {countdown ? (
@@ -108,6 +124,14 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
           </>
         )}
       </div>
+
+      <GameModesDrawer room={room} open={drawer === "modes"} onClose={closeDrawer} />
+      <GameSettingsDrawer
+        room={room}
+        open={drawer === "settings"}
+        onClose={closeDrawer}
+        disabled={Boolean(countdown)}
+      />
     </main>
   );
 }
