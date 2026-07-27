@@ -9,12 +9,15 @@ w104 is a Jackbox-style party game: players join from their phones, one device
 list items in a category before a timer runs out; scoring is Boggle rules — a
 word scores only if no other player wrote it.
 
-v1 scope is a match of 1–10 rounds on the fixed category "woman", with the host
-setting round count and a per-round timer from 15 seconds to 10 minutes. This
-match structure has landed — see
-`docs/superpowers/specs/2026-07-26-match-structure-design.md`. The long product
-wishlist (`Project W-104.md`, untracked) is deliberately *not* built — see "Out
-of scope" in the design spec before adding anything from it.
+v1 scope is a match of 1–10 rounds, with the host setting round count and a
+per-round timer from 15 seconds to 10 minutes. The category is no longer
+fixed: up front, the room votes once on which of 16 categories to play, and
+each round draws from that pool weighted by vote share, spending a category
+once it has been played. This match structure and the voting phase have
+landed — see `docs/superpowers/specs/2026-07-26-match-structure-design.md` and
+`docs/superpowers/specs/2026-07-26-category-voting-design.md`. The long
+product wishlist (`Project W-104.md`, untracked) is deliberately *not* built —
+see "Out of scope" in the design specs before adding anything from them.
 
 ## Commands
 
@@ -28,7 +31,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (129 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (184 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -79,6 +82,17 @@ replaced wholesale on each `state` push; every client action is a *request*.
   for a round that does not exist. `startGame` is legal from both lobby and
   standings and is still the one exception (host solo-start bypasses
   `MIN_PLAYERS`), and `reduce` skips `settle` for it.
+- Voting is bookended by a countdown on both sides, so `countdown` carries a
+  `to: "voting" | "playing"`. It is the one phase field that is stored rather
+  than derived: two distinct countdowns now sit at `history.length === 0`, so
+  there is nothing left to derive the destination from.
+- **Opening `voting` clears every ready flag.** `ready` means "waiting in the
+  room" before that edge and "votes spent" after it; carried across, the next
+  `settle` closes voting before anyone has voted. It happens in exactly one
+  place — the tick that opens `voting`.
+- The post-voting countdown is not readiness-cancellable. `everyoneReady` needs
+  `MIN_PLAYERS`, so after a host solo-start that branch would tear it down on
+  the next event.
 - The server implements `onAlarm()`, **not** `alarm()`. PartyServer's own
   `alarm()` initializes the object then calls `onAlarm()`; overriding `alarm()`
   skips `onStart()` on a cold wake, `this.room` stays null, and the round hangs
@@ -92,6 +106,10 @@ replaced wholesale on each `state` push; every client action is a *request*.
   ships full `Results` to everyone.
 - **No per-player entry counts in broadcasts.** Players must not see how many
   words rivals have. `submitEntry` deliberately does not broadcast.
+- **`votes` is the deliberate exception to the broadcast boundary.** Unlike
+  `entries`, it rides in `RoomState`: the host TV renders the full tally to the
+  room by design, so guarding it would cost per-connection encoding for a
+  secret that is already on the wall.
 - **Timers broadcast an absolute `endsAt`, never per-second ticks.** Clients
   count down locally against `clockOffset` (`src/net/clock.ts`). Per-second
   broadcasts put a round at the mercy of party wifi.
@@ -109,6 +127,10 @@ replaced wholesale on each `state` push; every client action is a *request*.
   `history.length + 1`. A stored counter would have to increment when an
   inter-round countdown opens and decrement when it is cancelled; history only
   grows, and only at `showStandings`, so deriving makes a cancel a real no-op.
+- **The round's category is drawn at the whistle, never earlier.** Drawing when
+  the countdown opens would let a cancelled countdown re-roll it and would let
+  the countdown screen leak it. Randomness enters via the tick's `roll` so
+  `reduce` stays pure.
 - **`Room.history` holds aggregates only, never words.** It rides in
   `RoomState`, so an `entries` field on `RoundSummary` would leak every past
   round to every socket — the same boundary `toRoomState` exists to hold.
@@ -156,6 +178,10 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
 - `docs/superpowers/specs/2026-07-26-match-structure-design.md` — the match
   structure spec: host-set round count/timer, the standings phase, golf
   placement scoring. Supersedes the single-round scope in the MVP spec above.
+- `docs/superpowers/specs/2026-07-26-category-voting-design.md` — the category
+  voting spec: the 16-category pool, vote budget, the weighted draw, spent
+  categories. Supersedes the fixed `"woman"` category assumed by the MVP spec
+  above.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.

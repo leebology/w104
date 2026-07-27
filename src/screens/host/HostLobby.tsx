@@ -103,7 +103,7 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
               disabled={waiting}
               onClick={() => roomStore.send({ type: "startGame" })}
             >
-              Start round
+              Start game
             </button>
           </>
         )}
