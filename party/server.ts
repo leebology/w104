@@ -268,10 +268,14 @@ export class W104 extends Server<Env> {
         this.room = reduce(this.room, {
           t: "setSettings",
           playerId,
-          roundCount: msg.roundCount,
-          durationSec: msg.durationSec,
+          // A hand-rolled message can omit `values` entirely; the rules layer
+          // expects an object to iterate.
+          values: msg.values ?? {},
           now,
         });
+        break;
+      case "setMode":
+        this.room = reduce(this.room, { t: "setMode", playerId, mode: msg.mode, now });
         break;
       case "showStandings":
         this.room = reduce(this.room, { t: "showStandings", playerId, now });

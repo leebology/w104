@@ -1,11 +1,12 @@
 import { scoreRound, normalize } from "./scoring";
 import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
-import type { Entry, Player, PlayerId, Room, RoundSummary } from "./state";
+import type { Entry, MatchSettings, Player, PlayerId, Room, RoundSummary } from "./state";
 import { CATEGORIES } from "./categories";
 import {
-  MAX_DURATION_SEC, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_ROUND_COUNT,
+  MAX_DURATION_SEC, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_ROUND_COUNT, isGameModeId, modeSpec,
 } from "./gamemodes";
+import type { NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 
 export const COUNTDOWN_MS = 5_000;
@@ -47,7 +48,14 @@ export type RoomEvent =
   | { t: "cancelStart"; playerId: PlayerId; now: number }
   | { t: "kick"; playerId: PlayerId; targetId: PlayerId; now: number }
   | { t: "disconnect"; playerId: PlayerId; now: number }
-  | { t: "setSettings"; playerId: PlayerId; roundCount?: number; durationSec?: number; now: number }
+  | {
+      t: "setSettings";
+      playerId: PlayerId;
+      /** Only keys the *active mode* exposes are honoured. */
+      values: Partial<Record<NumericSettingKey, number>>;
+      now: number;
+    }
+  | { t: "setMode"; playerId: PlayerId; mode: string; now: number }
   | { t: "showStandings"; playerId: PlayerId; now: number }
   | { t: "backToLobby"; playerId: PlayerId; now: number }
   | { t: "castVote"; playerId: PlayerId; category: string; now: number }
@@ -92,6 +100,38 @@ function openCountdown(room: Room, now: number, to: "voting" | "playing"): Room 
 function clampSetting(value: number | undefined, min: number, max: number, current: number): number {
   if (value === undefined || !Number.isFinite(value)) return current;
   return Math.min(max, Math.max(min, Math.round(value)));
+}
+
+/**
+ * Applies host-supplied values, honouring only the keys the *active mode*
+ * actually exposes — the wire is not trusted, so a message naming a field this
+ * mode does not have is ignored even though the field exists on the type.
+ * Returns the identical object when nothing changed, per the no-op rule.
+ */
+function applySettings(
+  settings: MatchSettings,
+  values: Partial<Record<NumericSettingKey, number>>,
+): MatchSettings {
+  let next = settings;
+  for (const spec of modeSpec(settings.mode).settings) {
+    const value = clampSetting(values[spec.key], spec.min, spec.max, settings[spec.key]);
+    if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+  }
+  return next;
+}
+
+/**
+ * Pulls every value the given mode exposes back inside that mode's bounds.
+ * Switching modes carries values across rather than resetting them, so a mode
+ * with a tighter range must not inherit a number its own stepper cannot reach.
+ */
+function clampToMode(settings: MatchSettings): MatchSettings {
+  let next = settings;
+  for (const spec of modeSpec(settings.mode).settings) {
+    const value = Math.min(spec.max, Math.max(spec.min, settings[spec.key]));
+    if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+  }
+  return next;
 }
 
 /**
@@ -284,19 +324,16 @@ function apply(room: Room, ev: RoomEvent): Room {
       // Locked once the match starts: changing the round count mid-match
       // would move the finish line under the players.
       if (room.phase.name !== "lobby") return room;
-      const roundCount = clampSetting(
-        ev.roundCount, MIN_ROUND_COUNT, MAX_ROUND_COUNT, room.settings.roundCount,
-      );
-      const durationSec = clampSetting(
-        ev.durationSec, MIN_DURATION_SEC, MAX_DURATION_SEC, room.settings.durationSec,
-      );
-      if (
-        roundCount === room.settings.roundCount &&
-        durationSec === room.settings.durationSec
-      ) {
-        return room;
-      }
-      return { ...room, settings: { ...room.settings, roundCount, durationSec } };
+      const settings = applySettings(room.settings, ev.values);
+      return settings === room.settings ? room : { ...room, settings };
+    }
+
+    case "setMode": {
+      if (ev.playerId !== room.hostId) return room;
+      if (room.phase.name !== "lobby") return room;
+      if (!isGameModeId(ev.mode)) return room;
+      if (ev.mode === room.settings.mode) return room;
+      return { ...room, settings: clampToMode({ ...room.settings, mode: ev.mode }) };
     }
 
     case "castVote": {

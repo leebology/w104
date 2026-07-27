@@ -64,7 +64,7 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
           min={MIN_ROUND_COUNT}
           max={MAX_ROUND_COUNT}
           disabled={Boolean(countdown)}
-          onChange={(roundCount) => roomStore.send({ type: "setSettings", roundCount })}
+          onChange={(roundCount) => roomStore.send({ type: "setSettings", values: { roundCount } })}
         />
         <Stepper
           label="TIMER"
@@ -74,7 +74,7 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
           disabled={Boolean(countdown)}
           step={stepDuration}
           format={formatDuration}
-          onChange={(durationSec) => roomStore.send({ type: "setSettings", durationSec })}
+          onChange={(durationSec) => roomStore.send({ type: "setSettings", values: { durationSec } })}
         />
       </div>
 
