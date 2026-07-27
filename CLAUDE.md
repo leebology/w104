@@ -79,7 +79,7 @@ replaced wholesale on each `state` push; every client action is a *request*.
   anything that changes readiness re-evaluates it. "Pre-round" covers both the
   lobby before round one and the standings screen between rounds, guarded by
   `matchComplete` so readying up on the final standings cannot open a countdown
-  for a round that does not exist. `startGame` is legal from both lobby and
+  for a round that does not exist. `startGame` is legal from lobby, voting, and
   standings and is still the one exception (host solo-start bypasses
   `MIN_PLAYERS`), and `reduce` skips `settle` for it.
 - Voting is bookended by a countdown on both sides, so `countdown` carries a
