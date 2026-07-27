@@ -1766,3 +1766,155 @@ ul, ol { list-style: none; }
 @media (prefers-reduced-motion: reduce) {
   .player-voting__count { animation: none; }
 }
+
+/* ------------------------------------------------------------- drawers */
+
+/* Overlay, not push: the lobby underneath keeps its exact sizing. Fixed
+   rather than absolute so the panel is measured against the viewport the
+   host screen already owns, not against a flex child of it. */
+.drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+}
+
+.drawer--left { justify-content: flex-start; }
+.drawer--right { justify-content: flex-end; }
+
+/* A button, not a div: dismissing by clicking away has to be reachable
+   without a mouse, and this is the whole backdrop. */
+.drawer__scrim {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: var(--ink);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.drawer__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 86vw);
+  height: 100%;
+  background: var(--cream);
+  color: var(--ink);
+  border-left: var(--border);
+  border-right: var(--border);
+}
+
+.drawer__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 20px 14px;
+  border-bottom: var(--border);
+}
+
+.drawer__title {
+  font-family: var(--display);
+  font-size: 18px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+.drawer__close {
+  width: 34px;
+  height: 34px;
+  border: var(--border);
+  border-radius: 8px;
+  background: var(--gold);
+  color: var(--ink-gold);
+  font-family: var(--display);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* The only thing on a host screen allowed to scroll is a box that asked for
+   it. A long mode list scrolls here; the page still never does. */
+.drawer__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 24px;
+}
+
+/* The two buttons that open them, pinned to the lobby's lower corners. */
+.drawer-tab {
+  position: absolute;
+  bottom: 26px;
+  z-index: 5;
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  padding: 12px 18px;
+  border: var(--border);
+  border-radius: 99px;
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: var(--shadow-btn);
+  cursor: pointer;
+}
+
+.drawer-tab--left { left: 26px; }
+.drawer-tab--right { right: 26px; }
+
+.drawer-tab:hover { background: var(--gold); color: var(--ink-gold); }
+
+/* One selectable gamemode. */
+.mode-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--cream);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.mode-row--active {
+  background: var(--gold);
+  color: var(--ink-gold);
+  box-shadow: var(--shadow-card);
+}
+
+.mode-row__name {
+  font-family: var(--display);
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+
+.mode-row__blurb {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink-dim);
+}
+
+.mode-row--active .mode-row__blurb { color: var(--ink-gold); }
+
+/* The steppers inside the settings drawer stack instead of sitting in a row. */
+.drawer__settings {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.drawer__note {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink-dim);
+}

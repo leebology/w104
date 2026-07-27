@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { SettingKind } from "../../shared/gamemodes";
 
 type Props = {
   label: string;
@@ -102,4 +103,15 @@ export function formatDuration(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const rest = seconds % 60;
   return rest === 0 ? `${mins}:00` : `${mins}:${String(rest).padStart(2, "0")}`;
+}
+
+/**
+ * Maps a setting descriptor's kind to the Stepper behaviour it needs. One
+ * place, so a new kind is a change here rather than at every drawer call site.
+ */
+export function stepperPropsForKind(kind: SettingKind): {
+  step?: (value: number, direction: 1 | -1) => number;
+  format?: (value: number) => string;
+} {
+  return kind === "duration" ? { step: stepDuration, format: formatDuration } : {};
 }
