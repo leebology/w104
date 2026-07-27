@@ -33,10 +33,10 @@ export type GameModeId = (typeof GAME_MODE_IDS)[number];
 export const DEFAULT_MODE: GameModeId = "ffa";
 
 /**
- * Which Stepper behaviour a numeric setting gets. This union is the seam a
- * future toggle or select setting extends; today every setting is a number.
+ * Which Stepper behaviour a numeric setting gets. `"teams"` is the first kind
+ * whose values are not contiguous — it steps 0 ↔ 2 ↔ 3 … and renders 0 as OFF.
  */
-export type SettingKind = "count" | "duration";
+export type SettingKind = "count" | "duration" | "teams";
 
 /**
  * The numeric fields of `MatchSettings` a descriptor is allowed to drive.
@@ -45,7 +45,7 @@ export type SettingKind = "count" | "duration";
  * and a runtime cycle would be a real problem. `gamemodes.test.ts` asserts the
  * two stay in agreement.
  */
-export type NumericSettingKey = "roundCount" | "durationSec";
+export type NumericSettingKey = "roundCount" | "durationSec" | "teamCount";
 
 export type SettingSpec = {
   key: NumericSettingKey;
@@ -88,6 +88,17 @@ export const GAME_MODES: Record<GameModeId, GameMode> = {
         max: MAX_DURATION_SEC,
         default: DEFAULT_DURATION_SEC,
       },
+      {
+        key: "teamCount",
+        label: "TEAMS",
+        kind: "teams",
+        // `min` is 0 rather than MIN_TEAM_COUNT because 0 is a real, reachable
+        // value — the default one. The gap at 1 is the kind's business, not
+        // the bounds': see `snapTeamCount`.
+        min: 0,
+        max: MAX_TEAM_COUNT,
+        default: 0,
+      },
     ],
   },
 };
@@ -113,7 +124,26 @@ export function defaultSettings(id: GameModeId): MatchSettings {
     mode: id,
     roundCount: DEFAULT_ROUND_COUNT,
     durationSec: DEFAULT_DURATION_SEC,
+    teamCount: 0,
   };
   for (const spec of GAME_MODES[id].settings) settings[spec.key] = spec.default;
   return settings;
+}
+
+/**
+ * Clamps a host-supplied value into a descriptor's bounds, then applies the
+ * kind's own rule. Settings arrive over a socket, so the Stepper's refusal to
+ * stop at an illegal value is not a guarantee.
+ *
+ * Non-finite values fall back to what is already set rather than poisoning the
+ * room with NaN.
+ */
+export function normalizeSetting(
+  spec: SettingSpec,
+  value: number | undefined,
+  current: number,
+): number {
+  if (value === undefined || !Number.isFinite(value)) return current;
+  const clamped = Math.min(spec.max, Math.max(spec.min, Math.round(value)));
+  return spec.kind === "teams" ? snapTeamCount(clamped) : clamped;
 }

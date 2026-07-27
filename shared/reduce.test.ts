@@ -469,6 +469,32 @@ describe("setSettings", () => {
   });
 });
 
+describe("teamCount over the wire", () => {
+  test("the host can turn teams on", () => {
+    let room = seed(2);
+    room = reduce(room, {
+      t: "setSettings", playerId: "host", values: { teamCount: 4 }, now: 2000,
+    });
+    expect(room.settings.teamCount).toBe(4);
+  });
+
+  test("a hand-rolled one-team value lands as off", () => {
+    let room = seed(2);
+    room = reduce(room, {
+      t: "setSettings", playerId: "host", values: { teamCount: 1 }, now: 2000,
+    });
+    expect(room.settings.teamCount).toBe(0);
+  });
+
+  test("setting it to what it already is returns the identical object", () => {
+    const room = seed(2);
+    const next = reduce(room, {
+      t: "setSettings", playerId: "host", values: { teamCount: 0 }, now: 2000,
+    });
+    expect(next).toBe(room);
+  });
+});
+
 describe("showStandings", () => {
   test("banks the round, clears entries and un-readies everyone", () => {
     const room = reduce(scored(), { t: "showStandings", playerId: "host", now: 50_000 });

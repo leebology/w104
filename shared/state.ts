@@ -18,6 +18,11 @@ export type MatchSettings = {
   roundCount: number;
   /** MIN_DURATION_SEC..MAX_DURATION_SEC. Seconds of typing per round. */
   durationSec: number;
+  /**
+   * 0 = off (the default). Otherwise MIN_TEAM_COUNT..MAX_TEAM_COUNT teams
+   * share word lists for the match. See shared/teams.ts.
+   */
+  teamCount: number;
 };
 
 /** One player's outcome in one round. */

@@ -3,7 +3,7 @@ import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, MatchSettings, Player, PlayerId, Room, RoundSummary } from "./state";
 import { CATEGORIES } from "./categories";
-import { isGameModeId, modeSpec } from "./gamemodes";
+import { isGameModeId, modeSpec, normalizeSetting } from "./gamemodes";
 import type { NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 
@@ -91,17 +91,6 @@ function openCountdown(room: Room, now: number, to: "voting" | "playing"): Room 
 }
 
 /**
- * Settings arrive over a socket, so the stepper's restrictions are not a
- * guarantee — a hand-rolled message must not be able to set a nine-hour
- * round. Non-finite values fall back to what is already set rather than
- * poisoning the room with NaN.
- */
-function clampSetting(value: number | undefined, min: number, max: number, current: number): number {
-  if (value === undefined || !Number.isFinite(value)) return current;
-  return Math.min(max, Math.max(min, Math.round(value)));
-}
-
-/**
  * Applies host-supplied values, honouring only the keys the *active mode*
  * actually exposes — the wire is not trusted, so a message naming a field this
  * mode does not have is ignored even though the field exists on the type.
@@ -113,7 +102,7 @@ function applySettings(
 ): MatchSettings {
   let next = settings;
   for (const spec of modeSpec(settings.mode).settings) {
-    const value = clampSetting(values[spec.key], spec.min, spec.max, settings[spec.key]);
+    const value = normalizeSetting(spec, values[spec.key], settings[spec.key]);
     if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
   }
   return next;
@@ -127,7 +116,7 @@ function applySettings(
 function clampToMode(settings: MatchSettings): MatchSettings {
   let next = settings;
   for (const spec of modeSpec(settings.mode).settings) {
-    const value = Math.min(spec.max, Math.max(spec.min, settings[spec.key]));
+    const value = normalizeSetting(spec, settings[spec.key], settings[spec.key]);
     if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
   }
   return next;

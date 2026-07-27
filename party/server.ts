@@ -84,6 +84,8 @@ export class W104 extends Server<Env> {
           roundCount: stored?.roundCount ?? base.roundCount,
           // Rooms older still carry a top-level `durationSec` and no settings.
           durationSec: stored?.durationSec ?? legacyDuration ?? DEFAULT_DURATION_SEC,
+          // Rooms stored before teamCount existed have no such field at all.
+          teamCount: stored?.teamCount ?? base.teamCount,
         };
       })(),
       // A room persisted mid-countdown before `to` existed has a countdown

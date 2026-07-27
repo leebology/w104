@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
-  DEFAULT_MODE, GAME_MODES, GAME_MODE_IDS, defaultSettings, isGameModeId, modeSpec,
+  DEFAULT_MODE, GAME_MODES, GAME_MODE_IDS, MAX_TEAM_COUNT, defaultSettings, isGameModeId, modeSpec,
+  normalizeSetting,
 } from "./gamemodes";
 import { MAX_DURATION_SEC, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_ROUND_COUNT } from "./reduce";
 import { createRoom } from "./state";
@@ -79,5 +80,36 @@ describe("lookups", () => {
 describe("a new room", () => {
   test("starts on the default mode", () => {
     expect(createRoom("PLUM", 0).settings.mode).toBe(DEFAULT_MODE);
+  });
+});
+
+describe("the teamCount setting", () => {
+  test("Free-for-All exposes it, off by default", () => {
+    const spec = GAME_MODES.ffa.settings.find((s) => s.key === "teamCount");
+    expect(spec).toBeDefined();
+    expect(spec!.kind).toBe("teams");
+    expect(spec!.min).toBe(0);
+    expect(spec!.max).toBe(MAX_TEAM_COUNT);
+    expect(spec!.default).toBe(0);
+    expect(defaultSettings("ffa").teamCount).toBe(0);
+  });
+
+  test("normalizeSetting snaps a one-team value to off", () => {
+    const spec = GAME_MODES.ffa.settings.find((s) => s.key === "teamCount")!;
+    expect(normalizeSetting(spec, 1, 0)).toBe(0);
+    expect(normalizeSetting(spec, 4, 0)).toBe(4);
+  });
+
+  test("normalizeSetting still clamps and still falls back on nonsense", () => {
+    const spec = GAME_MODES.ffa.settings.find((s) => s.key === "teamCount")!;
+    expect(normalizeSetting(spec, 99, 0)).toBe(MAX_TEAM_COUNT);
+    expect(normalizeSetting(spec, -3, 0)).toBe(0);
+    expect(normalizeSetting(spec, Number.NaN, 6)).toBe(6);
+    expect(normalizeSetting(spec, undefined, 6)).toBe(6);
+  });
+
+  test("the snap does not touch the other kinds", () => {
+    const rounds = GAME_MODES.ffa.settings.find((s) => s.key === "roundCount")!;
+    expect(normalizeSetting(rounds, 1, 3)).toBe(1);
   });
 });
