@@ -189,31 +189,42 @@ function HostVotingClosed({
       />
 
       <div className="host-voting__result">
-        <div className="host-voting__row host-voting__row--top">
-          {top.map((category, i) => (
-            <div className="vote-card" key={category} style={{ flexGrow: shares[category] }}>
-              <span className="vote-card__name" style={{ fontSize: topSize[i] }}>{category}</span>
-              <VoteFoot
-                room={room}
-                category={category}
-                total={`${shares[category]}%`}
-                totalStyle={{ fontSize: topShare[i] }}
-              />
+        {survivors.length === 0 ? (
+          // The deadline force-closes voting regardless of readiness, so this
+          // is reachable with nobody having voted at all. Say nothing about
+          // which category — the draw itself hasn't happened yet.
+          <p className="host-voting__no-votes">
+            No one voted — the room gets a random category.
+          </p>
+        ) : (
+          <>
+            <div className="host-voting__row host-voting__row--top">
+              {top.map((category, i) => (
+                <div className="vote-card" key={category} style={{ flexGrow: shares[category] }}>
+                  <span className="vote-card__name" style={{ fontSize: topSize[i] }}>{category}</span>
+                  <VoteFoot
+                    room={room}
+                    category={category}
+                    total={`${shares[category]}%`}
+                    totalStyle={{ fontSize: topShare[i] }}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {rest.length > 0 && (
-          <div className="host-voting__row host-voting__row--rest">
-            {rest.map((category) => (
-              // Equal width below the top three: under ~10% the differences
-              // are not worth a size difference.
-              <div className="vote-card vote-card--small" key={category}>
-                <span className="vote-card__name">{category}</span>
-                <VoteFoot room={room} category={category} total={`${shares[category]}%`} />
+            {rest.length > 0 && (
+              <div className="host-voting__row host-voting__row--rest">
+                {rest.map((category) => (
+                  // Equal width below the top three: under ~10% the differences
+                  // are not worth a size difference.
+                  <div className="vote-card vote-card--small" key={category}>
+                    <span className="vote-card__name">{category}</span>
+                    <VoteFoot room={room} category={category} total={`${shares[category]}%`} />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            )}
+          </>
         )}
       </div>
 

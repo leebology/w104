@@ -652,7 +652,32 @@ ul, ol { list-style: none; }
 .host-voting__row { display: flex; gap: 12px; flex: 1; min-height: 0; }
 .host-voting__result { justify-content: center; }
 .host-voting__row--top { flex: 0 0 206px; }
-.host-voting__row--rest { flex: 0 0 118px; justify-content: center; }
+
+/* Survivors below the top three can number up to 13 (16 categories, one vote
+   each). A fixed-height, non-wrapping row clips them off both edges past
+   ~5 cards, so this row sizes to its own content instead of a magic number,
+   and wraps rather than overflow — `.host-voting__result`'s `justify-content:
+   center` above then centres however tall that content turns out to be.
+   `flex-wrap` also means `justify-content: center` here re-centres each
+   individual line, including a short last line. */
+.host-voting__row--rest {
+  flex: 0 1 auto;
+  min-height: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+}
+
+/* Nobody voted at all — the deadline can force this shut with zero votes
+   cast. The category itself is drawn later, at the whistle, so this says
+   nothing about which one. */
+.host-voting__no-votes {
+  padding: 0 60px;
+  font-size: 24px;
+  line-height: 1.4;
+  color: var(--cream);
+  text-align: center;
+}
 
 /* Width is the odds: flex-grow carries the vote count, so a vote visibly
    grows its card with no measurement and no JS layout pass. */
@@ -672,7 +697,12 @@ ul, ol { list-style: none; }
   transition: flex-grow 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
-.vote-card--small { flex: 0 0 210px; }
+/* Equal-width, but no longer rigid: a fixed 210px card times up to 13
+   survivors cannot fit (or wrap) in ~1140px. `flex-basis` keeps cards near
+   their old width when there is room; `flex-shrink` (inherited from
+   `.vote-card`) and wrapping let a crowded row give way instead of clipping.
+   `max-width` stops a lone survivor from stretching to the full row. */
+.vote-card--small { flex: 1 1 150px; max-width: 220px; }
 
 /* A category nobody wanted: sunken, flat, name only. */
 .vote-card--zero {
