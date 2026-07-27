@@ -4,6 +4,7 @@ import { AVATARS, AvatarPicker } from "../../components/AvatarPicker";
 import { formatDuration } from "../../components/Stepper";
 import { saveProfile } from "../../net/identity";
 import { roomStore } from "../../net/room";
+import { modeSpec } from "../../../shared/gamemodes";
 import type { PlayerId, RoomState } from "../../../shared/state";
 
 type Props = {
@@ -36,10 +37,16 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
 
       <p className="player-lobby__room">ROOM {room.code}</p>
       <p className="player-lobby__settings">
+        {modeSpec(room.settings.mode).name}
+        {" · "}
         {room.settings.roundCount} {room.settings.roundCount === 1 ? "ROUND" : "ROUNDS"}
         {" · "}
         {formatDuration(room.settings.durationSec)}
       </p>
+      {/* Without this the countdown just vanishes and the room looks broken. */}
+      {room.configuring && (
+        <p className="player-lobby__settings">Host is adjusting settings…</p>
+      )}
 
       <section className="card">
         <label className="field__label" htmlFor="player-name">Your name</label>

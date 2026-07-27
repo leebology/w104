@@ -19,6 +19,11 @@ landed — see `docs/superpowers/specs/2026-07-26-match-structure-design.md` and
 product wishlist (`Project W-104.md`, untracked) is deliberately *not* built —
 see "Out of scope" in the design specs before adding anything from them.
 
+The host configures the match from two lobby drawers — **Game modes** (left)
+and **Game settings** (right). Modes and their settings are declared in
+`shared/gamemodes.ts`; adding a gamemode is a catalog change, not a layout
+change. See `docs/superpowers/specs/2026-07-27-gamemode-drawers-design.md`.
+
 ## Commands
 
 Requires Node 22 (`.nvmrc`). Two terminals for a working local setup:
@@ -134,6 +139,17 @@ replaced wholesale on each `state` push; every client action is a *request*.
 - **`Room.history` holds aggregates only, never words.** It rides in
   `RoomState`, so an `entries` field on `RoundSummary` would leak every past
   round to every socket — the same boundary `toRoomState` exists to hold.
+- **Settings are validated against the active mode's descriptors, never against
+  loose constants.** `shared/gamemodes.ts` is the single source of truth for
+  which settings a mode exposes and what their bounds are; `setSettings`
+  ignores any key the active mode does not declare, even when the field exists
+  on `MatchSettings`.
+- **`configuring` holds the countdown; it does not cancel it.** Opening a host
+  drawer drops the phase back to `lobby` with **readiness untouched**, so
+  closing lets `settle` derive a fresh countdown by itself. This is the exact
+  opposite of `cancelStart`, which clears readiness precisely so the countdown
+  stays down. The flag is cleared on host disconnect — otherwise a locked phone
+  freezes the room until the grace reap.
 
 ### Identity, sessions, and kicks
 
@@ -182,6 +198,9 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
   voting spec: the 16-category pool, vote budget, the weighted draw, spent
   categories. Supersedes the fixed `"woman"` category assumed by the MVP spec
   above.
+- `docs/superpowers/specs/2026-07-27-gamemode-drawers-design.md` — the gamemode
+  and settings drawers: the catalog, descriptor-driven validation, and the
+  countdown hold.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.
