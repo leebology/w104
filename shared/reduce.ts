@@ -3,9 +3,7 @@ import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, MatchSettings, Player, PlayerId, Room, RoundSummary } from "./state";
 import { CATEGORIES } from "./categories";
-import {
-  MAX_DURATION_SEC, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_ROUND_COUNT, isGameModeId, modeSpec,
-} from "./gamemodes";
+import { isGameModeId, modeSpec } from "./gamemodes";
 import type { NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 
