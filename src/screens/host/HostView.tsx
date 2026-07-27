@@ -1,12 +1,13 @@
 import type { ReactElement } from "react";
 import { roomStore } from "../../net/room";
 import type { ClientState } from "../../net/room";
-import { preRoundPhase } from "../../../shared/state";
+import { countdownScreen } from "../../../shared/state";
 import { TimesUp } from "../shared/TimesUp";
 import { HostLobby } from "./HostLobby";
 import { HostPlaying } from "./HostPlaying";
 import { HostScoring } from "./HostScoring";
 import { HostStandings } from "./HostStandings";
+import { HostVoting } from "./HostVoting";
 
 // The explicit ReactElement return type is what makes tsc flag an unhandled
 // phase — there is no noImplicitReturns in this repo, so dropping it would
@@ -27,13 +28,18 @@ export function HostView({ state, onLeave }: { state: ClientState; onLeave: () =
   switch (room.phase.name) {
     case "lobby":
       return <HostLobby room={room} onLeave={leave} />;
+    case "voting":
+      return <HostVoting room={room} />;
     case "countdown": {
       const countdown = { endsAt: room.phase.endsAt, offset: state.clockOffset };
-      return preRoundPhase(room) === "lobby" ? (
-        <HostLobby room={room} countdown={countdown} onLeave={leave} />
-      ) : (
-        <HostStandings room={room} countdown={countdown} />
-      );
+      const screen = countdownScreen(room);
+      if (screen === "lobby") {
+        return <HostLobby room={room} countdown={countdown} onLeave={leave} />;
+      }
+      if (screen === "voting") {
+        return <HostVoting room={room} countdown={countdown} />;
+      }
+      return <HostStandings room={room} countdown={countdown} />;
     }
     case "playing":
       return (

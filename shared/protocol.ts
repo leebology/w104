@@ -11,6 +11,8 @@ export type ClientMessage =
   | { type: "setSettings"; roundCount?: number; durationSec?: number }
   | { type: "showStandings" }
   | { type: "backToLobby" }
+  | { type: "castVote"; category: string }
+  | { type: "resetVotes" }
   | { type: "endGame" };
 
 export type ServerMessage =

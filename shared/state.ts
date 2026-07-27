@@ -1,5 +1,6 @@
 import type { Results } from "./scoring";
 import { DEFAULT_CATEGORY, DEFAULT_DURATION_SEC, DEFAULT_ROUND_COUNT } from "./categories";
+import type { VoteMap } from "./voting";
 
 export type PlayerId = string;
 
@@ -45,6 +46,8 @@ export type Player = {
 
 export type Phase =
   | { name: "lobby" }
+  /** The room picking this match's categories. One 60-second window per match. */
+  | { name: "voting"; endsAt: number }
   /**
    * Where this countdown lands. Stored rather than derived because two
    * distinct countdowns now sit at `history.length === 0` — the one before
@@ -66,6 +69,14 @@ export type Room = {
   phase: Phase;
   category: string;
   settings: MatchSettings;
+  /**
+   * Everyone's category votes for this match. Unlike `entries`, this is *not*
+   * server-only: the host TV renders the full tally to the whole room by
+   * design, so a player reading it in RoomState learns nothing they could not
+   * learn by looking up. Guarding it would cost per-connection encoding on
+   * every vote in exchange for nothing.
+   */
+  votes: VoteMap;
   /**
    * Every round already played, oldest first. Aggregates only — no words —
    * so it rides in RoomState safely and cheaply.
@@ -115,6 +126,7 @@ export function createRoom(code: string, now: number): Room {
       roundCount: DEFAULT_ROUND_COUNT,
       durationSec: DEFAULT_DURATION_SEC,
     },
+    votes: {},
     history: [],
     lastActivityAt: now,
     entries: {},
@@ -157,4 +169,16 @@ export function matchComplete(view: MatchView): boolean {
  */
 export function preRoundPhase(view: MatchView): "lobby" | "standings" {
   return view.history.length === 0 ? "lobby" : "standings";
+}
+
+/**
+ * Which screen renders *under* a countdown. Distinct from `preRoundPhase`,
+ * which answers where a *cancelled* countdown returns to — at round one those
+ * answers differ, so overloading one function would be wrong.
+ */
+export function countdownScreen(
+  view: MatchView & { phase: Phase },
+): "lobby" | "voting" | "standings" {
+  if (view.phase.name === "countdown" && view.phase.to === "voting") return "lobby";
+  return view.history.length === 0 ? "voting" : "standings";
 }

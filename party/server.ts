@@ -69,6 +69,7 @@ export class W104 extends Server<Env> {
       ...rest,
       kicked: rest.kicked ?? [],
       hostGoneAt: rest.hostGoneAt ?? null,
+      votes: rest.votes ?? {},
       history: rest.history ?? [],
       settings: rest.settings ?? {
         roundCount: DEFAULT_ROUND_COUNT,
@@ -277,6 +278,14 @@ export class W104 extends Server<Env> {
         break;
       case "backToLobby":
         this.room = reduce(this.room, { t: "backToLobby", playerId, now });
+        break;
+      case "castVote":
+        this.room = reduce(this.room, {
+          t: "castVote", playerId, category: msg.category, now,
+        });
+        break;
+      case "resetVotes":
+        this.room = reduce(this.room, { t: "resetVotes", playerId, now });
         break;
     }
 

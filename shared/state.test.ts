@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { createRoom, currentRound, matchComplete, preRoundPhase, toRoomState } from "./state";
+import { countdownScreen, createRoom, currentRound, matchComplete, preRoundPhase, toRoomState } from "./state";
 import type { Room } from "./state";
 
 /** A room with every server-only field non-empty, so stripping is observable. */
@@ -35,6 +35,7 @@ describe("toRoomState", () => {
       "players",
       "serverTime",
       "settings",
+      "votes",
     ]);
   });
 
@@ -56,6 +57,7 @@ describe("toRoomState", () => {
       category: "Bands",
       settings: { roundCount: 3, durationSec: 45 },
       history: [],
+      votes: {},
       serverTime: 9000,
     });
   });
@@ -65,6 +67,11 @@ describe("toRoomState", () => {
     toRoomState(room, 9000);
     expect(room.entries.p0).toHaveLength(1);
     expect(room.kicked).toEqual(["p1"]);
+  });
+
+  test("votes are broadcast — the TV renders the tally for the whole room", () => {
+    const room = { ...createRoom("PLUM", 1000), votes: { p0: { song: 2 } } };
+    expect(toRoomState(room, 1000).votes).toEqual({ p0: { song: 2 } });
   });
 });
 
@@ -100,5 +107,20 @@ describe("derived match helpers", () => {
   test("the pre-round phase is the lobby only before the first round", () => {
     expect(preRoundPhase(view(3, 0))).toBe("lobby");
     expect(preRoundPhase(view(3, 1))).toBe("standings");
+  });
+
+  test("countdownScreen tells the two round-one countdowns apart", () => {
+    const base = createRoom("PLUM", 1000);
+    expect(countdownScreen({
+      ...base, phase: { name: "countdown", endsAt: 2000, to: "voting" },
+    })).toBe("lobby");
+    expect(countdownScreen({
+      ...base, phase: { name: "countdown", endsAt: 2000, to: "playing" },
+    })).toBe("voting");
+    expect(countdownScreen({
+      ...base,
+      phase: { name: "countdown", endsAt: 2000, to: "playing" },
+      history: [{ category: "song", places: {} }],
+    })).toBe("standings");
   });
 });

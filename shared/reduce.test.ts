@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
 import { createRoom, currentRound, matchComplete, preRoundPhase } from "./state";
 import type { Room } from "./state";
-import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, TIMESUP_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
+import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, TIMESUP_MS, VOTING_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
+import { voteBudget } from "./voting";
 
 /** A room with `n` joined players, none ready, plus a host. */
 function seed(n: number, now = 1000): Room {
@@ -35,9 +36,9 @@ describe("lobby", () => {
     expect(room.phase.name).toBe("lobby");
   });
 
-  test("two ready players start the countdown", () => {
+  test("two ready players start the countdown to voting", () => {
     const room = readyAll(seed(2), 2000);
-    expect(room.phase).toEqual({ name: "countdown", endsAt: 2000 + COUNTDOWN_MS, to: "playing" });
+    expect(room.phase).toEqual({ name: "countdown", endsAt: 2000 + COUNTDOWN_MS, to: "voting" });
   });
 
   test("un-readying during the countdown cancels it", () => {
@@ -53,10 +54,10 @@ describe("lobby", () => {
     expect(room.phase.name).toBe("countdown");
   });
 
-  test("the host can start with just one player", () => {
+  test("the host can start with just one player, opening the countdown to voting", () => {
     let room = seed(1);
     room = reduce(room, { t: "startGame", playerId: "host", now: 2000 });
-    expect(room.phase).toEqual({ name: "countdown", endsAt: 2000 + COUNTDOWN_MS, to: "playing" });
+    expect(room.phase).toEqual({ name: "countdown", endsAt: 2000 + COUNTDOWN_MS, to: "voting" });
   });
 
   test("the host cannot start with zero players", () => {
@@ -150,17 +151,26 @@ describe("lobby", () => {
   });
 });
 
-/** Drive a seeded room all the way to a live round. */
+/**
+ * Drive a seeded room all the way to a live round. Ready-up now opens a
+ * countdown to voting rather than to the round, so reaching "playing" means
+ * passing through voting first. The host's force-start closes voting here —
+ * rather than a player spending their vote budget — because it works
+ * regardless of round count and leaves `votes` empty, which is what Task 5's
+ * draw needs to fall back to a uniform pick over the whole category list.
+ */
 function playing(now = 2000): Room {
-  const room = readyAll(seed(2, now), now);
-  return reduce(room, { t: "tick", now: now + COUNTDOWN_MS });
+  let room = readyAll(seed(2, now), now);
+  room = reduce(room, { t: "tick", now: now + COUNTDOWN_MS }); // -> voting
+  room = reduce(room, { t: "startGame", playerId: "host", now: now + COUNTDOWN_MS }); // host closes voting -> countdown to playing
+  return reduce(room, { t: "tick", now: now + COUNTDOWN_MS * 2 }); // -> playing
 }
 
 describe("round progression", () => {
   test("the countdown expiring starts the round", () => {
     const room = playing();
     expect(room.phase).toEqual({
-      name: "playing", endsAt: 2000 + COUNTDOWN_MS + 30_000,
+      name: "playing", endsAt: 2000 + COUNTDOWN_MS * 2 + 30_000,
     });
   });
 
@@ -168,6 +178,9 @@ describe("round progression", () => {
     let room = seed(2);
     room = { ...room, settings: { roundCount: 1, durationSec: 90 } };
     room = readyAll(room, 1000);
+    const votingStart = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: votingStart }); // -> voting
+    room = reduce(room, { t: "startGame", playerId: "host", now: votingStart }); // -> countdown to playing
     const cdEnd = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: cdEnd });
     expect(room.phase.name).toBe("playing");
@@ -575,6 +588,9 @@ describe("long rounds", () => {
       t: "setSettings", playerId: "host", durationSec: MAX_DURATION_SEC, now: 1000,
     });
     room = readyAll(room, 1000);
+    const votingStart = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: votingStart }); // -> voting
+    room = reduce(room, { t: "startGame", playerId: "host", now: votingStart }); // -> countdown to playing
     const cdEnd = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: cdEnd });
 
@@ -590,6 +606,9 @@ describe("long rounds", () => {
   test("scoring a full ten-player room stays fast", () => {
     let room = seed(MAX_PLAYERS);
     room = readyAll(room, 1000);
+    const votingStart = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: votingStart }); // -> voting
+    room = reduce(room, { t: "startGame", playerId: "host", now: votingStart }); // -> countdown to playing
     const cdEnd = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: cdEnd });
     for (const p of room.players) {
@@ -605,5 +624,195 @@ describe("long rounds", () => {
     // 10 x 200 entries is ~2M union-find comparisons. Generous ceiling: this
     // is a regression guard against an accidental O(n^3), not a benchmark.
     expect(Date.now() - started).toBeLessThan(5_000);
+  });
+});
+
+/** A room that has reached the voting phase with `n` players. */
+function seedVoting(n: number, roundCount = 5, now = 1000): Room {
+  let room = seed(n, now);
+  room = reduce(room, { t: "setSettings", playerId: "host", roundCount, now });
+  room = reduce(room, { t: "startGame", playerId: "host", now });
+  return reduce(room, { t: "tick", now: now + COUNTDOWN_MS });
+}
+
+describe("entering voting", () => {
+  test("everyone readying up opens a countdown to voting, not to a round", () => {
+    const room = readyAll(seed(2), 2000);
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 2000 + COUNTDOWN_MS, to: "voting",
+    });
+  });
+
+  test("the host's start button opens the same countdown to voting", () => {
+    const room = reduce(seed(3), { t: "startGame", playerId: "host", now: 2000 });
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 2000 + COUNTDOWN_MS, to: "voting",
+    });
+  });
+
+  test("the countdown to voting opens voting on its deadline", () => {
+    let room = readyAll(seed(2), 2000);
+    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS });
+    expect(room.phase).toEqual({ name: "voting", endsAt: 2000 + COUNTDOWN_MS + VOTING_MS });
+  });
+
+  test("opening voting clears the readiness that got us here", () => {
+    // Load-bearing: `ready` means "waiting in the room" before this edge and
+    // "votes spent" after it. Carried across, the next settle would see
+    // everyone ready and close voting before a single vote was cast.
+    let room = readyAll(seed(2), 2000);
+    expect(room.players.every((p) => p.ready)).toBe(true);
+    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS });
+    expect(room.phase.name).toBe("voting");
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("voting does not close the instant it opens", () => {
+    let room = readyAll(seed(2), 2000);
+    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS });
+    room = reduce(room, { t: "setProfile", playerId: "p0", name: "P0", emoji: "🐙", now: 2600 });
+    expect(room.phase.name).toBe("voting");
+  });
+
+  test("un-readying during the countdown to voting still cancels it", () => {
+    let room = readyAll(seed(2), 2000);
+    room = reduce(room, { t: "ready", playerId: "p0", ready: false, now: 3000 });
+    expect(room.phase.name).toBe("lobby");
+  });
+});
+
+describe("casting votes", () => {
+  test("a vote lands and counts against the budget", () => {
+    let room = seedVoting(2);
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
+    expect(room.votes.p0).toEqual({ song: 1 });
+  });
+
+  test("votes stack on one category", () => {
+    let room = seedVoting(2);
+    for (let i = 0; i < 3; i++) {
+      room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
+    }
+    expect(room.votes.p0).toEqual({ song: 3 });
+  });
+
+  test("spending the last vote marks the player ready", () => {
+    let room = seedVoting(2, 3); // budget 2
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
+    expect(room.players.find((p) => p.id === "p0")!.ready).toBe(false);
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "car", now: 3100 });
+    expect(room.players.find((p) => p.id === "p0")!.ready).toBe(true);
+  });
+
+  test("a vote past the budget is a no-op", () => {
+    let room = seedVoting(2, 2); // budget 1
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
+    const before = room;
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "car", now: 3100 });
+    expect(room).toBe(before);
+  });
+
+  test("an unknown category is a no-op", () => {
+    const room = seedVoting(2);
+    const after = reduce(room, { t: "castVote", playerId: "p0", category: "haircut", now: 3000 });
+    expect(after).toBe(room);
+  });
+
+  test("a vote outside the voting phase is a no-op", () => {
+    const room = seed(2);
+    const after = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
+    expect(after).toBe(room);
+  });
+
+  test("resetting clears the row and un-readies", () => {
+    let room = seedVoting(2, 2);
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
+    room = reduce(room, { t: "resetVotes", playerId: "p0", now: 3100 });
+    expect(room.votes.p0).toBeUndefined();
+    expect(room.players.find((p) => p.id === "p0")!.ready).toBe(false);
+  });
+
+  test("resetting with nothing to reset is a no-op", () => {
+    const room = seedVoting(2);
+    const after = reduce(room, { t: "resetVotes", playerId: "p0", now: 3000 });
+    expect(after).toBe(room);
+  });
+});
+
+describe("leaving voting", () => {
+  test("every player spending their budget opens the countdown to the round", () => {
+    let room = seedVoting(2, 2); // budget 1
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
+    expect(room.phase.name).toBe("voting");
+    room = reduce(room, { t: "castVote", playerId: "p1", category: "car", now: 3100 });
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 3100 + COUNTDOWN_MS, to: "playing",
+    });
+  });
+
+  test("the 60 second timer closes voting even with nobody ready", () => {
+    let room = seedVoting(3);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt });
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: endsAt + COUNTDOWN_MS, to: "playing",
+    });
+  });
+
+  test("the host can continue mid-vote, force-readying everyone", () => {
+    let room = seedVoting(3);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 3000 });
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 3000 + COUNTDOWN_MS, to: "playing",
+    });
+    expect(room.players.every((p) => p.ready)).toBe(true);
+  });
+
+  test("a player cannot continue", () => {
+    const room = seedVoting(3);
+    const after = reduce(room, { t: "startGame", playerId: "p0", now: 3000 });
+    expect(after).toBe(room);
+  });
+
+  test("a solo host start survives the next event", () => {
+    // everyoneReady needs MIN_PLAYERS, so an un-guarded settle would tear this
+    // countdown down the moment anything else happened.
+    let room = seedVoting(1, 2);
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
+    expect(room.phase.name).toBe("countdown");
+    room = reduce(room, { t: "setProfile", playerId: "p0", name: "Solo", emoji: "🦊", now: 3100 });
+    expect(room.phase.name).toBe("countdown");
+  });
+
+  test("a disconnected player does not hold voting open", () => {
+    let room = seedVoting(2, 2);
+    room = reduce(room, { t: "disconnect", playerId: "p1", now: 3000 });
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3100 });
+    expect(room.phase.name).toBe("countdown");
+  });
+
+  test("voting is what the alarm is waiting on while it runs", () => {
+    const room = seedVoting(2);
+    expect(nextAlarmAt(room)).toBe((room.phase as { endsAt: number }).endsAt);
+  });
+});
+
+describe("abandoning a vote", () => {
+  test("back to room from voting discards the votes", () => {
+    let room = seedVoting(2);
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 3100 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.votes).toEqual({});
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("stopping the countdown out of voting discards the votes too", () => {
+    let room = seedVoting(2, 2);
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
+    room = reduce(room, { t: "castVote", playerId: "p1", category: "car", now: 3100 });
+    room = reduce(room, { t: "cancelStart", playerId: "host", now: 3200 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.votes).toEqual({});
   });
 });

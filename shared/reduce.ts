@@ -2,8 +2,12 @@ import { scoreRound, normalize } from "./scoring";
 import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, Player, PlayerId, Room, RoundSummary } from "./state";
+import { CATEGORIES } from "./categories";
+import { voteBudget, votesSpent } from "./voting";
 
 export const COUNTDOWN_MS = 5_000;
+/** One voting window per match, whatever the round count. */
+export const VOTING_MS = 60_000;
 export const TIMESUP_MS = 3_000;
 export const IDLE_REAP_MS = 15_000;
 /**
@@ -40,6 +44,8 @@ export type RoomEvent =
   | { t: "setSettings"; playerId: PlayerId; roundCount?: number; durationSec?: number; now: number }
   | { t: "showStandings"; playerId: PlayerId; now: number }
   | { t: "backToLobby"; playerId: PlayerId; now: number }
+  | { t: "castVote"; playerId: PlayerId; category: string; now: number }
+  | { t: "resetVotes"; playerId: PlayerId; now: number }
   | { t: "tick"; now: number };
 
 const mapPlayer = (
@@ -51,10 +57,19 @@ const mapPlayer = (
 /**
  * Readiness counts only connected players. Otherwise one person whose phone
  * died in the lobby would block the game for everyone until they came back.
+ *
+ * `min` is the floor on how many connected players it takes to be a room at
+ * all: MIN_PLAYERS in the lobby and at standings, but 1 during voting — the
+ * match has already begun by then, and a host solo-start has to be able to
+ * close its own vote.
  */
-function everyoneReady(room: Room): boolean {
+function everyoneReady(room: Room, min: number): boolean {
   const active = room.players.filter((p) => p.connected);
-  return active.length >= MIN_PLAYERS && active.every((p) => p.ready);
+  return active.length >= min && active.every((p) => p.ready);
+}
+
+function openCountdown(room: Room, now: number, to: "voting" | "playing"): Room {
+  return { ...room, phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to } };
 }
 
 /**
@@ -73,21 +88,34 @@ function clampSetting(value: number | undefined, min: number, max: number, curre
  * changes readiness re-evaluates it, so un-readying mid-countdown backs out
  * without needing its own case.
  *
- * "Pre-round" is the lobby before round one and the standings screen between
- * rounds — readiness governs every round start, not just the first. The
- * `matchComplete` guard is what stops readying up on the final standings from
- * opening a countdown for a round that does not exist.
+ * Three phases can open a countdown now. The lobby opens one *to voting*;
+ * voting and standings open one *to a round*.
  */
 function settle(room: Room, now: number): Room {
   const phase = room.phase;
-  if (phase.name === "lobby" || phase.name === "standings") {
-    if (phase.name === "standings" && matchComplete(room)) return room;
-    if (!everyoneReady(room)) return room;
-    return { ...room, phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to: "playing" } };
+
+  if (phase.name === "lobby") {
+    return everyoneReady(room, MIN_PLAYERS) ? openCountdown(room, now, "voting") : room;
   }
-  if (phase.name === "countdown" && !everyoneReady(room)) {
-    return { ...room, phase: backPhase(room) };
+
+  if (phase.name === "voting") {
+    return everyoneReady(room, 1) ? openCountdown(room, now, "playing") : room;
   }
+
+  if (phase.name === "standings") {
+    if (matchComplete(room)) return room;
+    return everyoneReady(room, MIN_PLAYERS) ? openCountdown(room, now, "playing") : room;
+  }
+
+  if (phase.name === "countdown") {
+    // The post-voting countdown is deliberately not readiness-cancellable.
+    // everyoneReady needs MIN_PLAYERS, so after a host solo-start this branch
+    // would tear the countdown down on the very next event. Readiness has
+    // already done its job by the time voting closes.
+    if (phase.to === "playing" && room.history.length === 0) return room;
+    if (!everyoneReady(room, MIN_PLAYERS)) return { ...room, phase: backPhase(room) };
+  }
+
   return room;
 }
 
@@ -163,32 +191,43 @@ function apply(room: Room, ev: RoomEvent): Room {
         players: mapPlayer(room.players, ev.playerId, (p) => ({ ...p, ready: ev.ready })),
       };
 
-    case "startGame":
+    case "startGame": {
       if (ev.playerId !== room.hostId) return room;
-      // Legal from the lobby and from standings between rounds — both are
-      // pre-round phases, and both open the same countdown.
-      if (room.phase.name !== "lobby" && room.phase.name !== "standings") return room;
-      if (room.phase.name === "standings" && matchComplete(room)) return room;
+      // Legal from the room, from voting, and from standings between rounds.
+      // It always means the same thing: force-ready everyone and open a
+      // countdown. Only the destination differs.
+      const from = room.phase.name;
+      if (from !== "lobby" && from !== "voting" && from !== "standings") return room;
+      if (from === "standings" && matchComplete(room)) return room;
       // A deliberate host override: unlike the natural everyoneReady path,
       // this can start the countdown with just one connected player.
       if (room.players.filter((p) => p.connected).length < 1) return room;
       return {
         ...room,
         players: room.players.map((p) => ({ ...p, ready: true })),
-        phase: { name: "countdown", endsAt: ev.now + COUNTDOWN_MS, to: "playing" },
+        phase: {
+          name: "countdown",
+          endsAt: ev.now + COUNTDOWN_MS,
+          to: from === "lobby" ? "voting" : "playing",
+        },
       };
+    }
 
     case "cancelStart": {
       if (ev.playerId !== room.hostId) return room;
       if (room.phase.name !== "countdown") return room;
+      const back = backPhase(room);
       // Resets everyone's readiness rather than leaving it as-is: it was
       // solo-start's `startGame` that force-readied everyone, and leaving
       // that in place would have `settle` immediately re-open the countdown
       // this cancel is meant to stop.
       return {
         ...room,
-        phase: backPhase(room),
+        phase: back,
         players: room.players.map((p) => ({ ...p, ready: false })),
+        // Abandoning back to the room abandons the match, and the votes
+        // belonged to a match that no longer exists.
+        votes: back.name === "lobby" ? {} : room.votes,
       };
     }
 
@@ -239,6 +278,41 @@ function apply(room: Room, ev: RoomEvent): Room {
       return { ...room, settings: { roundCount, durationSec } };
     }
 
+    case "castVote": {
+      if (room.phase.name !== "voting") return room;
+      // A hand-rolled socket message is not bound by the UI, so the pool and
+      // the budget are both checked here rather than trusted.
+      if (!(CATEGORIES as readonly string[]).includes(ev.category)) return room;
+      if (!room.players.some((p) => p.id === ev.playerId)) return room;
+      const budget = voteBudget(room.settings);
+      const row = room.votes[ev.playerId] ?? {};
+      const spent = votesSpent(row);
+      if (spent >= budget) return room;
+      return {
+        ...room,
+        votes: {
+          ...room.votes,
+          [ev.playerId]: { ...row, [ev.category]: (row[ev.category] ?? 0) + 1 },
+        },
+        // Ready is derived from the budget, never a button — spending the last
+        // vote is what readies you, and that is what `settle` closes voting on.
+        players: mapPlayer(room.players, ev.playerId, (p) => ({
+          ...p, ready: spent + 1 >= budget,
+        })),
+      };
+    }
+
+    case "resetVotes": {
+      if (room.phase.name !== "voting") return room;
+      if (!room.votes[ev.playerId]) return room;
+      const { [ev.playerId]: _cleared, ...votes } = room.votes;
+      return {
+        ...room,
+        votes,
+        players: mapPlayer(room.players, ev.playerId, (p) => ({ ...p, ready: false })),
+      };
+    }
+
     case "showStandings": {
       if (ev.playerId !== room.hostId) return room;
       if (room.phase.name !== "scoring") return room;
@@ -264,15 +338,17 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "backToLobby":
       if (ev.playerId !== room.hostId) return room;
-      if (room.phase.name !== "standings") return room;
+      if (room.phase.name !== "standings" && room.phase.name !== "voting") return room;
       // Settings survive — the host usually wants the same match again — and
-      // so does `kicked`, which is durable for the room's lifetime.
+      // so does `kicked`, which is durable for the room's lifetime. The votes
+      // do not: they belonged to the match being abandoned.
       return {
         ...room,
         phase: { name: "lobby" },
         players: room.players.map((p) => ({ ...p, ready: false })),
         entries: {},
         history: [],
+        votes: {},
       };
 
     case "tick":
@@ -287,10 +363,27 @@ function apply(room: Room, ev: RoomEvent): Room {
 function tick(room: Room, now: number): Room {
   const phase = room.phase;
   if (phase.name === "countdown" && now >= phase.endsAt) {
+    if (phase.to === "voting") {
+      return {
+        ...room,
+        phase: { name: "voting", endsAt: now + VOTING_MS },
+        // Load-bearing, not housekeeping: `ready` means "waiting in the room"
+        // on this side of the edge and "votes spent" on the other. Carried
+        // across, the next settle would see everyone ready and close voting
+        // before a single vote was cast.
+        players: room.players.map((p) => ({ ...p, ready: false })),
+        votes: {},
+      };
+    }
     return {
       ...room,
       phase: { name: "playing", endsAt: now + room.settings.durationSec * 1_000 },
     };
+  }
+  if (phase.name === "voting" && now >= phase.endsAt) {
+    // The global deadline closes voting into the same countdown the other two
+    // triggers open, so a round always starts the same way.
+    return { ...room, phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to: "playing" } };
   }
   if (phase.name === "playing" && now >= phase.endsAt) {
     return { ...room, phase: { name: "timesup", endsAt: now + TIMESUP_MS } };
@@ -373,7 +466,10 @@ export function canEndGame(room: Room, playerId: PlayerId): boolean {
 export function nextAlarmAt(room: Room): number {
   const phase = room.phase;
   const base =
-    phase.name === "countdown" || phase.name === "playing" || phase.name === "timesup"
+    phase.name === "countdown" ||
+    phase.name === "voting" ||
+    phase.name === "playing" ||
+    phase.name === "timesup"
       ? phase.endsAt
       : room.lastActivityAt + IDLE_REAP_MS;
   if (room.hostGoneAt === null) return base;
