@@ -29,7 +29,7 @@ export function HostView({ state, onLeave }: { state: ClientState; onLeave: () =
     case "lobby":
       return <HostLobby room={room} onLeave={leave} />;
     case "voting":
-      return <HostVoting room={room} />;
+      return <HostVoting room={room} offset={state.clockOffset} />;
     case "countdown": {
       const countdown = { endsAt: room.phase.endsAt, offset: state.clockOffset };
       const screen = countdownScreen(room);
@@ -37,7 +37,7 @@ export function HostView({ state, onLeave }: { state: ClientState; onLeave: () =
         return <HostLobby room={room} countdown={countdown} onLeave={leave} />;
       }
       if (screen === "voting") {
-        return <HostVoting room={room} countdown={countdown} />;
+        return <HostVoting room={room} offset={state.clockOffset} countdown={countdown} />;
       }
       return <HostStandings room={room} countdown={countdown} />;
     }

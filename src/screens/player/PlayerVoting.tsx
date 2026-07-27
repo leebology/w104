@@ -10,11 +10,14 @@ import { roomStore } from "../../net/room";
 type Props = {
   room: RoomState;
   playerId: PlayerId;
+  /** `state.clockOffset` — needed even outside `countdown` so the open voting
+      deadline counts down against the same clock as everything else. */
+  offset: number;
   /** Present once voting has closed and the round countdown is running. */
   countdown?: { endsAt: number; offset: number };
 };
 
-export function PlayerVoting({ room, playerId, countdown }: Props) {
+export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
   const me = room.players.find((p) => p.id === playerId);
   const mine = room.votes[playerId] ?? {};
   const budget = voteBudget(room.settings);
@@ -30,7 +33,7 @@ export function PlayerVoting({ room, playerId, countdown }: Props) {
   const votingEndsAt = room.phase.name === "voting" ? room.phase.endsAt : 0;
   const remaining = useRemaining(
     closed ? countdown.endsAt : votingEndsAt,
-    closed ? countdown.offset : 0,
+    closed ? countdown.offset : offset,
   );
 
   // The numeral is the loudest thing on the screen and it changes on every

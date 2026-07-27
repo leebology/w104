@@ -10,6 +10,9 @@ import { HostHeader, VotingCount } from "./HostHeader";
 
 type Props = {
   room: RoomState;
+  /** `state.clockOffset` — needed even outside `countdown` so the open voting
+      deadline counts down against the same clock as everything else. */
+  offset: number;
   /** Present once voting has closed and the round countdown is running. */
   countdown?: { endsAt: number; offset: number };
 };
@@ -57,7 +60,9 @@ function VoteFoot({
 /**
  * Name size steps with share so the leader reads from the sofa. A step
  * function rather than per-card magic numbers, so adding a category cannot
- * quietly change the type scale.
+ * quietly change the type scale. This governs the open grid only, where any
+ * of 16 categories can land at any vote count — see `rankNameSize` below for
+ * why the closed reveal's fixed 3-slot podium is different.
  */
 function nameSize(votes: number): string {
   if (votes >= 8) return "38px";
@@ -66,17 +71,20 @@ function nameSize(votes: number): string {
   return "21px";
 }
 
-export function HostVoting({ room, countdown }: Props) {
+export function HostVoting({ room, offset, countdown }: Props) {
   const totals = tallyVotes(room.votes);
   // One hook, one deadline: the voting window while it runs, the round
   // countdown once it has closed. `useRemaining` returns whole seconds.
   const remaining = useRemaining(
     countdown?.endsAt ?? (room.phase.name === "voting" ? room.phase.endsAt : 0),
-    countdown?.offset ?? 0,
+    countdown?.offset ?? offset,
   );
   const budget = voteBudget(room.settings);
   const cast = Object.values(totals).reduce((a, b) => a + b, 0);
-  const ready = room.players.filter((p) => p.ready).length;
+  // Matches `everyoneReady` in shared/reduce.ts, which is what actually closes
+  // voting: a disconnected player must not read as "ready" on the TV, or the
+  // count can say "not everyone's ready" right before voting closes anyway.
+  const ready = room.players.filter((p) => p.connected && p.ready).length;
 
   if (countdown) {
     return <HostVotingClosed room={room} totals={totals} remaining={remaining} cast={cast} />;
@@ -172,8 +180,13 @@ function HostVotingClosed({
     .sort((a, b) => (totals[b] ?? 0) - (totals[a] ?? 0));
   const top = survivors.slice(0, 3);
   const rest = survivors.slice(3);
-  const topSize = ["52px", "34px", "30px"];
-  const topShare = ["46px", "34px", "30px"];
+  // Rank-indexed, not a step function like `nameSize` above. That's a
+  // deliberate difference, not the same mechanism done twice: `top` is
+  // always exactly 3 slots by construction, so "2nd place" is a fixed thing
+  // to hand-tune rather than an open-ended scale that a 17th category could
+  // quietly perturb.
+  const rankNameSize = ["52px", "34px", "30px"];
+  const rankShareSize = ["46px", "34px", "30px"];
 
   return (
     <main className="screen screen--host host-voting host-voting--closed">
@@ -201,12 +214,12 @@ function HostVotingClosed({
             <div className="host-voting__row host-voting__row--top">
               {top.map((category, i) => (
                 <div className="vote-card" key={category} style={{ flexGrow: shares[category] }}>
-                  <span className="vote-card__name" style={{ fontSize: topSize[i] }}>{category}</span>
+                  <span className="vote-card__name" style={{ fontSize: rankNameSize[i] }}>{category}</span>
                   <VoteFoot
                     room={room}
                     category={category}
                     total={`${shares[category]}%`}
-                    totalStyle={{ fontSize: topShare[i] }}
+                    totalStyle={{ fontSize: rankShareSize[i] }}
                   />
                 </div>
               ))}

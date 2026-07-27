@@ -787,8 +787,28 @@ ul, ol { list-style: none; }
    override, so the phone-sized one keeps its numbers. */
 .get-ready--tv { font-size: 40px; padding: 14px 36px; }
 
+/* HostVoting and HostVotingClosed render different DOM subtrees, so React
+   remounts rather than transitioning between them — without this the reveal
+   is a hard cut. This only covers the incoming side: the result area and the
+   plaque fade in. A true cross-fade that also fades the zero-vote cards out
+   first would need the two screens to share one DOM subtree (FLIP-style),
+   which is deliberately not attempted here. */
+.host-voting--closed .host-voting__result,
+.host-voting--closed .get-ready--tv {
+  animation: voting-reveal-in 260ms ease-out both;
+}
+
+@keyframes voting-reveal-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vote-card { transition: none; }
+  .host-voting--closed .host-voting__result,
+  .host-voting--closed .get-ready--tv {
+    animation: none;
+  }
 }
 
 /* ---------------------------------------------------------- host scoring */
