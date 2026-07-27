@@ -113,10 +113,16 @@ function settle(room: Room, now: number): Room {
   }
 
   if (phase.name === "countdown") {
-    // The post-voting countdown is deliberately not readiness-cancellable.
-    // everyoneReady needs MIN_PLAYERS, so after a host solo-start this branch
-    // would tear the countdown down on the very next event. Readiness has
-    // already done its job by the time voting closes.
+    // The countdown from voting into round one is deliberately not
+    // readiness-cancellable: everyoneReady needs MIN_PLAYERS, so after a host
+    // solo-start this branch would tear the countdown down on the very next
+    // event. Readiness has already done its job by the time voting closes.
+    //
+    // This guard covers only that one countdown. The other two — lobby into
+    // voting, and a solo "Next round" at round two or later — have no such
+    // guard, so a solo host start there is still torn down by any event
+    // inside the 5-second window while fewer than MIN_PLAYERS are connected.
+    // Pre-existing, not fixed here; noted so it isn't mistaken for handled.
     if (phase.to === "playing" && room.history.length === 0) return room;
     if (!everyoneReady(room, MIN_PLAYERS)) return { ...room, phase: backPhase(room) };
   }
@@ -313,6 +319,7 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "resetVotes": {
       if (room.phase.name !== "voting") return room;
+      if (!room.players.some((p) => p.id === ev.playerId)) return room;
       if (!room.votes[ev.playerId]) return room;
       const { [ev.playerId]: _cleared, ...votes } = room.votes;
       return {

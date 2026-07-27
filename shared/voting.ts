@@ -42,7 +42,9 @@ export function tallyVotes(votes: VoteMap): Record<string, number> {
  * visible bug.
  *
  * Remainder ties break by pool order so the same votes always produce the same
- * screen — an unstable sort here would make the reveal flicker between renders.
+ * screen. Without it the result would still be stable across renders (`sort`
+ * has been stable since ES2019), but it would depend on insertion order —
+ * i.e. on who voted first — rather than being a fixed property of the votes.
  */
 export function voteShares(votes: VoteMap): Record<string, number> {
   const totals = tallyVotes(votes);
@@ -117,9 +119,10 @@ export function pickCategory(
 }
 
 /**
- * Walks the cumulative distribution. The clamp matters: a roll of exactly 1 —
- * or a float that lands a hair past the final edge — would otherwise fall off
- * the end of the scan and reach the fallback return.
+ * Walks the cumulative distribution. The final `return` already covers a roll
+ * of exactly 1 (or a float that lands a hair past the last edge) falling off
+ * the end of the scan, so the clamp is belt-and-braces rather than load-
+ * bearing — kept because it costs nothing and rules the case out up front.
  */
 function weightedPick(weights: Array<[string, number]>, roll: number): string {
   const total = weights.reduce((sum, [, w]) => sum + w, 0);

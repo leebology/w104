@@ -82,8 +82,12 @@ describe("voteShares", () => {
   });
 
   test("ties in the remainder break by pool order, deterministically", () => {
-    // song is earlier in CATEGORIES than movie, so it takes the spare point.
-    const shares = voteShares({ p0: { song: 1, movie: 1, car: 1 } });
+    // Insertion order is car, song, movie — the opposite of pool order — so
+    // this only passes if the tie-break actually consults CATEGORIES rather
+    // than riding Array.prototype.sort's stability over insertion order.
+    // song is earliest in CATEGORIES among the three, so it takes the spare
+    // point regardless of the order votes were entered in.
+    const shares = voteShares({ p0: { car: 1, song: 1, movie: 1 } });
     expect(shares.song).toBe(34);
     expect(shares.movie).toBe(33);
     expect(shares.car).toBe(33);

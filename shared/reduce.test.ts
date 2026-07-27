@@ -575,7 +575,7 @@ describe("backToLobby", () => {
     expect(reduce(before, { t: "backToLobby", playerId: "p0", now: 50_200 })).toBe(before);
   });
 
-  test("only reachable from standings", () => {
+  test("not reachable from scoring", () => {
     const before = scored();
     expect(reduce(before, { t: "backToLobby", playerId: "host", now: 50_200 })).toBe(before);
   });
@@ -718,6 +718,12 @@ describe("casting votes", () => {
     expect(after).toBe(room);
   });
 
+  test("the host holds no player slot, so their vote is a no-op", () => {
+    const room = seedVoting(2);
+    const after = reduce(room, { t: "castVote", playerId: "host", category: "song", now: 3000 });
+    expect(after).toBe(room);
+  });
+
   test("a vote outside the voting phase is a no-op", () => {
     const room = seed(2);
     const after = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
@@ -735,6 +741,12 @@ describe("casting votes", () => {
   test("resetting with nothing to reset is a no-op", () => {
     const room = seedVoting(2);
     const after = reduce(room, { t: "resetVotes", playerId: "p0", now: 3000 });
+    expect(after).toBe(room);
+  });
+
+  test("the host holds no player slot, so resetting on their behalf is a no-op", () => {
+    const room = seedVoting(2);
+    const after = reduce(room, { t: "resetVotes", playerId: "host", now: 3000 });
     expect(after).toBe(room);
   });
 
