@@ -1079,10 +1079,19 @@ In `nextAlarmAt`, add `voting` to the timed phases:
       : room.lastActivityAt + IDLE_REAP_MS;
 ```
 
-- [ ] **Step 5: Run the shared tests**
+- [ ] **Step 5: Reconcile the existing tests with the new phase machine**
+
+Inserting a phase ahead of round one invalidates tests written when the lobby countdown led straight to a round. Appending the new tests is not enough — these must be reworked too, and the work is not optional:
+
+- **`playing()`** (`shared/reduce.test.ts`, around line 154) is `readyAll(seed(2, now), now)` plus one tick, which used to land in `playing`. That tick now only reaches `voting`. Route it through: ready → tick (voting opens) → host `startGame` (closes voting) → tick (round starts). Use the host force-start rather than having every player spend their budget: it does not depend on the vote budget, and it leaves `votes` empty, which keeps Task 5's draw uniform rather than pinned to whatever the helper happened to vote for. Comment the detour so it does not read as accidental.
+- **`scored()`** is built on `playing()` and inherits the fix.
+- **Hardcoded timing literals** that assumed one countdown — e.g. `2000 + COUNTDOWN_MS + 30_000` — now span two. Derive them from the constants (`2000 + COUNTDOWN_MS * 2 + 30_000`) rather than hardcoding a new number.
+- **Two tests now assert the wrong destination**: `"two ready players start the countdown"` and `"the host can start with just one player"` must expect `to: "voting"`. Rename them if the old name no longer describes what they check.
+
+**Reroute, never weaken.** The only legitimate change to a pre-existing test is the route it takes to the phase under test, plus the timing literals that shift with it. No `toEqual` downgraded to a `.name` check, no exact `endsAt` replaced by a range, no test deleted. If a test cannot be preserved without weakening it, stop and escalate.
 
 Run: `npx vitest run shared/`
-Expected: PASS. If `reduce.test.ts` fails on `seedVoting`, check that `setSettings` is applied while still in the lobby — it is locked once the match starts.
+Expected: PASS. If `seedVoting` fails, check that `setSettings` is applied while still in the lobby — it is locked once the match starts.
 
 - [ ] **Step 6: Wire the protocol and the server**
 
