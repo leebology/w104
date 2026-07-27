@@ -1484,6 +1484,36 @@ function votersFor(room: RoomState, category: string): Array<[Player, number]> {
 }
 
 /**
+ * The avatar strip and its total. Shared by the open grid and both rows of the
+ * closed reveal — three renderings of the same thing, so it is one component.
+ * `overflow: hidden` on the row means the avatars clip under pressure and the
+ * total never does.
+ */
+function VoteFoot({
+  room, category, total, totalStyle,
+}: {
+  room: RoomState;
+  category: string;
+  /** Vote count while voting is open; the share percentage once it has closed. */
+  total: string;
+  totalStyle?: { fontSize: string };
+}) {
+  return (
+    <span className="vote-card__foot">
+      <span className="vote-card__voters">
+        {votersFor(room, category).map(([p, n]) => (
+          <span className="vote-card__voter" key={p.id}>
+            {p.emoji}
+            {n > 1 && <span className="vote-card__times">×{n}</span>}
+          </span>
+        ))}
+      </span>
+      <span className="vote-card__total" style={totalStyle}>{total}</span>
+    </span>
+  );
+}
+
+/**
  * Name size steps with share so the leader reads from the sofa. A step
  * function rather than per-card magic numbers, so adding a category cannot
  * quietly change the type scale.
@@ -1547,17 +1577,7 @@ export function HostVoting({ room, countdown }: Props) {
                     {category}
                   </span>
                   {votes > 0 && (
-                    <span className="vote-card__foot">
-                      <span className="vote-card__voters">
-                        {votersFor(room, category).map(([p, n]) => (
-                          <span className="vote-card__voter" key={p.id}>
-                            {p.emoji}
-                            {n > 1 && <span className="vote-card__times">×{n}</span>}
-                          </span>
-                        ))}
-                      </span>
-                      <span className="vote-card__total">{votes}</span>
-                    </span>
+                    <VoteFoot room={room} category={category} total={String(votes)} />
                   )}
                 </div>
               );
@@ -1640,19 +1660,12 @@ function HostVotingClosed({
           {top.map((category, i) => (
             <div className="vote-card" key={category} style={{ flexGrow: shares[category] }}>
               <span className="vote-card__name" style={{ fontSize: topSize[i] }}>{category}</span>
-              <span className="vote-card__foot">
-                <span className="vote-card__voters">
-                  {votersFor(room, category).map(([p, n]) => (
-                    <span className="vote-card__voter" key={p.id}>
-                      {p.emoji}
-                      {n > 1 && <span className="vote-card__times">×{n}</span>}
-                    </span>
-                  ))}
-                </span>
-                <span className="vote-card__total" style={{ fontSize: topShare[i] }}>
-                  {shares[category]}%
-                </span>
-              </span>
+              <VoteFoot
+                room={room}
+                category={category}
+                total={`${shares[category]}%`}
+                totalStyle={{ fontSize: topShare[i] }}
+              />
             </div>
           ))}
         </div>
@@ -1664,17 +1677,7 @@ function HostVotingClosed({
               // are not worth a size difference.
               <div className="vote-card vote-card--small" key={category}>
                 <span className="vote-card__name">{category}</span>
-                <span className="vote-card__foot">
-                  <span className="vote-card__voters">
-                    {votersFor(room, category).map(([p, n]) => (
-                      <span className="vote-card__voter" key={p.id}>
-                        {p.emoji}
-                        {n > 1 && <span className="vote-card__times">×{n}</span>}
-                      </span>
-                    ))}
-                  </span>
-                  <span className="vote-card__total">{shares[category]}%</span>
-                </span>
+                <VoteFoot room={room} category={category} total={`${shares[category]}%`} />
               </div>
             ))}
           </div>
@@ -2014,7 +2017,13 @@ export function PlayerVoting({ room, playerId, countdown }: Props) {
 
 - [ ] **Step 2: Add the styles**
 
-Append to `src/style.css`:
+First add the one missing token to `:root` in `src/style.css`, beside `--card-rule`. The timer track on the player screen sits on pink, not inside a cream card, so `--card-rule` is the wrong value and a loose `rgba()` would break the no-loose-hex rule:
+
+```css
+  --cream-track: rgba(255, 247, 232, 0.3); /* timer track on a pink field */
+```
+
+Then append:
 
 ```css
 /* --------------------------------------------------------- player voting */
@@ -2162,7 +2171,7 @@ Append to `src/style.css`:
   width: 100%;
   height: 10px;
   border-radius: 99px;
-  background: rgba(255, 247, 232, 0.3);
+  background: var(--cream-track);
   overflow: hidden;
 }
 
