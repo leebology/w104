@@ -58,11 +58,31 @@ export type Team = {
 
 /** Ten accents, each with the default name a fresh team carries. */
 export const TEAM_COLORS: readonly { readonly token: string; readonly name: string }[];
-export const MAX_TEAM_COUNT = 10;
-export const MIN_TEAM_COUNT = 2;
 /** Matches the server's MAX_NAME_LEN for players. */
 export const MAX_TEAM_NAME_LEN = 20;
 ```
+
+`MIN_TEAM_COUNT` and `MAX_TEAM_COUNT` live in `gamemodes.ts` with the other
+bounds, per the drawers spec's rule that descriptors are the only thing quoting
+them.
+
+### Import direction
+
+One-way, with no runtime cycle:
+
+```
+gamemodes.ts ──type──> state.ts
+teams.ts     ──value─> gamemodes.ts        ──type──> state.ts
+state.ts     ──value─> gamemodes.ts        ──type──> teams.ts, scoring.ts
+scoring.ts   ──type──> teams.ts, state.ts
+standings.ts ──type──> teams.ts, scoring.ts, state.ts
+```
+
+`teams.ts` needs `modeSpec` at runtime for `teamsEnabled`, so the edge
+`teams.ts → gamemodes.ts` is real. That is why `snapTeamCount` and the team
+bounds live in `gamemodes.ts` and not in `teams.ts` — the reverse edge would
+close a cycle. `Scorer` and `ScorerId` (§6) live in `teams.ts` for the same
+reason: `rosterOf` builds them, and `scoring.ts` only needs the type.
 
 `token` is a design-token name, not a hex literal — `style.css` owns the actual
 colour, per the drawers spec's no-loose-hex rule.
@@ -88,6 +108,9 @@ also gives it a stable order for free — the same reasoning that makes
   `TEAM_COLORS[i]`'s token and default name.
 - `teamOf(room, playerId): Team | undefined`
 - `membersOf(room, teamId): Player[]` — filter, preserving `players` order.
+- `snapTeamCount(value): number` — 1 → 0, everything else unchanged. Lives in
+  `gamemodes.ts` beside the other bounds, not here, so the import graph stays
+  one-way (see below); `normalizeSetting` and the Stepper both call it.
 - `rosterOf(room): Scorer[]` — see §6. **This is the one place empty teams are
   excluded**, so no render site has to remember to.
 - `assignStragglers(players, teams): Player[]` — every player with
@@ -259,6 +282,23 @@ the same tick that already clears `ready` and resets `votes`.
 Doing it when the countdown *opens* would be wrong twice over: every player
 would instantly be "ready", so `settle` could never tear the countdown down, and
 a player could therefore never leave their team to cancel it.
+
+### `cancelStart` is rejected on the teams countdown
+
+`cancelStart` clears everyone's `ready` precisely so `settle` cannot re-open the
+countdown. Landing back in `teams` that would **wedge the room**: every player
+is still on a team, so nothing they can do sets `ready` again short of leaving
+and rejoining. So `cancelStart` returns the identical object when the countdown
+is `to: "voting"` and teams are enabled, and `HostTeams` renders no Stop button.
+
+Leaving a team is the cancel — which is the design's own rule, applied to the
+host screen as well as the player's. The alternative, clearing every `teamId` on
+cancel, throws away everyone's choice to undo one host tap.
+
+For the same reason `setConfiguring`'s countdown-drop is narrowed to fire only
+when `backPhase(room).name === "lobby"`. Drawers only ever open on the host
+*lobby*, so this changes no real path; it stops a hand-rolled message from
+dropping a teams countdown into a phase whose readiness it cannot restore.
 
 ### `backToLobby`
 
