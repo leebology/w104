@@ -1,6 +1,13 @@
 import { describe, expect, test } from "vitest";
 import { CATEGORIES } from "./categories";
-import { tallyVotes, voteBudget, voteShares, votesSpent } from "./voting";
+import {
+  pickCategory,
+  spentCategories,
+  tallyVotes,
+  voteBudget,
+  voteShares,
+  votesSpent,
+} from "./voting";
 import type { VoteMap } from "./voting";
 
 describe("voteBudget", () => {
@@ -84,5 +91,82 @@ describe("voteShares", () => {
 
   test("no votes yields no shares rather than a divide by zero", () => {
     expect(voteShares({})).toEqual({});
+  });
+});
+
+describe("spentCategories", () => {
+  test("reads the categories out of history, oldest first", () => {
+    const history = [
+      { category: "song", places: {} },
+      { category: "car", places: {} },
+    ];
+    expect(spentCategories({ history })).toEqual(["song", "car"]);
+  });
+
+  test("a fresh match has spent nothing", () => {
+    expect(spentCategories({ history: [] })).toEqual([]);
+  });
+});
+
+describe("pickCategory", () => {
+  const votes: VoteMap = { p0: { song: 3 }, p1: { movie: 1 } };
+  // song weighs 3, movie weighs 1, so the cumulative edge is at 0.75.
+
+  test("a low roll lands in the heavy category", () => {
+    expect(pickCategory(votes, [], 0)).toBe("song");
+    expect(pickCategory(votes, [], 0.74)).toBe("song");
+  });
+
+  test("a roll past the edge lands in the light category", () => {
+    expect(pickCategory(votes, [], 0.75)).toBe("movie");
+    expect(pickCategory(votes, [], 0.99)).toBe("movie");
+  });
+
+  test("a roll of exactly 1 does not fall off the end", () => {
+    expect(pickCategory(votes, [], 1)).toBe("movie");
+  });
+
+  test("proportions hold across the whole roll space", () => {
+    let song = 0;
+    for (let i = 0; i < 1000; i++) {
+      if (pickCategory(votes, [], i / 1000) === "song") song += 1;
+    }
+    expect(song).toBe(750);
+  });
+
+  test("a spent category is never drawn again", () => {
+    // song is spent, so every roll must land on movie even though song
+    // carries three quarters of the vote.
+    for (const roll of [0, 0.25, 0.5, 0.75, 0.99]) {
+      expect(pickCategory(votes, ["song"], roll)).toBe("movie");
+    }
+  });
+
+  test("shares recalculate once a category is spent", () => {
+    const three: VoteMap = { p0: { song: 2, movie: 1, car: 1 } };
+    // With song spent the pool is movie:1 car:1 — an even split at 0.5.
+    expect(pickCategory(three, ["song"], 0.49)).toBe("movie");
+    expect(pickCategory(three, ["song"], 0.51)).toBe("car");
+  });
+
+  test("once the voted categories are spent it draws from the unvoted ones", () => {
+    const drawn = pickCategory(votes, ["song", "movie"], 0);
+    expect(drawn).toBe(CATEGORIES.find((c) => c !== "song" && c !== "movie"));
+    expect(["song", "movie"]).not.toContain(drawn);
+  });
+
+  test("the unvoted fallback is uniform, not weighted", () => {
+    // 14 categories remain after song and movie are spent; a roll of 0.5
+    // lands on the 8th of them (indices 0-13, edge at 7/14 = 0.5).
+    const remaining = CATEGORIES.filter((c) => c !== "song" && c !== "movie");
+    expect(pickCategory(votes, ["song", "movie"], 0.5)).toBe(remaining[7]);
+  });
+
+  test("no votes at all still yields a category", () => {
+    expect(CATEGORIES).toContain(pickCategory({}, [], 0.5));
+  });
+
+  test("an all-spent pool falls back rather than throwing", () => {
+    expect(CATEGORIES).toContain(pickCategory(votes, [...CATEGORIES], 0.5));
   });
 });
