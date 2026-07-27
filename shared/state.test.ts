@@ -30,6 +30,7 @@ describe("toRoomState", () => {
     expect(Object.keys(state).sort()).toEqual([
       "category",
       "code",
+      "configuring",
       "history",
       "hostId",
       "phase",
@@ -59,6 +60,7 @@ describe("toRoomState", () => {
       settings: { mode: DEFAULT_MODE, roundCount: 3, durationSec: 45 },
       history: [],
       votes: {},
+      configuring: false,
       serverTime: 9000,
     });
   });

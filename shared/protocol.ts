@@ -11,6 +11,7 @@ export type ClientMessage =
   | { type: "submitEntry"; text: string; seq: number }
   | { type: "setSettings"; values: Partial<Record<NumericSettingKey, number>> }
   | { type: "setMode"; mode: string }
+  | { type: "setConfiguring"; open: boolean }
   | { type: "showStandings" }
   | { type: "backToLobby" }
   | { type: "castVote"; category: string }

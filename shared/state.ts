@@ -109,6 +109,15 @@ export type Room = {
    * it survives the JSON round trip through Durable Object storage.
    */
   hostGoneAt: number | null;
+  /**
+   * Whether the host has a lobby drawer open. Not a secret — like `votes`,
+   * it is a room-wide fact the TV is already showing — so it rides in
+   * `RoomState` and the player lobby reads it.
+   *
+   * It holds the start countdown: settings must never change under a match
+   * that is already starting. See `setConfiguring` in shared/reduce.ts.
+   */
+  configuring: boolean;
 };
 
 /** Broadcast to every connection. Safe for all eyes. */
@@ -133,6 +142,7 @@ export function createRoom(code: string, now: number): Room {
     entries: {},
     kicked: [],
     hostGoneAt: null,
+    configuring: false,
   };
 }
 

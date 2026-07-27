@@ -957,3 +957,68 @@ describe("game modes", () => {
     expect(room).toBe(before);
   });
 });
+
+describe("the drawer hold", () => {
+  test("opening a drawer during the countdown drops back to the lobby", () => {
+    let room = readyAll(seed(2), 2000);
+    expect(room.phase.name).toBe("countdown");
+    room = reduce(room, { t: "setConfiguring", playerId: "host", open: true, now: 2500 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.configuring).toBe(true);
+  });
+
+  // This is what makes it a hold rather than a cancel: cancelStart clears
+  // readiness precisely so settle cannot re-open the countdown. Here it must.
+  test("the hold leaves every player ready", () => {
+    let room = readyAll(seed(2), 2000);
+    room = reduce(room, { t: "setConfiguring", playerId: "host", open: true, now: 2500 });
+    expect(room.players.every((p) => p.ready)).toBe(true);
+  });
+
+  test("no countdown opens while a drawer is open", () => {
+    let room = seed(2);
+    room = reduce(room, { t: "setConfiguring", playerId: "host", open: true, now: 2000 });
+    room = readyAll(room, 2500);
+    expect(room.phase.name).toBe("lobby");
+  });
+
+  test("closing the drawer derives a fresh full-length countdown", () => {
+    let room = readyAll(seed(2), 2000);
+    room = reduce(room, { t: "setConfiguring", playerId: "host", open: true, now: 2500 });
+    room = reduce(room, { t: "setConfiguring", playerId: "host", open: false, now: 9000 });
+    expect(room.phase).toEqual({ name: "countdown", endsAt: 9000 + COUNTDOWN_MS, to: "voting" });
+  });
+
+  test("the host cannot force a start while a drawer is open", () => {
+    let room = reduce(seed(2), { t: "setConfiguring", playerId: "host", open: true, now: 2000 });
+    const before = room;
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2500 });
+    expect(room).toBe(before);
+  });
+
+  test("a player cannot set the flag", () => {
+    const before = seed(2);
+    const room = reduce(before, { t: "setConfiguring", playerId: "p0", open: true, now: 2000 });
+    expect(room).toBe(before);
+  });
+
+  test("setting the flag to what it already is is a no-op", () => {
+    const before = seed(2);
+    const room = reduce(before, { t: "setConfiguring", playerId: "host", open: false, now: 2000 });
+    expect(room).toBe(before);
+  });
+
+  // A host whose phone locks with a drawer open would otherwise hold the whole
+  // room down until the grace reap.
+  test("the host disconnecting clears the flag", () => {
+    let room = reduce(seed(2), { t: "setConfiguring", playerId: "host", open: true, now: 2000 });
+    room = reduce(room, { t: "disconnect", playerId: "host", now: 2500 });
+    expect(room.configuring).toBe(false);
+  });
+
+  test("a player disconnecting does not clear the flag", () => {
+    let room = reduce(seed(2), { t: "setConfiguring", playerId: "host", open: true, now: 2000 });
+    room = reduce(room, { t: "disconnect", playerId: "p0", now: 2500 });
+    expect(room.configuring).toBe(true);
+  });
+});

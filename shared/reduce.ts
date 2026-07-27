@@ -56,6 +56,7 @@ export type RoomEvent =
       now: number;
     }
   | { t: "setMode"; playerId: PlayerId; mode: string; now: number }
+  | { t: "setConfiguring"; playerId: PlayerId; open: boolean; now: number }
   | { t: "showStandings"; playerId: PlayerId; now: number }
   | { t: "backToLobby"; playerId: PlayerId; now: number }
   | { t: "castVote"; playerId: PlayerId; category: string; now: number }
@@ -146,6 +147,10 @@ function settle(room: Room, now: number): Room {
   const phase = room.phase;
 
   if (phase.name === "lobby") {
+    // A drawer open on the host TV holds the countdown down: without this,
+    // any event at all — a join, a ready toggle — would re-derive it while
+    // the host is still mid-adjustment.
+    if (room.configuring) return room;
     return everyoneReady(room, MIN_PLAYERS) ? openCountdown(room, now, "voting") : room;
   }
 
@@ -250,6 +255,9 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "startGame": {
       if (ev.playerId !== room.hostId) return room;
+      // Needs its own guard: `reduce` deliberately skips `settle` for
+      // `startGame`, so a countdown opened here would survive the hold.
+      if (room.configuring) return room;
       // Legal from the room, from voting, and from standings between rounds.
       // It always means the same thing: force-ready everyone and open a
       // countdown. Only the destination differs.
@@ -317,6 +325,9 @@ function apply(room: Room, ev: RoomEvent): Room {
         // nothing else in the room would record that they left. Stamping the
         // moment is what arms the grace-period reap in `alarmOutcome`.
         hostGoneAt: ev.playerId === room.hostId ? ev.now : room.hostGoneAt,
+        // A host whose phone locks with a drawer open would otherwise hold the
+        // countdown down for everyone until that reap fires.
+        configuring: ev.playerId === room.hostId ? false : room.configuring,
       };
 
     case "setSettings": {
@@ -334,6 +345,19 @@ function apply(room: Room, ev: RoomEvent): Room {
       if (!isGameModeId(ev.mode)) return room;
       if (ev.mode === room.settings.mode) return room;
       return { ...room, settings: clampToMode({ ...room.settings, mode: ev.mode }) };
+    }
+
+    case "setConfiguring": {
+      if (ev.playerId !== room.hostId) return room;
+      if (ev.open === room.configuring) return room;
+      // A hold, not a cancel. Readiness is deliberately left untouched, which
+      // is the whole mechanism: closing the drawer lets the normal `settle`
+      // tail derive a brand-new countdown with no host action and no stored
+      // remaining-ms. `cancelStart` clears readiness for the opposite reason —
+      // it wants the countdown to stay down.
+      const phase =
+        ev.open && room.phase.name === "countdown" ? backPhase(room) : room.phase;
+      return { ...room, configuring: ev.open, phase };
     }
 
     case "castVote": {

@@ -5,8 +5,9 @@ import {
 } from "../shared/reduce";
 import type { ClientMessage, ErrorCode, ServerMessage } from "../shared/protocol";
 import { createRoom, toRoomState } from "../shared/state";
-import type { PlayerId, Room } from "../shared/state";
-import { DEFAULT_DURATION_SEC, DEFAULT_ROUND_COUNT } from "../shared/categories";
+import type { MatchSettings, PlayerId, Room } from "../shared/state";
+import { DEFAULT_DURATION_SEC } from "../shared/categories";
+import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes";
 
 // Durable Object binding declared in wrangler.jsonc.
 export interface Env {
@@ -71,10 +72,20 @@ export class W104 extends Server<Env> {
       hostGoneAt: rest.hostGoneAt ?? null,
       votes: rest.votes ?? {},
       history: rest.history ?? [],
-      settings: rest.settings ?? {
-        roundCount: DEFAULT_ROUND_COUNT,
-        durationSec: legacyDuration ?? DEFAULT_DURATION_SEC,
-      },
+      configuring: rest.configuring ?? false,
+      settings: (() => {
+        const stored = rest.settings as Partial<MatchSettings> | undefined;
+        const base = defaultSettings(DEFAULT_MODE);
+        const mode = stored?.mode;
+        return {
+          // A room stored before gamemodes existed has no `mode` at all, and a
+          // room stored under a mode since renamed has one nothing recognises.
+          mode: isGameModeId(mode) ? mode : DEFAULT_MODE,
+          roundCount: stored?.roundCount ?? base.roundCount,
+          // Rooms older still carry a top-level `durationSec` and no settings.
+          durationSec: stored?.durationSec ?? legacyDuration ?? DEFAULT_DURATION_SEC,
+        };
+      })(),
       // A room persisted mid-countdown before `to` existed has a countdown
       // phase with no destination at all, and `tick` would route it nowhere and
       // hang the room. "playing" is the only thing that countdown could have
@@ -276,6 +287,11 @@ export class W104 extends Server<Env> {
         break;
       case "setMode":
         this.room = reduce(this.room, { t: "setMode", playerId, mode: msg.mode, now });
+        break;
+      case "setConfiguring":
+        this.room = reduce(this.room, {
+          t: "setConfiguring", playerId, open: msg.open === true, now,
+        });
         break;
       case "showStandings":
         this.room = reduce(this.room, { t: "showStandings", playerId, now });
