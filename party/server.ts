@@ -321,7 +321,8 @@ export class W104 extends Server<Env> {
     // Which of the alarm's two jobs this is — advancing a phase or reaping an
     // abandoned room — is decided in `shared/`, where it is under test. This
     // method only carries the decision out.
-    const outcome = alarmOutcome(this.room, Date.now(), this.hasAnyConnection());
+    // The only randomness in the game, and it enters here — shared/ stays pure.
+    const outcome = alarmOutcome(this.room, Date.now(), this.hasAnyConnection(), Math.random());
     switch (outcome.action) {
       case "advance":
         this.room = outcome.room;

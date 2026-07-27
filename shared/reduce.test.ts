@@ -161,9 +161,9 @@ describe("lobby", () => {
  */
 function playing(now = 2000): Room {
   let room = readyAll(seed(2, now), now);
-  room = reduce(room, { t: "tick", now: now + COUNTDOWN_MS }); // -> voting
+  room = reduce(room, { t: "tick", now: now + COUNTDOWN_MS, roll: 0 }); // -> voting
   room = reduce(room, { t: "startGame", playerId: "host", now: now + COUNTDOWN_MS }); // host closes voting -> countdown to playing
-  return reduce(room, { t: "tick", now: now + COUNTDOWN_MS * 2 }); // -> playing
+  return reduce(room, { t: "tick", now: now + COUNTDOWN_MS * 2, roll: 0 }); // -> playing
 }
 
 describe("round progression", () => {
@@ -179,23 +179,23 @@ describe("round progression", () => {
     room = { ...room, settings: { roundCount: 1, durationSec: 90 } };
     room = readyAll(room, 1000);
     const votingStart = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: votingStart }); // -> voting
+    room = reduce(room, { t: "tick", now: votingStart, roll: 0 }); // -> voting
     room = reduce(room, { t: "startGame", playerId: "host", now: votingStart }); // -> countdown to playing
     const cdEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: cdEnd });
+    room = reduce(room, { t: "tick", now: cdEnd, roll: 0 });
     expect(room.phase.name).toBe("playing");
     expect((room.phase as { endsAt: number }).endsAt).toBe(cdEnd + 90_000);
   });
 
   test("an early tick changes nothing", () => {
-    const room = reduce(readyAll(seed(2), 2000), { t: "tick", now: 3000 });
+    const room = reduce(readyAll(seed(2), 2000), { t: "tick", now: 3000, roll: 0 });
     expect(room.phase.name).toBe("countdown");
   });
 
   test("the round expiring shows time's up", () => {
     const room = playing();
     const endsAt = (room.phase as { endsAt: number }).endsAt;
-    const next = reduce(room, { t: "tick", now: endsAt });
+    const next = reduce(room, { t: "tick", now: endsAt, roll: 0 });
     expect(next.phase).toEqual({ name: "timesup", endsAt: endsAt + TIMESUP_MS });
   });
 
@@ -206,9 +206,9 @@ describe("round progression", () => {
     room = submitEntry(room, "p0", "Zendaya", 10_002).room;
 
     const playEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: playEnd });
+    room = reduce(room, { t: "tick", now: playEnd, roll: 0 });
     const upEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: upEnd });
+    room = reduce(room, { t: "tick", now: upEnd, roll: 0 });
 
     expect(room.phase.name).toBe("scoring");
     const results = (room.phase as { results: { players: { id: string; total: number; unique: number }[] } }).results;
@@ -298,7 +298,7 @@ describe("alarmOutcome", () => {
     // Nobody has typed since the round began: well past the idle horizon.
     expect(endsAt).toBeGreaterThan(room.lastActivityAt + IDLE_REAP_MS);
 
-    const outcome = alarmOutcome(room, endsAt, true);
+    const outcome = alarmOutcome(room, endsAt, true, 0);
     expect(outcome.action).toBe("advance");
     expect((outcome as { room: Room }).room.phase.name).toBe("timesup");
   });
@@ -308,24 +308,24 @@ describe("alarmOutcome", () => {
     room = { ...room, players: room.players.map((p) => ({ ...p, connected: false })) };
     const endsAt = (room.phase as { endsAt: number }).endsAt;
 
-    expect(alarmOutcome(room, endsAt, false).action).toBe("advance");
+    expect(alarmOutcome(room, endsAt, false, 0).action).toBe("advance");
   });
 
   test("a stale lobby with someone still connected is touched, not reaped", () => {
     const room = seed(2, 5_000);
-    const outcome = alarmOutcome(room, 5_000 + IDLE_REAP_MS, true);
+    const outcome = alarmOutcome(room, 5_000 + IDLE_REAP_MS, true, 0);
     expect(outcome.action).toBe("touch");
     expect((outcome as { room: Room }).room.lastActivityAt).toBe(5_000 + IDLE_REAP_MS);
   });
 
   test("a stale lobby nobody is connected to is reaped", () => {
     const room = seed(2, 5_000);
-    expect(alarmOutcome(room, 5_000 + IDLE_REAP_MS, false).action).toBe("reap");
+    expect(alarmOutcome(room, 5_000 + IDLE_REAP_MS, false, 0).action).toBe("reap");
   });
 
   test("an alarm with nothing to do just re-arms", () => {
     const room = seed(2, 5_000);
-    expect(alarmOutcome(room, 6_000, true).action).toBe("rearm");
+    expect(alarmOutcome(room, 6_000, true, 0).action).toBe("rearm");
   });
 });
 
@@ -349,7 +349,7 @@ describe("the host leaving", () => {
 
   test("the room dies once the host has been gone for the grace window", () => {
     const room = reduce(seed(2), { t: "disconnect", playerId: "host", now: 2_000 });
-    const outcome = alarmOutcome(room, 2_000 + HOST_GRACE_MS, true);
+    const outcome = alarmOutcome(room, 2_000 + HOST_GRACE_MS, true, 0);
     expect(outcome.action).toBe("reap");
     expect((outcome as { reason: string }).reason).toBe("host-left");
   });
@@ -358,19 +358,19 @@ describe("the host leaving", () => {
     // The distinction from the idle reaper, which `touch`es a stale room when
     // anyone is still connected. A host who left takes the room regardless.
     const room = reduce(seed(2), { t: "disconnect", playerId: "host", now: 2_000 });
-    expect(alarmOutcome(room, 2_000 + HOST_GRACE_MS, true).action).toBe("reap");
+    expect(alarmOutcome(room, 2_000 + HOST_GRACE_MS, true, 0).action).toBe("reap");
   });
 
   test("a host back inside the window keeps the room", () => {
     let room = reduce(seed(2), { t: "disconnect", playerId: "host", now: 2_000 });
     room = reduce(room, { t: "claimHost", playerId: "host", now: 5_000 });
     expect(room.hostGoneAt).toBeNull();
-    expect(alarmOutcome(room, 2_000 + HOST_GRACE_MS, true).action).not.toBe("reap");
+    expect(alarmOutcome(room, 2_000 + HOST_GRACE_MS, true, 0).action).not.toBe("reap");
   });
 
   test("the grace window is not up yet, so nothing is reaped", () => {
     const room = reduce(seed(2), { t: "disconnect", playerId: "host", now: 2_000 });
-    expect(alarmOutcome(room, 2_000 + HOST_GRACE_MS - 1, true).action).not.toBe("reap");
+    expect(alarmOutcome(room, 2_000 + HOST_GRACE_MS - 1, true, 0).action).not.toBe("reap");
   });
 
   test("the host deadline pulls the alarm in ahead of a phase deadline", () => {
@@ -386,7 +386,7 @@ describe("the host leaving", () => {
     const endsAt = (room.phase as { endsAt: number }).endsAt;
     // Well past both the grace window and the round's own deadline.
     expect(endsAt).toBeGreaterThan(4_000 + HOST_GRACE_MS);
-    expect(alarmOutcome(room, endsAt, true).action).toBe("reap");
+    expect(alarmOutcome(room, endsAt, true, 0).action).toBe("reap");
   });
 });
 
@@ -398,9 +398,9 @@ function scored(roundCount = 3): Room {
   room = submitEntry(room, "p0", "Beyonce", 10_100).room;
   room = submitEntry(room, "p1", "Adele", 10_200).room;
   const playEnd = (room.phase as { endsAt: number }).endsAt;
-  room = reduce(room, { t: "tick", now: playEnd });
+  room = reduce(room, { t: "tick", now: playEnd, roll: 0 });
   const upEnd = (room.phase as { endsAt: number }).endsAt;
-  return reduce(room, { t: "tick", now: upEnd });
+  return reduce(room, { t: "tick", now: upEnd, roll: 0 });
 }
 
 describe("setSettings", () => {
@@ -547,7 +547,7 @@ describe("between rounds", () => {
     room = { ...room, settings: { ...room.settings, durationSec: 60 } };
     room = readyAll(room, 51_000);
     const cdEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: cdEnd });
+    room = reduce(room, { t: "tick", now: cdEnd, roll: 0 });
     expect((room.phase as { endsAt: number }).endsAt).toBe(cdEnd + 60_000);
   });
 });
@@ -589,10 +589,10 @@ describe("long rounds", () => {
     });
     room = readyAll(room, 1000);
     const votingStart = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: votingStart }); // -> voting
+    room = reduce(room, { t: "tick", now: votingStart, roll: 0 }); // -> voting
     room = reduce(room, { t: "startGame", playerId: "host", now: votingStart }); // -> countdown to playing
     const cdEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: cdEnd });
+    room = reduce(room, { t: "tick", now: cdEnd, roll: 0 });
 
     for (let i = 0; i < MAX_ENTRIES; i++) {
       room = submitEntry(room, "p0", `word-${i}`, cdEnd + i).room;
@@ -607,10 +607,10 @@ describe("long rounds", () => {
     let room = seed(MAX_PLAYERS);
     room = readyAll(room, 1000);
     const votingStart = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: votingStart }); // -> voting
+    room = reduce(room, { t: "tick", now: votingStart, roll: 0 }); // -> voting
     room = reduce(room, { t: "startGame", playerId: "host", now: votingStart }); // -> countdown to playing
     const cdEnd = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: cdEnd });
+    room = reduce(room, { t: "tick", now: cdEnd, roll: 0 });
     for (const p of room.players) {
       for (let i = 0; i < MAX_ENTRIES; i++) {
         room = submitEntry(room, p.id, `${p.id}-word-${i}`, cdEnd + i).room;
@@ -618,8 +618,8 @@ describe("long rounds", () => {
     }
     const playEnd = (room.phase as { endsAt: number }).endsAt;
     const started = Date.now();
-    room = reduce(room, { t: "tick", now: playEnd });
-    room = reduce(room, { t: "tick", now: (room.phase as { endsAt: number }).endsAt });
+    room = reduce(room, { t: "tick", now: playEnd, roll: 0 });
+    room = reduce(room, { t: "tick", now: (room.phase as { endsAt: number }).endsAt, roll: 0 });
     expect(room.phase.name).toBe("scoring");
     // 10 x 200 entries is ~2M union-find comparisons. Generous ceiling: this
     // is a regression guard against an accidental O(n^3), not a benchmark.
@@ -632,7 +632,7 @@ function seedVoting(n: number, roundCount = 5, now = 1000): Room {
   let room = seed(n, now);
   room = reduce(room, { t: "setSettings", playerId: "host", roundCount, now });
   room = reduce(room, { t: "startGame", playerId: "host", now });
-  return reduce(room, { t: "tick", now: now + COUNTDOWN_MS });
+  return reduce(room, { t: "tick", now: now + COUNTDOWN_MS, roll: 0 });
 }
 
 describe("entering voting", () => {
@@ -652,7 +652,7 @@ describe("entering voting", () => {
 
   test("the countdown to voting opens voting on its deadline", () => {
     let room = readyAll(seed(2), 2000);
-    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS });
+    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
     expect(room.phase).toEqual({ name: "voting", endsAt: 2000 + COUNTDOWN_MS + VOTING_MS });
   });
 
@@ -662,14 +662,14 @@ describe("entering voting", () => {
     // everyone ready and close voting before a single vote was cast.
     let room = readyAll(seed(2), 2000);
     expect(room.players.every((p) => p.ready)).toBe(true);
-    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS });
+    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
     expect(room.phase.name).toBe("voting");
     expect(room.players.every((p) => !p.ready)).toBe(true);
   });
 
   test("voting does not close the instant it opens", () => {
     let room = readyAll(seed(2), 2000);
-    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS });
+    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
     room = reduce(room, { t: "setProfile", playerId: "p0", name: "P0", emoji: "🐙", now: 2600 });
     expect(room.phase.name).toBe("voting");
   });
@@ -737,6 +737,13 @@ describe("casting votes", () => {
     const after = reduce(room, { t: "resetVotes", playerId: "p0", now: 3000 });
     expect(after).toBe(room);
   });
+
+  test("a kicked player's votes stop counting", () => {
+    let room = seedVoting(2);
+    room = reduce(room, { t: "castVote", playerId: "p1", category: "song", now: 3000 });
+    room = reduce(room, { t: "kick", playerId: "host", targetId: "p1", now: 3100 });
+    expect(room.votes.p1).toBeUndefined();
+  });
 });
 
 describe("leaving voting", () => {
@@ -753,7 +760,7 @@ describe("leaving voting", () => {
   test("the 60 second timer closes voting even with nobody ready", () => {
     let room = seedVoting(3);
     const endsAt = (room.phase as { endsAt: number }).endsAt;
-    room = reduce(room, { t: "tick", now: endsAt });
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0 });
     expect(room.phase).toEqual({
       name: "countdown", endsAt: endsAt + COUNTDOWN_MS, to: "playing",
     });
@@ -814,5 +821,39 @@ describe("abandoning a vote", () => {
     room = reduce(room, { t: "cancelStart", playerId: "host", now: 3200 });
     expect(room.phase.name).toBe("lobby");
     expect(room.votes).toEqual({});
+  });
+});
+
+describe("drawing the round's category", () => {
+  /** Voting closed with p0 having stacked everything on one category. */
+  function votedRoom(category: string, roundCount = 2): Room {
+    let room = seedVoting(1, roundCount);
+    const budget = voteBudget(room.settings);
+    for (let i = 0; i < budget; i++) {
+      room = reduce(room, { t: "castVote", playerId: "p0", category, now: 3000 });
+    }
+    return room;
+  }
+
+  test("the whistle draws from the votes", () => {
+    let room = votedRoom("car");
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0.5 });
+    expect(room.phase.name).toBe("playing");
+    expect(room.category).toBe("car");
+  });
+
+  test("the countdown does not draw — the category is secret until the whistle", () => {
+    const room = votedRoom("car");
+    expect(room.phase.name).toBe("countdown");
+    expect(room.category).toBe("woman"); // still the seeded default
+  });
+
+  test("a category already played is never drawn again", () => {
+    let room = votedRoom("car", 3);
+    room = { ...room, history: [{ category: "car", places: {} }] };
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0.5 });
+    expect(room.category).not.toBe("car");
   });
 });

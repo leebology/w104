@@ -3,7 +3,7 @@ import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, Player, PlayerId, Room, RoundSummary } from "./state";
 import { CATEGORIES } from "./categories";
-import { voteBudget, votesSpent } from "./voting";
+import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 
 export const COUNTDOWN_MS = 5_000;
 /** One voting window per match, whatever the round count. */
@@ -46,7 +46,12 @@ export type RoomEvent =
   | { t: "backToLobby"; playerId: PlayerId; now: number }
   | { t: "castVote"; playerId: PlayerId; category: string; now: number }
   | { t: "resetVotes"; playerId: PlayerId; now: number }
-  | { t: "tick"; now: number };
+  /**
+   * `roll` is a uniform [0,1) supplied by the caller. Randomness is injected
+   * at the edge so `reduce` stays a pure function and the draw is testable
+   * against fixed rolls rather than a stubbed global.
+   */
+  | { t: "tick"; now: number; roll: number };
 
 const mapPlayer = (
   players: Player[],
@@ -234,6 +239,9 @@ function apply(room: Room, ev: RoomEvent): Room {
     case "kick": {
       if (ev.playerId !== room.hostId) return room;
       const { [ev.targetId]: _removed, ...entries } = room.entries;
+      // A kicked player's stacked votes must not keep weighting the draw for a
+      // round they can no longer play in.
+      const { [ev.targetId]: _removedVotes, ...votes } = room.votes;
       // Removing the player is not enough on its own: their socket
       // auto-reconnects and the lobby would re-admit them as a newcomer. The
       // ban is what makes a kick stick, so it outlives the round —
@@ -242,6 +250,7 @@ function apply(room: Room, ev: RoomEvent): Room {
         ...room,
         players: room.players.filter((p) => p.id !== ev.targetId),
         entries,
+        votes,
         kicked: room.kicked.includes(ev.targetId)
           ? room.kicked
           : [...room.kicked, ev.targetId],
@@ -352,7 +361,7 @@ function apply(room: Room, ev: RoomEvent): Room {
       };
 
     case "tick":
-      return tick(room, ev.now);
+      return tick(room, ev.now, ev.roll);
   }
 }
 
@@ -360,7 +369,7 @@ function apply(room: Room, ev: RoomEvent): Room {
  * Deadlines are absolute, so a late alarm still lands in the right phase —
  * `now >= endsAt` rather than an equality check.
  */
-function tick(room: Room, now: number): Room {
+function tick(room: Room, now: number, roll: number): Room {
   const phase = room.phase;
   if (phase.name === "countdown" && now >= phase.endsAt) {
     if (phase.to === "voting") {
@@ -377,6 +386,11 @@ function tick(room: Room, now: number): Room {
     }
     return {
       ...room,
+      // Drawn here and nowhere else. Doing it at the whistle rather than when
+      // the countdown opens means there is no window in which a cancelled
+      // countdown could re-roll it, and nothing on the countdown screen can
+      // leak it.
+      category: pickCategory(room.votes, spentCategories(room), roll),
       phase: { name: "playing", endsAt: now + room.settings.durationSec * 1_000 },
     };
   }
@@ -513,6 +527,8 @@ export function alarmOutcome(
   now: number,
   /** Whether any socket is still open for this room. */
   hasConnections: boolean,
+  /** Uniform [0,1) for the category draw — see the tick event. */
+  roll: number,
 ): AlarmOutcome {
   // Outranks the phase deadline below — the one case that legitimately does.
   // A round with no host behind it has nothing to advance *to*: nobody can
@@ -522,7 +538,7 @@ export function alarmOutcome(
     return { action: "reap", reason: "host-left" };
   }
 
-  const next = reduce(room, { t: "tick", now });
+  const next = reduce(room, { t: "tick", now, roll });
   if (next !== room) return { action: "advance", room: next };
 
   if (now < room.lastActivityAt + IDLE_REAP_MS) return { action: "rearm" };
