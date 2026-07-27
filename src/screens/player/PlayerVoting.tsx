@@ -53,7 +53,7 @@ export function PlayerVoting({ room, playerId, countdown }: Props) {
         )}
         <span className="player-voting__head-text">
           <span className="player-voting__head-title">
-            {left > 0 ? "votes left" : "you're in"}
+            {left > 0 ? `${left === 1 ? "vote" : "votes"} left` : "you're in"}
           </span>
           {left === 0 && (
             <span className="player-voting__head-sub">
