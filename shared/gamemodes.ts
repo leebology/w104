@@ -13,6 +13,21 @@ export const MAX_ROUND_COUNT = 10;
 export const MIN_DURATION_SEC = 15;
 export const MAX_DURATION_SEC = 600;
 
+/** 0 is "off"; a real team match is 2..10. See shared/teams.ts. */
+export const MIN_TEAM_COUNT = 2;
+export const MAX_TEAM_COUNT = 10;
+
+/**
+ * A one-team match is not a thing, so the value 1 means "off" rather than
+ * "one team". Lives here rather than in `teams.ts` because `teams.ts` imports
+ * *this* file at runtime for `modeSpec`, and the reverse edge would close a
+ * cycle. The Stepper and `normalizeSetting` both call it, so the rule has
+ * exactly one definition.
+ */
+export function snapTeamCount(value: number): number {
+  return value === 1 ? 0 : value;
+}
+
 export const GAME_MODE_IDS = ["ffa"] as const;
 export type GameModeId = (typeof GAME_MODE_IDS)[number];
 export const DEFAULT_MODE: GameModeId = "ffa";
