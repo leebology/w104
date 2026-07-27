@@ -33,3 +33,11 @@ export function PlayerCount({ n }: { n: number }) {
     </span>
   );
 }
+
+export function VotingCount({ n, ready }: { n: number; ready: number }) {
+  return (
+    <span className="host-header__count">
+      {n} {n === 1 ? "PLAYER" : "PLAYERS"} · {ready} READY
+    </span>
+  );
+}
