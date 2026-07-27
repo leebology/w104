@@ -1,4 +1,5 @@
 import { describe, expect, test } from "vitest";
+import { DEFAULT_MODE } from "./gamemodes";
 import { countdownScreen, createRoom, currentRound, matchComplete, preRoundPhase, toRoomState } from "./state";
 import type { Room } from "./state";
 
@@ -10,7 +11,7 @@ function fullRoom(): Room {
     players: [{ id: "p0", name: "P0", emoji: "🐙", ready: true, connected: true }],
     phase: { name: "playing", endsAt: 31_000 },
     category: "Bands",
-    settings: { roundCount: 3, durationSec: 45 },
+    settings: { mode: DEFAULT_MODE, roundCount: 3, durationSec: 45 },
     history: [],
     lastActivityAt: 2000,
     entries: { p0: [{ text: "Adele", at: 1500 }] },
@@ -55,7 +56,7 @@ describe("toRoomState", () => {
       players: room.players,
       phase: { name: "playing", endsAt: 31_000 },
       category: "Bands",
-      settings: { roundCount: 3, durationSec: 45 },
+      settings: { mode: DEFAULT_MODE, roundCount: 3, durationSec: 45 },
       history: [],
       votes: {},
       serverTime: 9000,
@@ -82,14 +83,14 @@ describe("createRoom", () => {
 
   test("starts on the default settings with no rounds played", () => {
     const room = createRoom("PLUM", 1000);
-    expect(room.settings).toEqual({ roundCount: 1, durationSec: 30 });
+    expect(room.settings).toEqual({ mode: DEFAULT_MODE, roundCount: 1, durationSec: 30 });
     expect(room.history).toEqual([]);
   });
 });
 
 describe("derived match helpers", () => {
   const view = (rounds: number, played: number) => ({
-    settings: { roundCount: rounds, durationSec: 30 },
+    settings: { mode: DEFAULT_MODE, roundCount: rounds, durationSec: 30 },
     history: Array.from({ length: played }, () => ({ category: "woman", places: {} })),
   });
 

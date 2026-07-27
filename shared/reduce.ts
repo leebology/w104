@@ -3,6 +3,9 @@ import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, Player, PlayerId, Room, RoundSummary } from "./state";
 import { CATEGORIES } from "./categories";
+import {
+  MAX_DURATION_SEC, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_ROUND_COUNT,
+} from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 
 export const COUNTDOWN_MS = 5_000;
@@ -26,11 +29,14 @@ export const MIN_PLAYERS = 2;
  * legibility limit, not a capacity one.
  */
 export const MAX_PLAYERS = 10;
-export const MIN_ROUND_COUNT = 1;
-export const MAX_ROUND_COUNT = 10;
-/** 15 seconds to 10 minutes. */
-export const MIN_DURATION_SEC = 15;
-export const MAX_DURATION_SEC = 600;
+/**
+ * Re-exported, not re-declared: the bounds now live beside the descriptors
+ * that quote them in `shared/gamemodes.ts`. Every existing import site and
+ * test keeps working, and the dependency runs one way only.
+ */
+export {
+  MAX_DURATION_SEC, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_ROUND_COUNT,
+} from "./gamemodes";
 
 export type RoomEvent =
   | { t: "join"; playerId: PlayerId; name: string; emoji: string; now: number }
@@ -290,7 +296,7 @@ function apply(room: Room, ev: RoomEvent): Room {
       ) {
         return room;
       }
-      return { ...room, settings: { roundCount, durationSec } };
+      return { ...room, settings: { ...room.settings, roundCount, durationSec } };
     }
 
     case "castVote": {

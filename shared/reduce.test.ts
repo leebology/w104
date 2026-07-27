@@ -176,7 +176,7 @@ describe("round progression", () => {
 
   test("the round runs for the configured duration", () => {
     let room = seed(2);
-    room = { ...room, settings: { roundCount: 1, durationSec: 90 } };
+    room = { ...room, settings: { ...room.settings, roundCount: 1, durationSec: 90 } };
     room = readyAll(room, 1000);
     const votingStart = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: votingStart, roll: 0 }); // -> voting

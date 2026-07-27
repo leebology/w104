@@ -1,5 +1,7 @@
 import type { Results } from "./scoring";
-import { DEFAULT_CATEGORY, DEFAULT_DURATION_SEC, DEFAULT_ROUND_COUNT } from "./categories";
+import { DEFAULT_CATEGORY } from "./categories";
+import { DEFAULT_MODE, defaultSettings } from "./gamemodes";
+import type { GameModeId } from "./gamemodes";
 import type { VoteMap } from "./voting";
 
 export type PlayerId = string;
@@ -10,6 +12,8 @@ export type Entry = {
 };
 
 export type MatchSettings = {
+  /** Which gamemode this match plays. See shared/gamemodes.ts. */
+  mode: GameModeId;
   /** 1..MAX_ROUND_COUNT. How many rounds this match runs. */
   roundCount: number;
   /** MIN_DURATION_SEC..MAX_DURATION_SEC. Seconds of typing per round. */
@@ -122,10 +126,7 @@ export function createRoom(code: string, now: number): Room {
     players: [],
     phase: { name: "lobby" },
     category: DEFAULT_CATEGORY,
-    settings: {
-      roundCount: DEFAULT_ROUND_COUNT,
-      durationSec: DEFAULT_DURATION_SEC,
-    },
+    settings: defaultSettings(DEFAULT_MODE),
     votes: {},
     history: [],
     lastActivityAt: now,
