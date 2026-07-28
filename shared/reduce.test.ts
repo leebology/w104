@@ -1227,3 +1227,67 @@ describe("setTeamName", () => {
     expect(next).toBe(room);
   });
 });
+
+describe("the host's Continue in team select", () => {
+  test("force-readies everyone and opens the countdown to voting", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2100 });
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 2100 + COUNTDOWN_MS, to: "voting",
+    });
+    expect(room.players.every((p) => p.ready)).toBe(true);
+  });
+
+  test("starting from the lobby with teams on lands in team select", () => {
+    let room = seedTeams(2);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2000 });
+    expect(room.phase).toEqual({ name: "teams" });
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("a player leaving after Continue still tears the countdown down", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2200 });
+    room = reduce(room, { t: "leaveTeam", playerId: "p0", now: 2300 });
+    expect(room.phase).toEqual({ name: "teams" });
+  });
+});
+
+describe("auto-assignment", () => {
+  test("does not happen when the countdown opens", () => {
+    // If it did, everyone would instantly be on a team and nobody could ever
+    // leave one to cancel the start.
+    let room = inTeams(2);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2100 });
+    expect(room.players.some((p) => p.teamId === null)).toBe(true);
+  });
+
+  test("happens at the tick that opens voting", () => {
+    let room = inTeams(3);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2200 });
+    room = reduce(room, { t: "tick", now: 2200 + COUNTDOWN_MS, roll: 0.5 });
+    expect(room.phase.name).toBe("voting");
+    expect(room.players.every((p) => p.teamId !== null)).toBe(true);
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("leaves teams alone when they are off", () => {
+    let room = readyAll(seed(2), 2000);
+    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0.5 });
+    expect(room.phase.name).toBe("voting");
+    expect(room.players.every((p) => p.teamId === null)).toBe(true);
+  });
+});
+
+describe("backToLobby from team select", () => {
+  test("tears the teams down so the next match rebuilds them", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 2200 });
+    expect(room.phase).toEqual({ name: "lobby" });
+    expect(room.teams).toEqual([]);
+    expect(room.players.every((p) => p.teamId === null)).toBe(true);
+  });
+});

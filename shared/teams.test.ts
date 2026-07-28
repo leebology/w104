@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { TEAM_COLORS, makeTeams, membersOf, teamOf, teamsEnabled } from "./teams";
+import { TEAM_COLORS, assignStragglers, makeTeams, membersOf, teamOf, teamsEnabled } from "./teams";
 import { MAX_TEAM_COUNT, MIN_TEAM_COUNT, snapTeamCount, defaultSettings } from "./gamemodes";
 import { createRoom } from "./state";
 import type { Player, Room } from "./state";
@@ -116,5 +116,49 @@ describe("a fresh room", () => {
     const room = createRoom("PLUM", 1000);
     expect(room.teams).toEqual([]);
     expect(room.settings.teamCount).toBe(0);
+  });
+});
+
+function roster(...teamIds: (string | null)[]): Player[] {
+  return teamIds.map((teamId, i) => ({
+    id: `p${i}`, name: `P${i}`, emoji: "🐙",
+    ready: false, connected: true, teamId,
+  }));
+}
+
+describe("assignStragglers", () => {
+  test("drops an unassigned player into the emptiest team", () => {
+    const out = assignStragglers(roster("t0", "t0", null), makeTeams(2));
+    expect(out[2].teamId).toBe("t1");
+  });
+
+  test("breaks a tie by lowest colour index", () => {
+    const out = assignStragglers(roster(null), makeTeams(3));
+    expect(out[0].teamId).toBe("t0");
+  });
+
+  test("spreads two stragglers rather than stacking them", () => {
+    const out = assignStragglers(roster(null, null), makeTeams(2));
+    expect(out.map((p) => p.teamId)).toEqual(["t0", "t1"]);
+  });
+
+  test("leaves assigned players exactly where they are", () => {
+    const out = assignStragglers(roster("t1", "t1", null), makeTeams(2));
+    expect(out.map((p) => p.teamId)).toEqual(["t1", "t1", "t0"]);
+  });
+
+  test("treats a teamId that names no live team as unassigned", () => {
+    const out = assignStragglers(roster("gone"), makeTeams(2));
+    expect(out[0].teamId).toBe("t0");
+  });
+
+  test("returns the identical array when everyone already has a team", () => {
+    const players = roster("t0", "t1");
+    expect(assignStragglers(players, makeTeams(2))).toBe(players);
+  });
+
+  test("returns the identical array when there are no teams", () => {
+    const players = roster(null, null);
+    expect(assignStragglers(players, [])).toBe(players);
   });
 });

@@ -79,3 +79,38 @@ export function teamOf(view: TeamView, playerId: PlayerId): Team | undefined {
 export function membersOf(view: TeamView, teamId: TeamId): Player[] {
   return view.players.filter((p) => p.teamId === teamId);
 }
+
+/**
+ * Places every player who never picked a team into the team with the fewest
+ * members, ties breaking by lowest colour index. Assignments are applied one
+ * at a time, so two stragglers land on two different teams rather than both
+ * on the same smallest one.
+ *
+ * A `teamId` that names no live team counts as unassigned rather than being
+ * left dangling.
+ *
+ * Returns the identical array when nothing changed, per the no-op rule.
+ */
+export function assignStragglers(players: Player[], teams: Team[]): Player[] {
+  if (teams.length === 0) return players;
+  const live = new Set(teams.map((t) => t.id));
+  const assigned = (p: Player) => p.teamId !== null && live.has(p.teamId);
+  if (players.every(assigned)) return players;
+
+  const counts = new Map<TeamId, number>(teams.map((t) => [t.id, 0]));
+  for (const p of players) {
+    if (assigned(p)) counts.set(p.teamId!, counts.get(p.teamId!)! + 1);
+  }
+
+  return players.map((p) => {
+    if (assigned(p)) return p;
+    // `teams` is already in colour-index order, so keeping the first strict
+    // minimum gives the lowest-index tie-break for free.
+    let best = teams[0];
+    for (const t of teams) {
+      if (counts.get(t.id)! < counts.get(best.id)!) best = t;
+    }
+    counts.set(best.id, counts.get(best.id)! + 1);
+    return { ...p, teamId: best.id };
+  });
+}

@@ -6,7 +6,7 @@ import { CATEGORIES } from "./categories";
 import { isGameModeId, modeSpec, normalizeSetting } from "./gamemodes";
 import type { NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
-import { MAX_TEAM_NAME_LEN, TEAM_COLORS, makeTeams, teamsEnabled } from "./teams";
+import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, makeTeams, teamsEnabled } from "./teams";
 import type { TeamId } from "./teams";
 
 export const COUNTDOWN_MS = 5_000;
@@ -304,24 +304,24 @@ function apply(room: Room, ev: RoomEvent): Room {
       // `startGame`, so a countdown opened here would survive the hold.
       if (room.configuring) return room;
       // Legal from the room, from team select, from voting, and from
-      // standings between rounds. It always means the same thing:
-      // force-ready everyone and open a countdown. Only the destination
-      // differs. `teams` forces the same edge `lobby` does when teams are
-      // off — the host closing out team select the same way they close a
-      // solo lobby.
+      // standings between rounds. It always means the same thing: force-ready
+      // everyone and move on. Only the destination differs.
       const from = room.phase.name;
-      if (
-        from !== "lobby" &&
-        from !== "teams" &&
-        from !== "voting" &&
-        from !== "standings"
-      ) {
+      if (from !== "lobby" && from !== "teams" && from !== "voting" && from !== "standings") {
         return room;
       }
       if (from === "standings" && matchComplete(room)) return room;
       // A deliberate host override: unlike the natural everyoneReady path,
-      // this can start the countdown with just one connected player.
+      // this can start with just one connected player.
       if (room.players.filter((p) => p.connected).length < 1) return room;
+      // From the lobby with teams on, Start means "open team select", not
+      // "start the match" — and readiness is cleared, not set, because on the
+      // far side of that edge `ready` means "has a team".
+      if (from === "lobby" && teamsEnabled(room.settings)) return enterTeams(room);
+      // Force-readying a player who has no team is briefly a lie; the tick
+      // that closes this countdown makes it true by auto-assigning them. It
+      // is still the right flag: if they then leave a team, `leaveTeam`
+      // clears it and `settle` tears the countdown down, which is correct.
       return {
         ...room,
         players: room.players.map((p) => ({ ...p, ready: true })),
@@ -537,17 +537,25 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "backToLobby":
       if (ev.playerId !== room.hostId) return room;
-      if (room.phase.name !== "standings" && room.phase.name !== "voting") return room;
+      if (
+        room.phase.name !== "standings" &&
+        room.phase.name !== "voting" &&
+        room.phase.name !== "teams"
+      ) {
+        return room;
+      }
       // Settings survive — the host usually wants the same match again — and
       // so does `kicked`, which is durable for the room's lifetime. The votes
-      // do not: they belonged to the match being abandoned.
+      // and the teams do not: both belonged to the match being abandoned, and
+      // the next one rebuilds teams from whatever `teamCount` is by then.
       return {
         ...room,
         phase: { name: "lobby" },
-        players: room.players.map((p) => ({ ...p, ready: false })),
+        players: room.players.map((p) => ({ ...p, ready: false, teamId: null })),
         entries: {},
         history: [],
         votes: {},
+        teams: [],
       };
 
     case "tick":
@@ -566,11 +574,16 @@ function tick(room: Room, now: number, roll: number): Room {
       return {
         ...room,
         phase: { name: "voting", endsAt: now + VOTING_MS },
-        // Load-bearing, not housekeeping: `ready` means "waiting in the room"
-        // on this side of the edge and "votes spent" on the other. Carried
-        // across, the next settle would see everyone ready and close voting
-        // before a single vote was cast.
-        players: room.players.map((p) => ({ ...p, ready: false })),
+        // Load-bearing, not housekeeping: `ready` means "has a team" on this
+        // side of the edge and "votes spent" on the other.
+        //
+        // Auto-assignment happens *here*, at the whistle, and not when the
+        // countdown opened: doing it there would make everyone instantly
+        // ready, so `settle` could never tear the countdown down and a player
+        // could never leave a team to cancel it.
+        players: assignStragglers(room.players, room.teams).map((p) => ({
+          ...p, ready: false,
+        })),
         votes: {},
       };
     }
