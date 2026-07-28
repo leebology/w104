@@ -294,7 +294,7 @@ Branch off `main`, open a PR. CI (`.github/workflows/ci.yml`) runs typecheck,
 tests, build. Merges to `main` deploy production (Vercel for the app, GitHub
 Actions → `wrangler deploy` for the Worker).
 
-Two long-lived branches: `main` (production, `w104.leebo.io`) and `staging`
+Two long-lived branches: `main` (production, `www.oknameone.com`) and `staging`
 (`staging.oknameone.com` + the `w104-staging` Worker). **PRs no longer deploy
 the Worker** — they used to, which meant any open PR overwrote the shared
 staging Worker and changed what people testing on phones were talking to. Merge
