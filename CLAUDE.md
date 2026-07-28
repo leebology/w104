@@ -304,3 +304,8 @@ bindings, so `env.staging` repeats them.
 
 Commits here stage explicit paths — never `git add -A`, so the untracked
 working note `Project W-104.md` stays untracked.
+
+Every PR bumps the version — `package.json`'s `version` and both spots in
+`package-lock.json` (the top-level `version` and the matching one under
+`packages: { "": ... }`), kept in sync per the existing "sync the lockfile
+version to package.json" precedent.
