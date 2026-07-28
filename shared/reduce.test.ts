@@ -1383,6 +1383,61 @@ describe("backToLobby from voting", () => {
   });
 });
 
+describe("backToLobby from the round-1 post-voting countdown", () => {
+  test("with teams off it works, same as from voting itself", () => {
+    let room = readyAll(seed(2), 2000);
+    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0.5 });
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "woman", now: 3000 });
+    room = reduce(room, { t: "startGame", playerId: "host", now: 3100 });
+    expect(room.phase).toEqual({ name: "countdown", to: "playing", endsAt: 3100 + COUNTDOWN_MS });
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 3200 });
+    expect(room.phase).toEqual({ name: "lobby" });
+    expect(room.votes).toEqual({});
+  });
+
+  test("with teams on it steps back to team select", () => {
+    let room = votingInTeams();
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "woman", now: 3000 });
+    room = reduce(room, { t: "startGame", playerId: "host", now: 3100 });
+    expect(room.phase.name).toBe("countdown");
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 3200 });
+    expect(room.phase).toEqual({ name: "teams" });
+    expect(room.votes).toEqual({});
+    expect(room.players.every((p) => p.teamId === null)).toBe(true);
+  });
+
+  test("round 2+'s post-standings countdown is unaffected — it is not this countdown", () => {
+    // `playingInTeams` leaves `roundCount` at its default of 1, under which
+    // round 1 is also the last — `matchComplete` would block the very
+    // transition this test needs, so this walks the same edges with the
+    // round count raised first, while still in the lobby.
+    let room = seedTeams(2, 2);
+    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 2 }, now: 1000 });
+    room = readyAll(room, 2000);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t0", now: 2200 });
+    room = reduce(room, { t: "tick", now: 2200 + COUNTDOWN_MS, roll: 0.5 }); // -> voting
+    room = reduce(room, { t: "startGame", playerId: "host", now: 8000 }); // -> countdown to playing
+    room = reduce(room, { t: "tick", now: 8000 + COUNTDOWN_MS, roll: 0.5 }); // -> playing
+    const playEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: playEnd, roll: 0.5 }); // -> timesup
+    const upEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: upEnd, roll: 0.5 }); // -> scoring
+    expect(room.phase.name).toBe("scoring");
+    room = reduce(room, { t: "showStandings", playerId: "host", now: upEnd + 100 });
+    expect(room.phase.name).toBe("standings");
+    room = readyAll(room, upEnd + 200);
+    expect(room.phase.name).toBe("countdown");
+    expect((room.phase as { to: "voting" | "playing" }).to).toBe("playing");
+    expect(room.history.length).toBeGreaterThan(0);
+    const before = room;
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: upEnd + 300 });
+    // Unchanged: this countdown does not qualify, matching `HostStandings`,
+    // which renders Stop instead of an exit button here.
+    expect(room).toBe(before);
+  });
+});
+
 /**
  * A room mid-round with teams on, p0 and p1 both on t0. Walks the real edges
  * rather than hand-building a Room, so the helper cannot drift from the rules.

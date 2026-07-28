@@ -118,14 +118,10 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
           </>
         ) : (
           <>
-            <p className="host-lobby__hint">
-              {waiting
-                ? "Waiting for players to join…"
-                : "Starting early readies everyone up."}
-            </p>
+            {waiting && <p className="host-lobby__hint">Waiting for players to join…</p>}
             <button
               type="button"
-              className="btn"
+              className="btn host-lobby__start"
               disabled={waiting}
               onClick={() => roomStore.send({ type: "startGame" })}
             >

@@ -25,11 +25,13 @@ export function HostStandings({ room, countdown }: Props) {
 
   return (
     <main className="screen screen--host host-standings">
+      {/* Chip left, title right — same as `HostScoring`, and the same corner
+          the chip sits in on every other host screen. */}
       <HostHeader
-        left={<h1 className="host-standings__title">{done ? "Final standings" : "Standings"}</h1>}
+        left={<RoomChip code={room.code} />}
         round={marker}
         of={room.settings.roundCount}
-        right={<RoomChip code={room.code} />}
+        right={<h1 className="host-standings__title">{done ? "Final standings" : "Standings"}</h1>}
       />
 
       <ol className="standings-list">

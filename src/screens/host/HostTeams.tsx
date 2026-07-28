@@ -1,6 +1,8 @@
 import type { CSSProperties } from "react";
 import { useRemaining } from "../../net/clock";
 import { RoomChip } from "../../components/RoomChip";
+import { TeamBadge } from "../../components/TeamBadge";
+import { pulseInterval } from "../../components/Roster";
 import { roomStore } from "../../net/room";
 import { TEAM_COLORS, membersOf } from "../../../shared/teams";
 import type { RoomState } from "../../../shared/state";
@@ -59,12 +61,10 @@ export function HostTeams({ room, countdown }: Props) {
             key={team.id}
             style={{ "--accent": `var(${TEAM_COLORS[team.colorIndex].token})` } as CSSProperties}
           >
-            {/* The name is live and the accent is not — renaming must never
-                recolour a team, because the colour is what the room is
-                actually navigating by. It rides the tab rather than a top
-                border so the panel's ink outline stays unbroken on all four
-                sides. */}
-            <h2 className="team-panel__name">{team.name}</h2>
+            {/* The tab rides over the panel's corner rather than being a top
+                border, so the ink outline stays unbroken on all four sides.
+                Same badge on every screen that names a team — see TeamBadge. */}
+            <TeamBadge name={team.name} colorIndex={team.colorIndex} />
             <ul className="team-panel__members">
               {membersOf(room, team.id).map((p) => (
                 <li key={p.id} className={p.connected ? "" : "team-member--gone"}>
@@ -83,9 +83,13 @@ export function HostTeams({ room, countdown }: Props) {
           <ul className="team-unassigned__list">
             {unassigned.map((p) => (
               <li className="pill team-straggler" key={p.id}>
-                <span className="team-member__avatar">{p.emoji}</span>
+                <span
+                  className="team-member__avatar team-member__avatar--bob"
+                  style={{ "--bob": pulseInterval(p.id) } as CSSProperties}
+                >
+                  {p.emoji}
+                </span>
                 <span className="team-straggler__name">{p.name || "…"}</span>
-                <span className="player-pill__dot" aria-hidden="true" />
               </li>
             ))}
           </ul>
@@ -96,9 +100,6 @@ export function HostTeams({ room, countdown }: Props) {
         {countdown ? (
           <>
             <p className="get-ready get-ready--tv">Get ready… {remaining}</p>
-            <p className="host-teams__hint">
-              Leaving a team on your phone stops the countdown.
-            </p>
           </>
         ) : (
           <>
@@ -109,9 +110,6 @@ export function HostTeams({ room, countdown }: Props) {
             >
               Continue
             </button>
-            <p className="host-teams__hint">
-              Anyone still picking gets dropped into the emptiest team.
-            </p>
           </>
         )}
       </div>
