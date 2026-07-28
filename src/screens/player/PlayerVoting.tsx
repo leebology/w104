@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
 import { CATEGORIES } from "../../../shared/categories";
 import { VOTING_MS } from "../../../shared/reduce";
-import { voteBudget, votesSpent } from "../../../shared/voting";
-import { currentRound } from "../../../shared/state";
+import { voteBudget, voteShares, votesSpent } from "../../../shared/voting";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import { roomStore } from "../../net/room";
 
@@ -29,6 +28,11 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
   // rather than being handed a live grid during the countdown.
   const locked = left === 0 || closed;
   const waitingOn = room.players.filter((p) => p.connected && !p.ready).length;
+  // Only once voting has closed. While it is open the tally is still moving,
+  // and a percentage that ticks under the player's thumb reads as a score
+  // rather than as the odds it is. Any badged category holds at least this
+  // player's own vote, so this can never render 0%.
+  const shares = closed ? voteShares(room.votes) : {};
 
   const votingEndsAt = room.phase.name === "voting" ? room.phase.endsAt : 0;
   const remaining = useRemaining(
@@ -43,9 +47,9 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
 
   return (
     <main className="screen screen--mobile screen--locked player-voting">
+      {/* No round marker: voting only ever happens before round one. */}
       <p className="player-voting__meta">
-        ROOM {room.code} · ROUND {currentRound(room)} OF {room.settings.roundCount} ·{" "}
-        {budget} {budget === 1 ? "VOTE" : "VOTES"} EACH
+        ROOM {room.code} · {budget} {budget === 1 ? "VOTE" : "VOTES"} EACH
       </p>
 
       <section className="card player-voting__head">
@@ -64,14 +68,15 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
               {waitingOn > 0 && ` — waiting on ${waitingOn}`}
             </span>
           )}
-          <span className="player-voting__pips">
-            {Array.from({ length: budget }, (_, i) => (
-              <span
-                key={i}
-                className={i < spent ? "pip pip--spent" : "pip"}
-              />
-            ))}
-          </span>
+          {/* The pips are a budget meter, so they go once the budget is
+              gone — the line above already says it is all spent. */}
+          {left > 0 && (
+            <span className="player-voting__pips">
+              {Array.from({ length: budget }, (_, i) => (
+                <span key={i} className={i < spent ? "pip pip--spent" : "pip"} />
+              ))}
+            </span>
+          )}
         </span>
       </section>
 
@@ -93,6 +98,12 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
                 onClick={() => roomStore.send({ type: "castVote", category })}
               >
                 <span className="vote-tile__name">{category}</span>
+                {n > 0 && closed && (
+                  <span className="vote-tile__chance">
+                    <span className="vote-tile__pct">{shares[category] ?? 0}%</span>
+                    <span className="vote-tile__chance-label">CHANCE</span>
+                  </span>
+                )}
                 {n > 0 && (
                   <span className="vote-tile__badge">
                     {me?.emoji}
@@ -105,18 +116,13 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
         })}
       </ul>
 
-      <div className="player-voting__foot">
-        {closed ? (
+      {closed ? (
+        <div className="player-voting__foot">
           <p className="get-ready get-ready--small">Get ready… {remaining}</p>
-        ) : (
-          <>
-            <span className="player-voting__timer">
-              <span
-                className="player-voting__timer-fill"
-                style={{ width: `${Math.min(100, (remaining / (VOTING_MS / 1000)) * 100)}%` }}
-              />
-            </span>
-            <span className="player-voting__clock">{formatClock(remaining)}</span>
+        </div>
+      ) : (
+        <>
+          <div className="player-voting__foot">
             {/* Reset is the only way to change a vote — tiles add, they never
                 toggle, which keeps a stacked tile unambiguous. It goes away
                 once voting is over, since the server rejects it there. */}
@@ -127,9 +133,21 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
             >
               Reset votes
             </button>
-          </>
-        )}
-      </div>
+          </div>
+          {/* The host's timer bar, not a phone-sized imitation of it: the same
+              cream strip, the same Bungee clock, the same teal fill. It is one
+              object, and the room is watching both copies of it at once. */}
+          <div className="timer-bar player-voting__bar">
+            <span className="timer-bar__num">{formatClock(remaining)}</span>
+            <span className="timer-track">
+              <span
+                className="timer-track__fill"
+                style={{ width: `${Math.min(100, (remaining / (VOTING_MS / 1000)) * 100)}%` }}
+              />
+            </span>
+          </div>
+        </>
+      )}
     </main>
   );
 }

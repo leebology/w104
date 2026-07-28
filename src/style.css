@@ -16,24 +16,30 @@
   --struck: #9C8B79;      /* duplicated words + their attribution emoji */
   --card-rule: #E7D3BE;   /* hairlines and the timer track */
   --code-empty: #F6D9C6;  /* unfilled room-code box */
+  --paper-lit: #FFF3C4;   /* the one cream card that is *yours* */
   --scroll-thumb: #C9B8A2;
-  --cream-track: rgba(255, 247, 232, 0.3); /* timer track on a pink field */
 
   /* Team accents. Ten fixed colours, one per possible team — a team's colour
      is set once at creation and never changes, so these are the only place
      any of them is written. Every accented surface reads `--accent`, a
      custom property set inline from one of these tokens; no other rule in
-     this file names a team colour. */
+     this file names a team colour.
+
+     Revised against the poster palette rather than picked in isolation: the
+     two that had to move were the pink, which sat close enough to `--pink`
+     to disappear into the field, and the second teal, which competed with
+     `--teal`. Magenta and brown replace them. `--team-yellow` stays warm
+     rather than going gold — a team must never read as the primary action. */
   --team-red: #e5484d;
   --team-blue: #3e63dd;
   --team-green: #30a46c;
   --team-yellow: #ffb224;
   --team-purple: #8e4ec6;
   --team-orange: #f76b15;
-  --team-pink: #e93d82;
-  --team-teal: #12a594;
+  --team-pink: #d6409f;
+  --team-cyan: #05a2c2;
   --team-lime: #99d52a;
-  --team-cyan: #00a2c7;
+  --team-brown: #ad7f58;
 
   /* Shape. Nothing here scales with the viewport — enlarging borders and
      shadows on a big screen softens the flat-graphic look the design is
@@ -202,6 +208,29 @@ ul, ol { list-style: none; }
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--cream-dim);
+}
+
+/* One gold band per screen, carrying the single loudest thing on it. The
+   slant is what separates it from a button — `.btn` is gold too, and a
+   heading that looked tappable would be the one mistake this design can
+   make. `.get-ready` and `.banner` are the two other members of the family;
+   this is the quiet one, for a screen's title. */
+.plaque {
+  align-self: center;
+  background: var(--gold);
+  color: var(--ink-gold);
+  border: var(--border-heavy);
+  border-radius: 10px;
+  padding: 8px 22px;
+  transform: rotate(-2.5deg);
+  box-shadow: var(--shadow-btn);
+  font-family: var(--display);
+  font-size: 20px;
+  line-height: 1.06;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-align: center;
+  flex: 0 0 auto;
 }
 
 /* Focus has to be visible against both pink and cream, so it is drawn in
@@ -410,6 +439,42 @@ ul, ol { list-style: none; }
   white-space: nowrap;
 }
 
+.host-header__right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 0 0 auto;
+}
+
+/* Every host screen's way out, always in the same corner. Deliberately not a
+   `.btn`: gold with a hard shadow is what "go forward" looks like in this
+   app, and the button that abandons the phase must never be able to be
+   mistaken for the one that starts it. An outline on the field instead —
+   present, findable, and clearly not the primary. */
+.host-exit {
+  font: inherit;
+  font-family: var(--display);
+  font-size: 13px;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  padding: 11px 18px;
+  border: 3px solid var(--cream);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--cream);
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+/* Filled while the confirmation it opened is on screen, so the dialog behind
+   the scrim still reads as belonging to this button. */
+.host-exit:hover,
+.host-exit--active {
+  background: var(--cream);
+  color: var(--ink);
+}
+
 .host-stage {
   flex: 1;
   min-height: 0;
@@ -505,8 +570,36 @@ ul, ol { list-style: none; }
   animation: pulseDot var(--pulse, 1.2s) infinite;
 }
 
-.player-pill__ready { font-size: 14px; line-height: 1; }
-.player-pill__ready--waiting { color: var(--ink-dim); }
+/* Readiness is the whole pill. A ready player lifts off the page in gold; a
+   waiting one sits flat and sunken, exactly like an unfilled room-code box.
+   The tag inside spells it out for anyone close enough to read it, but the
+   fill is what carries across the room — which is the distance that
+   matters, because this is a TV. */
+.player-pill { padding-right: 12px; }
+
+.player-pill--ready {
+  background: var(--gold);
+  color: var(--ink-gold);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.player-pill--waiting {
+  background: var(--code-empty);
+  color: var(--ink-dim);
+  box-shadow: none;
+}
+
+.player-pill__mark {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  line-height: 1;
+  padding: 4px 9px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+
+.player-pill--ready .player-pill__mark { background: var(--cream); }
 
 .player-pill--offline { opacity: 0.45; }
 
@@ -553,7 +646,13 @@ ul, ol { list-style: none; }
   font-variant-numeric: tabular-nums;
 }
 
+/* Both `display: block` declarations are load-bearing, not tidiness. These
+   are rendered as `<span>`s on the voting screens and `<div>`s on the round
+   screen; an inline box ignores `width` and `height` outright, so the span
+   version drew an empty track and no fill at all. Blockifying here means the
+   element a call site happens to choose cannot break the bar. */
 .timer-track {
+  display: block;
   flex: 1;
   height: 32px;
   border-radius: 99px;
@@ -564,6 +663,7 @@ ul, ol { list-style: none; }
 /* Width comes from the server's absolute deadline counted down locally —
    never from a per-second broadcast. */
 .timer-track__fill {
+  display: block;
   height: 100%;
   background: var(--teal);
   transition: width 0.25s linear;
@@ -701,6 +801,11 @@ ul, ol { list-style: none; }
 .vote-card {
   flex: 1 1 0;
   min-width: 104px;
+  /* Makes the card a query container so its name can size against its own
+     width. Without it a long category in a one-vote column clips, because
+     the type scale is driven by the vote count and knows nothing about how
+     narrow flex-grow has left the card. */
+  container-type: inline-size;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -719,7 +824,9 @@ ul, ol { list-style: none; }
    their old width when there is room; `flex-shrink` (inherited from
    `.vote-card`) and wrapping let a crowded row give way instead of clipping.
    `max-width` stops a lone survivor from stretching to the full row. */
-.vote-card--small { flex: 1 1 150px; max-width: 220px; }
+.vote-card--small { flex: 1 1 150px; max-width: 220px; min-height: 86px; }
+.vote-card--small .vote-card__name { font-size: 19px; }
+.vote-card--small .vote-card__total { font-size: 20px; }
 
 /* A category nobody wanted: sunken, flat, name only. */
 .vote-card--zero {
@@ -728,12 +835,18 @@ ul, ol { list-style: none; }
   justify-content: center;
 }
 
-.vote-card--zero .vote-card__name { font-size: 17px; text-align: center; }
+.vote-card--zero .vote-card__name { text-align: center; }
 
+/* Two ceilings, and the smaller wins. `--name-size` is the ideal — it scales
+   with share of the leader, set inline per card — and `17cqw` is what the
+   card can actually afford at the width flex-grow has left it. `anywhere`
+   is the last resort under both. */
 .vote-card__name {
   font-family: var(--display);
+  font-size: min(var(--name-size, 21px), 17cqw);
   line-height: 1.06;
   overflow-wrap: anywhere;
+  hyphens: auto;
 }
 
 .vote-card__foot {
@@ -758,7 +871,7 @@ ul, ol { list-style: none; }
 
 .vote-card__total {
   font-family: var(--display);
-  font-size: 20px;
+  font-size: 22px;
   color: var(--pink);
   flex: 0 0 auto;
 }
@@ -781,14 +894,6 @@ ul, ol { list-style: none; }
 }
 
 .host-voting__footer .timer-track { flex: 1; height: 28px; }
-
-/* Cream on a cream footer would vanish, so the secondary action is a ghost. */
-.btn--ghost {
-  background: transparent;
-  color: var(--ink);
-  box-shadow: none;
-  border: var(--border);
-}
 
 .host-voting__closed-footer {
   flex: 0 0 126px;
@@ -883,11 +988,14 @@ ul, ol { list-style: none; }
   gap: 12px;
 }
 
-/* Same accent convention as `.team-panel`/`.team-tile`: a flat top border
-   read from `--accent`. Unconditional on purpose — `--accent` is only ever
-   set inline for a team, and a `var()` falling back to nothing makes the
-   whole `border-top` declaration invalid, which resolves to its initial
-   value (`border-style: none`), so a player's card renders no border at all. */
+/* A flat top border read from `--accent`. The team-selection screens carry
+   their accent as an inner strip instead, so that the ink outline stays
+   unbroken on a card players are aiming at; here the card is being read
+   rather than aimed at, and a border is the cheaper way to group a column.
+   Unconditional on purpose — `--accent` is only ever set inline for a team,
+   and a `var()` falling back to nothing makes the whole `border-top`
+   declaration invalid, which resolves to its initial value
+   (`border-style: none`), so a player's card renders no border at all. */
 .id-card { padding: 14px; flex: 0 0 auto; border-top: 10px solid var(--accent); }
 
 .id-card__row { display: flex; align-items: center; gap: 10px; }
@@ -1032,13 +1140,7 @@ ul, ol { list-style: none; }
 
 .player-lobby { gap: 16px; }
 
-.player-lobby__room {
-  font-family: var(--display);
-  font-size: 15px;
-  letter-spacing: 0.14em;
-  color: var(--cream);
-  text-align: center;
-}
+.player-lobby__room { font-size: 20px; letter-spacing: 0.12em; padding: 8px 20px; }
 
 .field__label {
   font-family: var(--display);
@@ -1392,6 +1494,15 @@ ul, ol { list-style: none; }
   .timer-track { height: 22px; }
   .host-scoring { padding: 16px 16px 12px; }
   .host-lobby__code { margin: 0 -50px; }
+  .host-exit { font-size: 11px; padding: 9px 13px; }
+  .host-header__right { gap: 10px; }
+  /* Five fixed 182px panels plus gaps need ~1000px. On a laptop-sized "TV"
+     the panel gets narrower — but it is still *fixed*, so the invariant that
+     matters holds: a panel's width never changes with how many teams there
+     are, only with how big the screen is. */
+  .team-grid { grid-template-columns: repeat(var(--cols, 5), 148px); padding: 18px 16px 8px; }
+  .drawer { padding: 16px; }
+  .drawer__panel { width: min(340px, 66vw); }
 }
 
 /* ------------------------------------------------------- host standings */
@@ -1420,8 +1531,9 @@ ul, ol { list-style: none; }
 }
 
 /* Same accent convention as `.id-card`: a flat left border read from
-   `--accent`. Unconditional on purpose — see the comment on `.id-card` for
-   why a player's row, with no `--accent` set, renders no border at all. */
+   `--accent`, for the same reason. Unconditional on purpose — see the
+   comment on `.id-card` for why a player's row, with no `--accent` set,
+   renders no border at all. */
 .standing-card {
   display: flex;
   align-items: center;
@@ -1803,6 +1915,25 @@ ul, ol { list-style: none; }
 
 .vote-tile__times { font-family: var(--display); font-size: 10px; }
 
+/* Only on your own picks, and only once voting has closed: the odds that
+   this is the category the room ends up playing. */
+.vote-tile__chance {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.vote-tile__pct { font-size: 22px; line-height: 1; color: var(--pink); }
+
+.vote-tile__chance-label {
+  font-family: var(--body);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--ink-dim);
+}
+
 .player-voting__foot {
   flex: 0 0 auto;
   display: flex;
@@ -1811,16 +1942,20 @@ ul, ol { list-style: none; }
   gap: 10px;
 }
 
-.player-voting__timer {
-  width: 100%;
-  height: 10px;
-  border-radius: 99px;
-  background: var(--cream-track);
-  overflow: hidden;
+/* Literally the host's timer bar — same class, same cream strip, same Bungee
+   clock, same teal fill. It is one object and the room is watching both
+   copies of it at once, so it must not be reinvented at phone scale. Bled
+   past the screen's own padding to the frame edges, the way it meets the
+   edges of the TV. */
+.player-voting__bar {
+  height: 76px;
+  margin: 0 -20px -20px;
+  padding: 0 18px;
+  gap: 14px;
 }
 
-.player-voting__timer-fill { height: 100%; background: var(--teal); }
-.player-voting__clock { font-family: var(--display); font-size: 14px; color: var(--cream); }
+.player-voting__bar .timer-bar__num { font-size: 34px; }
+.player-voting__bar .timer-track { height: 24px; }
 
 @media (prefers-reduced-motion: reduce) {
   .player-voting__count { animation: none; }
@@ -1831,15 +1966,23 @@ ul, ol { list-style: none; }
 /* Overlay, not push: the lobby underneath keeps its exact sizing. Fixed
    rather than absolute so the panel is measured against the viewport the
    host screen already owns, not against a flex child of it. */
+/* An inset card, not a full-height slab: the panel reads as one more object
+   on the pink field rather than as a second screen sliding over the first.
+   The padding here is the inset, so the panel and its handle lay themselves
+   out in a row and the handle needs no magic left/right offset. */
 .drawer {
   position: fixed;
   inset: 0;
   z-index: 20;
   display: flex;
+  align-items: stretch;
+  padding: 26px;
 }
 
 .drawer--left { justify-content: flex-start; }
+/* The handle comes first in the DOM but must sit to the panel's left. */
 .drawer--right { justify-content: flex-end; }
+.drawer--right .drawer__handle { order: -1; }
 
 /* A button, not a div: dismissing by clicking away has to be reachable
    without a mouse, and this is the whole backdrop. */
@@ -1857,12 +2000,35 @@ ul, ol { list-style: none; }
   position: relative;
   display: flex;
   flex-direction: column;
-  width: min(420px, 86vw);
-  height: 100%;
+  width: min(400px, 74vw);
   background: var(--cream);
   color: var(--ink);
-  border-left: var(--border);
-  border-right: var(--border);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: 8px 8px 0 var(--ink);
+  overflow: hidden;
+}
+
+/* Straddles the panel's inner edge — half on the card, half on the field —
+   so it reads as the panel's own handle rather than as a control floating
+   beside it. Gold because it is the one thing on the drawer that acts. */
+.drawer__handle {
+  position: relative;
+  z-index: 1;
+  align-self: center;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 62px;
+  margin: 0 -12px;
+  border: var(--border);
+  border-radius: 12px;
+  background: var(--gold);
+  color: var(--ink-gold);
+  font-family: var(--display);
+  font-size: 22px;
+  line-height: 1;
+  box-shadow: var(--shadow-btn);
+  cursor: pointer;
 }
 
 .drawer__head {
@@ -1880,19 +2046,6 @@ ul, ol { list-style: none; }
   font-size: 18px;
   letter-spacing: 0.06em;
   color: var(--ink);
-}
-
-.drawer__close {
-  width: 34px;
-  height: 34px;
-  border: var(--border);
-  border-radius: 8px;
-  background: var(--gold);
-  color: var(--ink-gold);
-  font-family: var(--display);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
 }
 
 /* The only thing on a host screen allowed to scroll is a box that asked for
@@ -1978,36 +2131,140 @@ ul, ol { list-style: none; }
   color: var(--ink-dim);
 }
 
+/* ------------------------------------------------------ confirm dialog */
+
+.confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+/* Not a button, unlike `.drawer__scrim`: closing the room kicks everyone in
+   it, and a stray tap on the backdrop is not consent to that. The two
+   buttons are the only exits. */
+.confirm__scrim {
+  position: absolute;
+  inset: 0;
+  background: var(--ink);
+  opacity: 0.55;
+}
+
+.confirm__box {
+  position: relative;
+  width: min(660px, 100%);
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border-heavy);
+  border-radius: var(--radius);
+  box-shadow: 8px 8px 0 var(--ink);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The whole signal that this question is different in kind. `--pink` is the
+   field colour everywhere else in the app and appears inside a cream card
+   nowhere but here. */
+.confirm__cap {
+  height: 16px;
+  background: var(--pink);
+  border-bottom: var(--border);
+}
+
+.confirm__copy {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 26px 30px 8px;
+}
+
+.confirm__title {
+  font-family: var(--display);
+  font-size: 30px;
+  line-height: 1.1;
+}
+
+.confirm__body {
+  font-size: 17px;
+  line-height: 1.4;
+  color: var(--ink-dim);
+}
+
+.confirm__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  justify-content: flex-end;
+  padding: 20px 30px 26px;
+}
+
+.confirm__actions .btn { padding: 14px 30px; }
+
 /* --------------------------------------------------------------- teams */
 
 /* Every accented surface reads one custom property, set inline from
    TEAM_COLORS[colorIndex].token. No rule here knows a colour name, which is
-   what keeps the ten accents in :root as the only place they are written. */
-.team-panel,
-.team-tile,
-.player-teams__mine {
-  border-top: 10px solid var(--accent);
-}
+   what keeps the ten accents in :root as the only place they are written.
 
-/* The team you are on. A flat fill, not a tint: this design system has no
-   translucency and no colour blending anywhere, and `color-mix` appears
-   nowhere in the file. */
-.team-tile--mine {
+   The accent is carried *inside* the card — a strip below the top edge, or a
+   filled name tab — rather than as a top border, so the ink outline stays
+   continuous on all four sides of every team card. A coloured border reads as
+   a card with a piece missing; a strip reads as a card with a label on it. */
+.team-tile__strip,
+.player-teams__strip {
+  display: block;
+  flex: 0 0 auto;
   background: var(--accent);
-  color: var(--ink);
+  border-bottom: var(--border);
 }
 
-/* Same pattern as `.results` above — --cols is set per render. */
+.team-tile__strip { height: 10px; }
+.player-teams__strip { height: 16px; }
+
+/* The team you are on, in the switch grid. A flat fill, not a tint: this
+   design system has no translucency and no colour blending anywhere, and
+   `color-mix` appears nowhere in the file. */
+.team-tile--mine { background: var(--paper-lit); }
+
+/* Fixed-width panels that wrap, five to a row — not tracks that divide the
+   width up. Adding a team must add a panel rather than shrink the nine
+   others: players are aiming at a colour on a TV while someone shouts at
+   them, and a target that moves every time somebody else joins is the one
+   thing this screen cannot do. `justify-content: center` is what keeps a
+   short row centred rather than left-packed.
+
+   The top padding is clearance for the name tabs, which overhang. */
 .team-grid {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
-  gap: 12px;
+  grid-template-columns: repeat(var(--cols, 5), 182px);
+  /* Capped rather than `1fr`, which stretched a panel to whatever height the
+     screen had left over — five members' worth of content in a column tall
+     enough for twenty. A cap keeps the panel roughly as tall as it is wide at
+     one row and still lets two rows fit. */
+  grid-auto-rows: minmax(0, 34vh);
+  justify-content: center;
+  align-content: center;
+  gap: 22px 12px;
   width: 100%;
-  max-width: calc(var(--cols, 5) * 20vw);
-  margin: 0 auto;
+  padding: 18px 34px 8px;
+}
+
+.team-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  padding: 26px 14px 14px;
 }
 
 .player-teams__grid {
@@ -2016,7 +2273,7 @@ ul, ol { list-style: none; }
   gap: 12px;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: 0 0 8px;
   overflow-y: auto;
   min-height: 0;
 }
@@ -2025,17 +2282,20 @@ ul, ol { list-style: none; }
   width: 100%;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: stretch;
   gap: 4px;
   background: var(--cream);
   color: var(--ink);
   border: var(--border);
-  border-top: 10px solid var(--accent);
   border-radius: var(--radius);
   box-shadow: var(--shadow-btn);
-  padding: 12px;
+  padding: 0 0 12px;
+  overflow: hidden;
   font-family: var(--display);
+  cursor: pointer;
 }
+
+.team-tile:active { transform: translate(3px, 3px); box-shadow: 2px 2px 0 var(--ink); }
 
 .team-member--gone { opacity: 0.45; }
 
@@ -2061,12 +2321,37 @@ ul, ol { list-style: none; }
   text-align: center;
 }
 
+/* The room's only brake lives on the phones, so the TV has to say so — a
+   screen with a running countdown and no visible way to stop it reads as
+   broken otherwise. */
+.host-teams__footer .get-ready--tv + .host-teams__hint { margin-top: 2px; }
+
+.host-teams__plaque { font-size: 22px; letter-spacing: 0.14em; padding: 8px 28px; }
+
+/* The team's colour, worn as a tab rather than as a border. Overhangs the
+   panel's top-left corner on the same slant as every other gold plaque in
+   the app, so the colour and the name are one object — which is what the
+   room is navigating by. Ink text on every accent: the ten are chosen for
+   hue separation, not for a consistent luminance, so a colour-dependent
+   text colour would be ten decisions instead of one. */
 .team-panel__name {
+  position: absolute;
+  top: -14px;
+  left: 12px;
+  max-width: calc(100% - 24px);
   font-family: var(--display);
-  font-size: clamp(16px, 1.8vw, 22px);
+  font-size: 16px;
   line-height: 1.06;
-  margin-bottom: 10px;
-  overflow-wrap: anywhere;
+  color: var(--ink);
+  background: var(--accent);
+  border: var(--border);
+  border-radius: 8px;
+  padding: 5px 12px;
+  transform: rotate(-2.5deg);
+  box-shadow: 3px 3px 0 var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .team-panel__members {
@@ -2098,8 +2383,8 @@ ul, ol { list-style: none; }
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
-  padding: 0 28px;
+  gap: 12px;
+  padding: 0 34px;
 }
 
 .team-unassigned__label {
@@ -2107,9 +2392,30 @@ ul, ol { list-style: none; }
   font-size: 12px;
   letter-spacing: 0.14em;
   color: var(--cream-dim);
+  flex: 0 0 auto;
 }
 
-.team-unassigned__avatar { font-size: 22px; line-height: 1; }
+.team-unassigned__list { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* A named pill rather than a bare avatar: this row is the host's list of who
+   to shout at, and an emoji on its own does not tell them whose phone to go
+   and find. Sunken and dim, like an unfilled code box — the same "not done
+   yet" the waiting pills wear in the lobby. */
+.team-straggler {
+  padding: 7px 14px;
+  background: var(--code-empty);
+  color: var(--ink-dim);
+}
+
+.team-straggler__name {
+  font-family: var(--display);
+  font-size: 14px;
+  line-height: 1.06;
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ------------------------------------------------------ player: teams */
 
@@ -2131,16 +2437,75 @@ ul, ol { list-style: none; }
   font-size: 14px;
 }
 
-.player-teams__mine { gap: 10px; }
+.player-teams__plaque { font-size: 16px; letter-spacing: 0.1em; padding: 8px 18px; }
+
+/* Heavier than the tiles below it in every dimension — 4px rule where they
+   have 3, a deeper shadow, and the colour strip at twice their height. The
+   card you are on has to be legible as "the one" before any word on it is
+   read. */
+.player-teams__mine {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 0 0 auto;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border-heavy);
+  border-radius: var(--radius);
+  box-shadow: 7px 7px 0 var(--ink);
+  padding: 0 0 16px;
+  overflow: hidden;
+}
+
+.player-teams__joined {
+  position: absolute;
+  top: 26px;
+  right: 12px;
+  font-family: var(--display);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  background: var(--gold);
+  color: var(--ink-gold);
+  border: var(--border);
+  border-radius: 99px;
+  padding: 4px 12px;
+  transform: rotate(-2.5deg);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.player-teams__title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 2px 18px 0;
+  /* Clears the JOINED! badge, which is absolutely positioned over this row. */
+  padding-right: 96px;
+  color: var(--ink-dim);
+}
+
+.player-teams__pen { flex: 0 0 auto; }
 
 .player-teams__name {
   font-family: var(--display);
-  font-size: 20px;
-  width: 100%;
+  font-size: 26px;
+  min-width: 0;
+  flex: 1;
   border: none;
   background: transparent;
   color: var(--ink);
   padding: 0;
+}
+
+/* The field is shared and last write wins, so a teammate's edit arriving
+   under your thumb has to read as expected rather than as a glitch. */
+.player-teams__shared {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+  padding: 0 18px;
 }
 
 .player-teams__members {
@@ -2149,16 +2514,24 @@ ul, ol { list-style: none; }
   gap: 4px;
   font-size: 14px;
   color: var(--ink-dim);
+  padding: 0 18px;
 }
 
+.player-teams__divider { flex: 0 0 auto; margin: 2px 0 -4px; }
+
 .team-tile__name {
+  font-family: var(--display);
   font-size: 15px;
+  padding: 2px 12px 0;
+  text-align: left;
   overflow-wrap: anywhere;
 }
 
 .team-tile__count {
   font-family: var(--body);
   font-size: 18px;
+  padding: 0 12px;
+  text-align: left;
 }
 
 .player-teams__footer {

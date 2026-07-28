@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bungee&family=Archivo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { margin:0; background:#17110F; font-family:"Archivo",system-ui,sans-serif; }
+  a { color:#FFD400; }
+  a:hover { color:#00A6A6; }
+  @keyframes pulseDot { 0%,100%{opacity:.25;transform:scale(.8)} 50%{opacity:1;transform:scale(1.15)} }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</helmet>
+
+<section style="display:flex;flex-direction:column;gap:64px;padding:64px;background:#17110F">
+  <div style="display:flex;flex-direction:column;gap:8px;max-width:900px">
+    <div style="font-family:'Bungee';font-size:13px;letter-spacing:.18em;color:#FFD400">MARQUEE · APPROVED DIRECTION</div>
+    <div style="font-family:'Bungee';font-size:34px;line-height:1.06;color:#FFF7E8">Lobby, teams & category selection</div>
+    <div style="font-size:15px;line-height:1.45;color:rgba(255,247,232,.7);text-wrap:pretty">The host and player views for room setup, team selection and category voting, in the approved Marquee formatting: one −2.5° gold band per screen carrying the single loudest thing, everything else a flat cream pill on the pink field. Host frames 1200×675, player frames 390×844.</div>
+  </div>
+
+  <!-- ============================ 2a · ONE BAND ============================ -->
+  <div id="2a" style="display:flex;flex-direction:column;gap:18px">
+    <div style="display:flex;gap:24px;align-items:flex-start">
+
+      <!-- 2a · HOST ROOM -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Bungee';font-size:11px;letter-spacing:.16em;color:rgba(255,247,232,.55)">HOST · ROOM</div>
+        <div style="width:1200px;height:675px;background:#E62E5C;border:3px solid #1A0710;position:relative;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 34px;position:relative;flex:0 0 auto">
+            <div style="display:flex;flex-direction:column;align-items:center;width:max-content;padding-left:16px;margin:0 -14px">
+              <div style="align-self:flex-start;margin-left:-16px;background:#00A6A6;color:#FFF7E8;border:4px solid #1A0710;border-radius:8px;padding:4px 14px;transform:rotate(-4deg);box-shadow:3px 3px 0 #1A0710;font-family:'Bungee';font-size:18px;z-index:2">OK,</div>
+              <div style="background:#FFD400;color:#2A1400;border:4px solid #1A0710;border-radius:10px;padding:12px 18px;transform:rotate(2deg);box-shadow:5px 5px 0 #1A0710;margin-top:-6px;font-family:'Bungee';font-size:28px;white-space:nowrap">NAME ONE!</div>
+            </div>
+            <div style="position:absolute;left:50%;transform:translateX(-50%);font-family:'Bungee';font-size:18px;letter-spacing:.14em;color:#FFF7E8;white-space:nowrap">ROUND 1 / 3</div>
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="font-size:15px;letter-spacing:.16em;color:#FFF7E8">{{ playersLabel }}</div>
+              <button type="button" style="font-family:'Bungee';font-size:13px;letter-spacing:.08em;padding:11px 18px;border:3px solid #FFF7E8;border-radius:99px;background:transparent;color:#FFF7E8;cursor:pointer;text-transform:uppercase">Close room</button>
+            </div>
+          </div>
+          <div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;padding:0 34px">
+            <div style="font-size:18px;letter-spacing:.16em;color:#FFF7E8">JOIN AT OKAYNAMEONE.APP · ROOM CODE</div>
+            <div style="align-self:stretch;margin:0 -74px;background:#FFD400;color:#2A1400;transform:rotate(-2.5deg);padding:18px 0 22px;text-align:center;box-shadow:0 12px 0 rgba(0,0,0,.25)">
+              <div style="font-family:'Bungee';font-size:132px;line-height:1.12;letter-spacing:.1em">PLUM</div>
+            </div>
+            <ul style="display:flex;flex-wrap:wrap;justify-content:center;gap:14px;margin:0;padding:0;list-style:none">
+              <sc-for list="{{ players }}" as="p" hint-placeholder-count="5">
+                <li style="display:flex;align-items:center;gap:10px;padding:9px 12px 9px 16px;border-radius:99px;background:{{ p.pillBg }};color:{{ p.pillFg }};border:3px solid #1A0710;box-shadow:{{ p.pillShadow }}">
+                  <span style="font-size:22px;line-height:1">{{ p.e }}</span>
+                  <span style="font-family:'Bungee';font-size:15px">{{ p.n }}</span>
+                  <span style="font-family:'Bungee';font-size:11px;letter-spacing:.12em;padding:4px 9px;border-radius:99px;background:{{ p.markBg }}">{{ p.mark }}</span>
+                </li>
+              </sc-for>
+            </ul>
+          </div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:16px;padding:0 34px 30px">
+            <button type="button" style="font-family:'Bungee';font-size:16px;padding:16px 30px;border:4px solid #1A0710;border-radius:99px;background:#FFD400;color:#2A1400;box-shadow:5px 5px 0 #1A0710;cursor:pointer;text-transform:uppercase">Start game</button>
+          </div>
+          <button type="button" style="position:absolute;bottom:26px;left:26px;font-family:'Bungee';font-size:13px;letter-spacing:.08em;padding:12px 18px;border:3px solid #1A0710;border-radius:99px;background:#FFF7E8;color:#1A0710;box-shadow:5px 5px 0 #1A0710;cursor:pointer">Game modes</button>
+          <button type="button" style="position:absolute;bottom:26px;right:26px;font-family:'Bungee';font-size:13px;letter-spacing:.08em;padding:12px 18px;border:3px solid #1A0710;border-radius:99px;background:#FFF7E8;color:#1A0710;box-shadow:5px 5px 0 #1A0710;cursor:pointer">Game settings</button>
+        </div>
+      </div>
+
+      <!-- 2a · HOST ROOM, DRAWERS -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Bungee';font-size:11px;letter-spacing:.16em;color:rgba(255,247,232,.55)">HOST · ROOM (DRAWERS EXTENDED)</div>
+        <div style="width:1200px;height:675px;background:#E62E5C;border:3px solid #1A0710;position:relative;overflow:hidden;display:flex;flex-direction:column">
+          <div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;padding:0 34px">
+            <div style="font-size:16px;letter-spacing:.16em;color:#FFF7E8">ROOM CODE</div>
+            <div style="align-self:stretch;margin:0 -74px;background:#FFD400;color:#2A1400;transform:rotate(-2.5deg);padding:14px 0 18px;text-align:center;box-shadow:0 12px 0 rgba(0,0,0,.25)">
+              <div style="font-family:'Bungee';font-size:104px;line-height:1.12;letter-spacing:.1em">PLUM</div>
+            </div>
+          </div>
+          <div style="position:absolute;inset:0;background:#1A0710;opacity:.55"></div>
+          <div style="position:absolute;top:26px;bottom:26px;left:26px;width:400px;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;box-shadow:8px 8px 0 #1A0710;overflow:hidden;display:flex;flex-direction:column">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 20px 14px;border-bottom:3px solid #1A0710">
+              <span style="font-family:'Bungee';font-size:18px;letter-spacing:.06em">Game modes</span>
+            </div>
+            <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:14px;padding:18px 20px 24px">
+              <sc-for list="{{ modes }}" as="m" hint-placeholder-count="1">
+                <button type="button" style="display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;padding:14px 16px;border:3px solid #1A0710;border-radius:14px;background:#FFD400;color:#2A1400;box-shadow:6px 6px 0 #1A0710;cursor:pointer">
+                  <span style="font-family:'Bungee';font-size:16px;letter-spacing:.04em">{{ m.name }}</span>
+                  <span style="font-size:13px;line-height:1.35">{{ m.blurb }}</span>
+                </button>
+              </sc-for>
+              <div style="font-size:13px;line-height:1.35;color:#7A6A5C">More modes are on the way. The room keeps whichever one is lit.</div>
+            </div>
+          </div>
+          <div style="position:absolute;top:26px;bottom:26px;right:26px;width:400px;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;box-shadow:8px 8px 0 #1A0710;overflow:hidden;display:flex;flex-direction:column">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:20px 20px 14px;border-bottom:3px solid #1A0710">
+              <span style="font-family:'Bungee';font-size:18px;letter-spacing:.06em">Game settings</span>
+            </div>
+            <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:14px;padding:18px 20px 24px">
+              <div style="font-size:13px;color:#7A6A5C">Free-for-All</div>
+              <sc-for list="{{ settings }}" as="s" hint-placeholder-count="3">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:4px;background:#FFF7E8;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710;padding:8px 14px 12px">
+                  <span style="font-family:'Bungee';font-size:11px;letter-spacing:.1em;color:#7A6A5C">{{ s.label }}</span>
+                  <span style="display:flex;align-items:center;gap:8px">
+                    <span style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:3px solid #1A0710;border-radius:8px;background:#FFD400;color:#2A1400;font-family:'Bungee';font-size:18px">−</span>
+                    <span style="width:3.2em;text-align:center;font-family:'Bungee';font-size:26px">{{ s.value }}</span>
+                    <span style="width:32px;height:32px;display:flex;align-items:center;justify-content:center;border:3px solid #1A0710;border-radius:8px;background:#FFD400;color:#2A1400;font-family:'Bungee';font-size:18px">+</span>
+                  </span>
+                  <span style="font-family:'Bungee';font-size:12px;color:#7A6A5C">{{ s.hint }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <button type="button" aria-label="Collapse game modes" style="position:absolute;left:414px;top:50%;transform:translateY(-50%);width:44px;height:62px;display:flex;align-items:center;justify-content:center;border:3px solid #1A0710;border-radius:12px;background:#FFD400;color:#2A1400;font-family:'Bungee';font-size:22px;box-shadow:5px 5px 0 #1A0710;cursor:pointer">‹</button>
+          <button type="button" aria-label="Collapse game settings" style="position:absolute;right:414px;top:50%;transform:translateY(-50%);width:44px;height:62px;display:flex;align-items:center;justify-content:center;border:3px solid #1A0710;border-radius:12px;background:#FFD400;color:#2A1400;font-family:'Bungee';font-size:22px;box-shadow:5px 5px 0 #1A0710;cursor:pointer">›</button>
+        </div>
+      </div>
+
+      <!-- 2a · HOST ROOM, CLOSE CONFIRM -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Bungee';font-size:11px;letter-spacing:.16em;color:rgba(255,247,232,.55)">HOST · ROOM (CLOSING THE ROOM)</div>
+        <div style="width:1200px;height:675px;background:#E62E5C;border:3px solid #1A0710;position:relative;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 34px;flex:0 0 auto">
+            <div style="display:flex;flex-direction:column;align-items:center;width:max-content;padding-left:16px;margin:0 -14px">
+              <div style="align-self:flex-start;margin-left:-16px;background:#00A6A6;color:#FFF7E8;border:4px solid #1A0710;border-radius:8px;padding:4px 14px;transform:rotate(-4deg);box-shadow:3px 3px 0 #1A0710;font-family:'Bungee';font-size:18px;z-index:2">OK,</div>
+              <div style="background:#FFD400;color:#2A1400;border:4px solid #1A0710;border-radius:10px;padding:12px 18px;transform:rotate(2deg);box-shadow:5px 5px 0 #1A0710;margin-top:-6px;font-family:'Bungee';font-size:28px;white-space:nowrap">NAME ONE!</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="font-size:15px;letter-spacing:.16em;color:#FFF7E8">{{ playersLabel }}</div>
+              <button type="button" style="font-family:'Bungee';font-size:13px;letter-spacing:.08em;padding:11px 18px;border:3px solid #FFF7E8;border-radius:99px;background:#FFF7E8;color:#1A0710;cursor:pointer;text-transform:uppercase">Close room</button>
+            </div>
+          </div>
+          <div style="flex:1;min-height:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:26px;padding:0 34px">
+            <div style="align-self:stretch;margin:0 -74px;background:#FFD400;color:#2A1400;transform:rotate(-2.5deg);padding:14px 0 18px;text-align:center;box-shadow:0 12px 0 rgba(0,0,0,.25)">
+              <div style="font-family:'Bungee';font-size:104px;line-height:1.12;letter-spacing:.1em">PLUM</div>
+            </div>
+          </div>
+          <div style="position:absolute;inset:0;background:#1A0710;opacity:.55"></div>
+          <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:660px;box-sizing:border-box;background:#FFF7E8;color:#1A0710;border:4px solid #1A0710;border-radius:14px;box-shadow:8px 8px 0 #1A0710;overflow:hidden;display:flex;flex-direction:column">
+            <div style="height:16px;background:#E62E5C;border-bottom:3px solid #1A0710"></div>
+            <div style="display:flex;flex-direction:column;gap:12px;padding:26px 30px 8px">
+              <div style="font-family:'Bungee';font-size:30px;line-height:1.1">Close this room?</div>
+              <div style="font-size:17px;line-height:1.4;color:#7A6A5C;text-wrap:pretty">Are you sure you want to close this room? All players will be kicked.</div>
+            </div>
+            <div style="display:flex;gap:14px;justify-content:flex-end;padding:20px 30px 26px">
+              <button type="button" style="font-family:'Bungee';font-size:16px;padding:14px 30px;border:3px solid #1A0710;border-radius:99px;background:#FFF7E8;color:#1A0710;box-shadow:5px 5px 0 #1A0710;cursor:pointer;text-transform:uppercase">No, keep playing</button>
+              <button type="button" style="font-family:'Bungee';font-size:16px;padding:14px 30px;border:4px solid #1A0710;border-radius:99px;background:#FFD400;color:#2A1400;box-shadow:5px 5px 0 #1A0710;cursor:pointer;text-transform:uppercase">Yes, close it</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2a · PLAYER ROOM -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Bungee';font-size:11px;letter-spacing:.16em;color:rgba(255,247,232,.55)">PLAYER · ROOM</div>
+        <div style="width:390px;height:844px;background:#E62E5C;border:3px solid #1A0710;overflow:hidden;display:flex;flex-direction:column;gap:16px;padding:52px 24px 30px">
+          <div style="align-self:center;background:#FFD400;color:#2A1400;border:4px solid #1A0710;border-radius:10px;padding:8px 20px;transform:rotate(-2.5deg);box-shadow:5px 5px 0 #1A0710;font-family:'Bungee';font-size:20px;letter-spacing:.12em">ROOM PLUM</div>
+          <div style="font-size:12px;letter-spacing:.08em;color:rgba(255,247,232,.8);text-align:center;margin-top:4px">{{ settingsLine }}</div>
+          <section style="background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;padding:18px;box-shadow:6px 6px 0 #1A0710;display:flex;flex-direction:column">
+            <span style="font-family:'Bungee';font-size:14px;letter-spacing:.08em;margin-bottom:10px">Your name</span>
+            <div style="font-size:18px;font-weight:600;padding:12px 14px;border:3px solid #1A0710;border-radius:10px">Kit</div>
+          </section>
+          <section style="background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;padding:18px;box-shadow:6px 6px 0 #1A0710;display:flex;flex-direction:column">
+            <span style="font-family:'Bungee';font-size:14px;letter-spacing:.08em;margin-bottom:10px">Pick an avatar</span>
+            <div style="display:grid;grid-template-rows:repeat(3,48px);grid-auto-flow:column;grid-auto-columns:48px;gap:10px;overflow:hidden">
+              <sc-for list="{{ avatarsA }}" as="a" hint-placeholder-count="18">
+                <div style="font-size:24px;display:flex;align-items:center;justify-content:center;border:3px solid {{ a.border }};border-radius:12px;background:{{ a.bg }};box-shadow:{{ a.shadow }}">{{ a.e }}</div>
+              </sc-for>
+            </div>
+          </section>
+          <button type="button" style="margin-top:auto;width:100%;font-family:'Bungee';font-size:16px;padding:16px 30px;border:4px solid #1A0710;border-radius:99px;background:#FFD400;color:#2A1400;box-shadow:5px 5px 0 #1A0710;cursor:pointer;text-transform:uppercase">Ready up</button>
+        </div>
+      </div>
+
+      <!-- 2a · HOST TEAMS -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Bungee';font-size:11px;letter-spacing:.16em;color:rgba(255,247,232,.55)">HOST · TEAM SELECTION</div>
+        <div style="width:1200px;height:675px;background:#E62E5C;border:3px solid #1A0710;overflow:hidden;display:flex;flex-direction:column;gap:16px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 34px;position:relative;flex:0 0 auto">
+            <div style="display:flex;align-items:center;gap:14px;padding:7px 18px;border-radius:99px;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710">
+              <span style="font-size:14px;color:#7A6A5C;letter-spacing:.16em">JOIN AT OKAYNAMEONE.APP · ROOM</span>
+              <span style="font-family:'Bungee';font-size:28px;letter-spacing:.1em">PLUM</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="font-size:15px;letter-spacing:.16em;color:#FFF7E8">{{ playersLabel }}</div>
+              <button type="button" style="font-family:'Bungee';font-size:13px;letter-spacing:.08em;padding:11px 18px;border:3px solid #FFF7E8;border-radius:99px;background:transparent;color:#FFF7E8;cursor:pointer;text-transform:uppercase">Back to room</button>
+            </div>
+          </div>
+          <div style="align-self:center;background:#FFD400;color:#2A1400;border:4px solid #1A0710;border-radius:10px;padding:8px 28px;transform:rotate(-2.5deg);box-shadow:5px 5px 0 #1A0710;font-family:'Bungee';font-size:22px;letter-spacing:.14em">PICK A TEAM</div>
+          <div style="flex:1;min-height:0;display:grid;grid-template-columns:{{ teamCols }};justify-content:center;gap:12px;width:100%;max-width:960px;margin:0 auto;padding:8px 0">
+            <sc-for list="{{ teams }}" as="t" hint-placeholder-count="4">
+              <section style="position:relative;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710;padding:26px 14px 14px;display:flex;flex-direction:column;min-width:0">
+                <div style="position:absolute;top:-14px;left:12px;font-family:'Bungee';font-size:16px;color:#1A0710;border:3px solid #1A0710;border-radius:8px;padding:5px 12px;transform:rotate(-2.5deg);box-shadow:3px 3px 0 #1A0710;background:{{ t.color }}">{{ t.name }}</div>
+                <ul style="flex:1;display:flex;flex-direction:column;gap:8px;margin:0;padding:0;list-style:none">
+                  <sc-for list="{{ t.members }}" as="m" hint-placeholder-count="2">
+                    <li style="display:flex;align-items:center;gap:8px"><span style="font-size:20px">{{ m.e }}</span><span style="font-size:14px">{{ m.n }}</span></li>
+                  </sc-for>
+                </ul>
+              </section>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;padding:0 34px">
+            <span style="font-family:'Bungee';font-size:12px;letter-spacing:.14em;color:rgba(255,247,232,.8)">STILL PICKING</span>
+            <ul style="display:flex;flex-wrap:wrap;gap:10px;margin:0;padding:0;list-style:none">
+              <sc-for list="{{ stillPicking }}" as="p" hint-placeholder-count="1">
+                <li style="display:flex;align-items:center;gap:9px;padding:7px 14px;border-radius:99px;background:#F6D9C6;color:#7A6A5C;border:3px solid #1A0710">
+                  <span style="font-size:20px;line-height:1">{{ p.e }}</span>
+                  <span style="font-family:'Bungee';font-size:14px">{{ p.n }}</span>
+                  <span style="width:8px;height:8px;border-radius:99px;background:#00A6A6;animation:{{ pulseCss }}"></span>
+                </li>
+              </sc-for>
+            </ul>
+          </div>
+          <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:10px;padding:0 28px 26px">
+            <button type="button" style="font-family:'Bungee';font-size:16px;padding:16px 30px;border:4px solid #1A0710;border-radius:99px;background:#FFD400;color:#2A1400;box-shadow:5px 5px 0 #1A0710;cursor:pointer;text-transform:uppercase">Continue</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2a · PLAYER TEAMS -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Bungee';font-size:11px;letter-spacing:.16em;color:rgba(255,247,232,.55)">PLAYER · TEAM SELECTION</div>
+        <div style="width:390px;height:844px;background:#E62E5C;border:3px solid #1A0710;overflow:hidden;display:flex;flex-direction:column;gap:16px;padding:52px 24px 30px">
+          <div style="align-self:center;background:#FFD400;color:#2A1400;border:4px solid #1A0710;border-radius:10px;padding:8px 18px;transform:rotate(-2.5deg);box-shadow:5px 5px 0 #1A0710;font-family:'Bungee';font-size:16px;letter-spacing:.1em">PICK A TEAM</div>
+          <section style="position:relative;box-sizing:border-box;background:#FFF7E8;color:#1A0710;border:4px solid #1A0710;border-radius:14px;padding:0 0 16px;box-shadow:7px 7px 0 #1A0710;display:flex;flex-direction:column;gap:8px;overflow:hidden">
+            <div style="height:16px;background:{{ myTeam.color }};border-bottom:3px solid #1A0710"></div>
+            <div style="position:absolute;top:26px;right:12px;font-family:'Bungee';font-size:11px;letter-spacing:.14em;color:#2A1400;background:#FFD400;border:3px solid #1A0710;border-radius:99px;padding:4px 12px;transform:rotate(-2.5deg);box-shadow:3px 3px 0 #1A0710">JOINED!</div>
+            <div style="display:flex;align-items:center;gap:9px;padding:2px 18px 0">
+              <span style="font-family:'Bungee';font-size:26px">{{ myTeam.name }}</span>
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="#7A6A5C" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4l11-11-4-4L4 16z"></path><path d="M14 5l4 4"></path></svg>
+            </div>
+            <div style="font-size:14px;color:#7A6A5C;padding:0 18px">{{ myTeam.who }}</div>
+          </section>
+          <div style="display:flex;align-items:center;gap:12px;margin:14px 0 6px">
+            <span style="flex:1;height:3px;background:rgba(255,247,232,.8)"></span>
+            <span style="font-size:12px;letter-spacing:.16em;color:#FFF7E8">OR SWITCH TO</span>
+            <span style="flex:1;height:3px;background:rgba(255,247,232,.8)"></span>
+          </div>
+          <ul style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:0;padding:0;list-style:none">
+            <sc-for list="{{ teams }}" as="t" hint-placeholder-count="4">
+              <li>
+                <button type="button" style="box-sizing:border-box;width:100%;display:flex;flex-direction:column;align-items:stretch;gap:4px;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;box-shadow:5px 5px 0 #1A0710;padding:0 0 12px;font-family:'Bungee';cursor:pointer;overflow:hidden">
+                  <span style="display:block;height:10px;background:{{ t.color }};border-bottom:3px solid #1A0710"></span>
+                  <span style="font-size:15px;padding:2px 12px 0;text-align:left">{{ t.name }}</span>
+                  <span style="font-family:'Archivo';font-size:18px;padding:0 12px;text-align:left">{{ t.faces }}</span>
+                </button>
+              </li>
+            </sc-for>
+          </ul>
+          <div style="margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:14px">
+            <div style="background:#FFD400;color:#2A1400;border:4px solid #1A0710;border-radius:10px;padding:10px 20px;transform:rotate(-2.5deg);box-shadow:5px 5px 0 #1A0710;font-family:'Bungee';font-size:17px">Get ready… 3</div>
+            <button type="button" style="width:100%;font-family:'Bungee';font-size:16px;padding:16px 30px;border:4px solid #1A0710;border-radius:99px;background:#FFF7E8;color:#1A0710;box-shadow:5px 5px 0 #1A0710;cursor:pointer;text-transform:uppercase">Leave team</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2a · HOST CATEGORY CHOOSING -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Bungee';font-size:11px;letter-spacing:.16em;color:rgba(255,247,232,.55)">HOST · CATEGORY (CHOOSING)</div>
+        <div style="width:1200px;height:675px;background:#E62E5C;border:3px solid #1A0710;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 34px;position:relative;flex:0 0 auto">
+            <div style="display:flex;align-items:center;gap:14px;padding:7px 18px;border-radius:99px;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710">
+              <span style="font-size:14px;color:#7A6A5C;letter-spacing:.16em">JOIN AT OKAYNAMEONE.APP · ROOM</span>
+              <span style="font-family:'Bungee';font-size:28px;letter-spacing:.1em">PLUM</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="font-size:15px;letter-spacing:.16em;color:#FFF7E8">{{ playersLabel }} · {{ readyLabel }}</div>
+              <button type="button" style="font-family:'Bungee';font-size:13px;letter-spacing:.08em;padding:11px 18px;border:3px solid #FFF7E8;border-radius:99px;background:transparent;color:#FFF7E8;cursor:pointer;text-transform:uppercase">{{ backLabel }}</button>
+            </div>
+          </div>
+          <div style="font-family:'Bungee';font-size:15px;letter-spacing:.16em;color:#FFF7E8;text-align:center;padding:0 34px 12px">PICK YOUR CATEGORIES — {{ budgetLabel }}</div>
+          <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:12px;padding:0 30px 16px">
+            <div style="display:flex;gap:12px;flex:1;min-height:0">
+              <sc-for list="{{ catsTop }}" as="c" hint-placeholder-count="5">
+                <div style="flex:1 1 0;min-width:104px;container-type:inline-size;display:flex;flex-direction:column;justify-content:space-between;background:{{ c.bg }};color:#1A0710;border:3px solid #1A0710;border-radius:14px;box-shadow:{{ c.shadow }};padding:9px 12px;overflow:hidden;flex-grow:{{ c.grow }}">
+                  <span style="font-family:'Bungee';line-height:1.06;overflow-wrap:anywhere;hyphens:auto;font-size:min({{ c.size }}, 17cqw)">{{ c.name }}</span>
+                  <span style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px;overflow:hidden">
+                    <span style="font-size:19px;line-height:1.1;overflow:hidden;max-height:2.2em">{{ c.faces }}</span>
+                    <span style="font-family:'Bungee';font-size:22px;color:#E62E5C;flex:0 0 auto">{{ c.label }}</span>
+                  </span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;gap:12px;flex:1;min-height:0">
+              <sc-for list="{{ catsBottom }}" as="c" hint-placeholder-count="5">
+                <div style="flex:1 1 0;min-width:104px;container-type:inline-size;display:flex;flex-direction:column;justify-content:space-between;background:{{ c.bg }};color:#1A0710;border:3px solid #1A0710;border-radius:14px;box-shadow:{{ c.shadow }};padding:9px 12px;overflow:hidden;flex-grow:{{ c.grow }}">
+                  <span style="font-family:'Bungee';line-height:1.06;overflow-wrap:anywhere;hyphens:auto;font-size:min({{ c.size }}, 17cqw)">{{ c.name }}</span>
+                  <span style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px;overflow:hidden">
+                    <span style="font-size:19px;line-height:1.1;overflow:hidden;max-height:2.2em">{{ c.faces }}</span>
+                    <span style="font-family:'Bungee';font-size:22px;color:#E62E5C;flex:0 0 auto">{{ c.label }}</span>
+                  </span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:0 0 106px;display:flex;align-items:center;gap:22px;padding:0 28px;background:#FFF7E8;border-top:3px solid #1A0710">
+            <span style="font-family:'Bungee';font-size:52px;color:#1A0710">0:41</span>
+            <span style="flex:1;height:28px;border-radius:99px;background:#E7D3BE;overflow:hidden;display:block"><span style="display:block;height:100%;width:68%;background:#00A6A6"></span></span>
+            <button type="button" style="font-family:'Bungee';font-size:16px;padding:16px 30px;border:4px solid #1A0710;border-radius:99px;background:#FFD400;color:#2A1400;box-shadow:5px 5px 0 #1A0710;cursor:pointer;text-transform:uppercase">Continue</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2a · PLAYER CATEGORY CHOOSING -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Bungee';font-size:11px;letter-spacing:.16em;color:rgba(255,247,232,.55)">PLAYER · CATEGORY (CHOOSING)</div>
+        <div style="width:390px;height:844px;background:#E62E5C;border:3px solid #1A0710;overflow:hidden;display:flex;flex-direction:column;gap:12px;padding:44px 20px 20px">
+          <div style="font-size:11px;letter-spacing:.12em;color:rgba(255,247,232,.8);text-align:center">ROOM PLUM · {{ budgetLabel }}</div>
+          <section style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710">
+            <span style="font-family:'Bungee';font-size:48px;line-height:1;color:#E62E5C">{{ leftCount }}</span>
+            <span style="display:flex;flex-direction:column;gap:4px">
+              <span style="font-family:'Bungee';font-size:15px">{{ leftLabel }}</span>
+              <span style="display:flex;gap:7px">
+                <sc-for list="{{ pips }}" as="pip" hint-placeholder-count="2">
+                  <span style="width:15px;height:15px;border-radius:50%;border:3px solid #1A0710;background:{{ pip.bg }}"></span>
+                </sc-for>
+              </span>
+            </span>
+          </section>
+          <ul style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:16px 14px;align-content:start;padding:12px 8px;margin:0;list-style:none;overflow:hidden">
+            <sc-for list="{{ tilesOpen }}" as="t" hint-placeholder-count="10">
+              <li>
+                <button type="button" style="position:relative;width:100%;min-height:56px;font-family:'Bungee';font-size:16px;text-align:left;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;box-shadow:5px 5px 0 #1A0710;padding:12px;cursor:pointer">
+                  <span>{{ t.name }}</span>
+                  <sc-if value="{{ t.voted }}" hint-placeholder-val="{{ false }}">
+                    <span style="position:absolute;top:-11px;left:-9px;font-size:15px;line-height:1;padding:4px 7px;border-radius:99px;border:3px solid #1A0710;background:#FFD400">👾</span>
+                  </sc-if>
+                </button>
+              </li>
+            </sc-for>
+          </ul>
+          <div style="display:flex;flex-direction:column;align-items:center;gap:14px">
+            <button type="button" style="width:100%;font-family:'Bungee';font-size:16px;padding:16px 30px;border:4px solid #1A0710;border-radius:99px;background:#FFF7E8;color:#1A0710;box-shadow:5px 5px 0 #1A0710;cursor:pointer;text-transform:uppercase">Reset votes</button>
+          </div>
+          <div style="flex:0 0 76px;display:flex;align-items:center;gap:14px;margin:0 -20px -20px;padding:0 18px;background:#FFF7E8;border-top:3px solid #1A0710">
+            <span style="font-family:'Bungee';font-size:34px;line-height:1.06;color:#1A0710">0:41</span>
+            <span style="flex:1;height:24px;border-radius:99px;background:#E7D3BE;overflow:hidden;display:block"><span style="display:block;height:100%;width:68%;background:#00A6A6"></span></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2a · HOST CATEGORY LOCKED -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Bungee';font-size:11px;letter-spacing:.16em;color:rgba(255,247,232,.55)">HOST · CATEGORY (LOCKED)</div>
+        <div style="width:1200px;height:675px;background:#E62E5C;border:3px solid #1A0710;overflow:hidden;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 34px;position:relative;flex:0 0 auto">
+            <div style="display:flex;align-items:center;gap:14px;padding:7px 18px;border-radius:99px;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710">
+              <span style="font-size:14px;color:#7A6A5C;letter-spacing:.16em">JOIN AT OKAYNAMEONE.APP · ROOM</span>
+              <span style="font-family:'Bungee';font-size:28px;letter-spacing:.1em">PLUM</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:16px">
+              <div style="font-size:15px;letter-spacing:.16em;color:#FFF7E8">{{ votesInLabel }}</div>
+              <button type="button" style="font-family:'Bungee';font-size:13px;letter-spacing:.08em;padding:11px 18px;border:3px solid #FFF7E8;border-radius:99px;background:transparent;color:#FFF7E8;cursor:pointer;text-transform:uppercase">{{ backLabel }}</button>
+            </div>
+          </div>
+          <div style="flex:1;min-height:0;display:flex;flex-direction:column;justify-content:center;gap:12px;padding:0 30px 16px">
+            <div style="display:flex;gap:12px;flex:0 0 206px">
+              <sc-for list="{{ podium }}" as="c" hint-placeholder-count="3">
+                <div style="flex:1 1 0;display:flex;flex-direction:column;justify-content:space-between;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;box-shadow:5px 5px 0 #1A0710;padding:12px 14px;flex-grow:{{ c.grow }}">
+                  <span style="font-family:'Bungee';line-height:1.06;font-size:{{ c.size }}">{{ c.name }}</span>
+                  <span style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px">
+                    <span style="font-size:21px">{{ c.faces }}</span>
+                    <span style="font-family:'Bungee';color:#E62E5C;font-size:{{ c.pctSize }}">{{ c.pct }}</span>
+                  </span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;justify-content:center;gap:12px">
+              <sc-for list="{{ rest }}" as="c" hint-placeholder-count="3">
+                <div style="flex:1 1 150px;max-width:220px;display:flex;flex-direction:column;justify-content:space-between;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;box-shadow:5px 5px 0 #1A0710;padding:9px 12px;min-height:86px">
+                  <span style="font-family:'Bungee';font-size:19px">{{ c.name }}</span>
+                  <span style="display:flex;align-items:flex-end;justify-content:space-between;gap:8px">
+                    <span style="font-size:21px">{{ c.faces }}</span>
+                    <span style="font-family:'Bungee';font-size:20px;color:#E62E5C">{{ c.pct }}</span>
+                  </span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+          <div style="flex:0 0 126px;display:flex;align-items:center;justify-content:center">
+            <div style="background:#FFD400;color:#2A1400;border:4px solid #1A0710;border-radius:10px;padding:14px 36px;transform:rotate(-2.5deg);box-shadow:5px 5px 0 #1A0710;font-family:'Bungee';font-size:40px">Get ready… 3</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 2a · PLAYER CATEGORY LOCKED -->
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div style="font-family:'Bungee';font-size:11px;letter-spacing:.16em;color:rgba(255,247,232,.55)">PLAYER · CATEGORY (LOCKED)</div>
+        <div style="width:390px;height:844px;background:#E62E5C;border:3px solid #1A0710;overflow:hidden;display:flex;flex-direction:column;gap:12px;padding:44px 20px 20px">
+          <div style="font-size:11px;letter-spacing:.12em;color:rgba(255,247,232,.8);text-align:center">ROOM PLUM · {{ budgetLabel }}</div>
+          <section style="display:flex;align-items:center;gap:14px;padding:14px 16px;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710">
+            <span style="font-size:34px">👾</span>
+            <span style="display:flex;flex-direction:column;gap:4px">
+              <span style="font-family:'Bungee';font-size:15px">you're in</span>
+              <span style="font-size:13px;color:#7A6A5C">{{ spentLabel }}</span>
+            </span>
+          </section>
+          <ul style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:16px 14px;align-content:start;padding:12px 8px;margin:0;list-style:none;overflow:hidden">
+            <sc-for list="{{ tilesLocked }}" as="t" hint-placeholder-count="10">
+              <li>
+                <div style="position:relative;box-sizing:border-box;width:100%;min-height:56px;font-family:'Bungee';font-size:16px;background:{{ t.bg }};color:{{ t.fg }};border:3px solid #1A0710;border-radius:14px;box-shadow:{{ t.shadow }};padding:12px;transform:{{ t.press }}">
+                  <span>{{ t.name }}</span>
+                  <sc-if value="{{ t.voted }}" hint-placeholder-val="{{ false }}">
+                    <span style="display:flex;align-items:baseline;gap:6px;margin-top:6px">
+                      <span style="font-size:22px;line-height:1;color:#E62E5C">{{ t.pct }}</span>
+                      <span style="font-family:'Archivo';font-size:11px;font-weight:600;letter-spacing:.1em;color:#7A6A5C">CHANCE</span>
+                    </span>
+                    <span style="position:absolute;top:-11px;left:-9px;font-size:15px;line-height:1;padding:4px 7px;border-radius:99px;border:3px solid #1A0710;background:#FFD400">👾</span>
+                  </sc-if>
+                </div>
+              </li>
+            </sc-for>
+          </ul>
+          <div style="display:flex;justify-content:center">
+            <div style="background:#FFD400;color:#2A1400;border:4px solid #1A0710;border-radius:10px;padding:10px 20px;transform:rotate(-2.5deg);box-shadow:5px 5px 0 #1A0710;font-family:'Bungee';font-size:17px">Get ready… 3</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</section>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;playerCount&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:5,&quot;min&quot;:1,&quot;max&quot;:10,&quot;unit&quot;:&quot;players&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Room&quot;},&quot;teamCount&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:4,&quot;min&quot;:2,&quot;max&quot;:10,&quot;unit&quot;:&quot;teams&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Room&quot;},&quot;voteBudget&quot;:{&quot;editor&quot;:&quot;int&quot;,&quot;default&quot;:2,&quot;min&quot;:1,&quot;max&quot;:5,&quot;unit&quot;:&quot;votes&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Room&quot;},&quot;pulseDots&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;}}">
+class Component extends DCLogic {
+  renderVals() {
+    const budget = this.props.voteBudget ?? 2;
+    const cream = "#FFF7E8", ink = "#1A0710", inkDim = "#7A6A5C", gold = "#FFD400",
+          teal = "#00A6A6", codeEmpty = "#F6D9C6", inkGold = "#2A1400";
+    const tilts = ["-1.5deg", "1.5deg", "-1deg", "1deg", "-2deg"];
+
+    const playerCount = Math.max(1, Math.min(10, this.props.playerCount ?? 5));
+    const teamCount = Math.max(2, Math.min(10, this.props.teamCount ?? 4));
+    // Ten seats, matching the room cap in shared/gamemodes.ts. "You" is always
+    // the last one on, so the sample room reads the way a phone would.
+    const POOL = [
+      { e: "🦩", n: "NINA", ready: true },
+      { e: "🦊", n: "MARCO", ready: true },
+      { e: "🐙", n: "WES", ready: false },
+      { e: "🍄", n: "BEA", ready: true },
+      { e: "👾", n: "KIT", ready: false },
+      { e: "🐝", n: "ROSA", ready: true },
+      { e: "🦉", n: "DEV", ready: false },
+      { e: "🐬", n: "AMI", ready: true },
+      { e: "🌵", n: "JO", ready: true },
+      { e: "🍋", n: "PIP", ready: false },
+    ];
+    const players = POOL.slice(0, playerCount).map((p, i) => ({
+      ...p,
+      mark: p.ready ? "✓ READY" : "··· WAITING",
+      tag: p.ready ? "READY" : "WAITING",
+      tilt: tilts[i % tilts.length],
+      // Readiness is carried by the whole pill, not a glyph: ready lifts off
+      // the page in gold, waiting sits sunken and flat like an unfilled
+      // code box.
+      pillBg: p.ready ? gold : codeEmpty,
+      pillFg: p.ready ? inkGold : inkDim,
+      pillShadow: p.ready ? "4px 4px 0 " + ink : "none",
+      markBg: p.ready ? cream : "transparent",
+    }));
+    const playerSlats = players.map((p) => ({
+      e: p.e, n: p.n, tag: p.tag, edge: p.ready ? gold : codeEmpty,
+    }));
+
+    // TEAM_COLORS order, from shared/teams.ts — a team's colour is its index.
+    const TEAM_COLORS = [
+      { name: "RED", color: "#e5484d" },
+      { name: "BLUE", color: "#3e63dd" },
+      { name: "GREEN", color: "#30a46c" },
+      { name: "YELLOW", color: "#ffb224" },
+      { name: "PURPLE", color: "#8e4ec6" },
+      { name: "ORANGE", color: "#f76b15" },
+      { name: "PINK", color: "#d6409f" },
+      { name: "CYAN", color: "#05a2c2" },
+      { name: "LIME", color: "#99d52a" },
+      { name: "BROWN", color: "#ad7f58" },
+    ];
+    const cap = (s) => s.charAt(0) + s.slice(1).toLowerCase();
+    const teams = TEAM_COLORS.slice(0, teamCount).map((t, ti) => ({
+      ...t,
+      // Round-robin, the way assignStragglers fills the emptiest team. The
+      // last player on is deliberately left out — they are the straggler the
+      // host screen is still waiting on.
+      members: players
+        .filter((p, pi) => pi !== playerCount - 2 || playerCount === 1)
+        .filter((_, pi) => pi % teamCount === ti)
+        .map((p) => ({ e: p.e, n: cap(p.n) })),
+    })).map((t, i) => ({
+      ...t,
+      count: t.members.length,
+      faces: t.members.map((m) => m.e).join("") || "—",
+      tilt: tilts[i % tilts.length],
+    }));
+    // "You" are the last seat — the same player every other phone frame in
+    // the column shows. The straggler the host is waiting on is the seat
+    // before yours.
+    const myIdx = playerCount - 1;
+    const stillPicking = playerCount > 1 ? players.slice(playerCount - 2, playerCount - 1) : [];
+    const meName = cap(players[myIdx].n);
+    const myTeam = teams.find((t) => t.members.some((m) => m.n === meName)) || teams[0];
+    const mine = myTeam.name;
+    const myTeamView = {
+      name: cap(myTeam.name),
+      color: myTeam.color,
+      who: myTeam.members.map((m) => m.e + " " + m.n).join(" · "),
+    };
+    const teamsSlat = teams.map((t) => ({
+      name: t.name, color: t.color, faces: t.faces,
+      who: t.members.map((m) => m.n).join(" · ") || "empty",
+      isMine: t.name === mine,
+      bg: t.name === mine ? "#FFF3C4" : cream,
+      pick: t.name === mine ? "YOUR TEAM" : "SWITCH",
+      pickBg: t.name === mine ? gold : "transparent",
+      pickFg: t.name === mine ? inkGold : inkDim,
+      rowBorder: t.name === mine ? "4px solid " + ink : "3px solid " + ink,
+      rowShadow: t.name === mine ? "6px 6px 0 " + ink : "3px 3px 0 " + ink,
+      edge: t.name === mine ? "22px" : "16px",
+    }));
+
+    // CATEGORIES from shared/categories.ts, in pool order — nothing sorts it.
+    const CATS = ["woman", "animal", "song", "movie", "country", "colour", "sport", "car", "food", "job"];
+    // A plausible tally for however many players are in the room. Fixed
+    // weights, normalised to the votes actually cast, so the leader keeps a
+    // clear plurality at every player count — "width is the odds" only reads
+    // if the odds differ.
+    const favourites = ["woman", "movie", "food", "animal", "colour", "job"];
+    const weights = [4, 3, 2, 1, 1, 1];
+    const totalVotes = playerCount * budget;
+    const tally = {};
+    let left = totalVotes;
+    // Your own picks go in first, so anything wearing the 👾 badge can never
+    // read 0% — a backed category is at least one vote by definition.
+    const myPicks = ["movie", "job"].slice(0, budget);
+    myPicks.forEach((name) => {
+      if (left > 0) { tally[name] = (tally[name] || 0) + 1; left--; }
+    });
+    // The rest spread by fixed weight, then any remainder goes round-robin
+    // down the favourites so the leader keeps a plurality without running away
+    // with a small room.
+    const weightSum = weights.reduce((a, b) => a + b, 0);
+    const budgeted = left;
+    favourites.forEach((name, i) => {
+      const n = Math.min(left, Math.floor((budgeted * weights[i]) / weightSum));
+      if (n > 0) tally[name] = (tally[name] || 0) + n;
+      left -= n;
+    });
+    for (let i = 0; left > 0; i++, left--) {
+      const name = favourites[i % favourites.length];
+      tally[name] = (tally[name] || 0) + 1;
+    }
+    const raw = CATS.map((name, k) => {
+      const votes = tally[name] || 0;
+      return {
+        name,
+        votes,
+        faces: Array.from({ length: votes }, (_, j) => players[(k + j) % playerCount].e).join(""),
+      };
+    });
+    const pctOf = (v) => Math.round((v / totalVotes) * 100) + "%";
+    // The card's width already carries the odds, so the name carries them
+    // too: type scales with share of the leader rather than stepping, which
+    // keeps a wide leading card from sitting half empty.
+    const maxVotes = Math.max(1, ...raw.map((c) => c.votes));
+    const size = (v) => (v === 0 ? "20px" : Math.round(26 + 40 * (v / maxVotes)) + "px");
+    const cards = raw.map((c, i) => ({
+      ...c,
+      grow: c.votes + 1,
+      size: size(c.votes),
+      hasVotes: c.votes > 0,
+      label: c.votes > 0 ? String(c.votes) : "",
+      bg: c.votes > 0 ? cream : codeEmpty,
+      shadow: c.votes > 0 ? "5px 5px 0 " + ink : "none",
+      tilt: tilts[i % tilts.length],
+    }));
+    // Both host rows must read off ONE scale, or a 1-vote card in a quiet row
+    // ends up wider than a 2-vote card in a loud one. Balance the two rows to
+    // near-equal total grow (heaviest card to the lighter row, five per row),
+    // so a card's width means the same thing wherever it sits.
+    const rowA = [], rowB = [];
+    let sumA = 0, sumB = 0;
+    [...cards].sort((a, b) => b.grow - a.grow).forEach((c) => {
+      const toA = rowB.length >= 5 || (rowA.length < 5 && sumA <= sumB);
+      if (toA) { rowA.push(c); sumA += c.grow; } else { rowB.push(c); sumB += c.grow; }
+    });
+    // Keep pool order inside each row — the list itself never re-sorts.
+    const poolIdx = (c) => CATS.indexOf(c.name);
+    rowA.sort((a, b) => poolIdx(a) - poolIdx(b));
+    rowB.sort((a, b) => poolIdx(a) - poolIdx(b));
+
+    const catSlats = raw.map((c) => ({
+      name: c.name, faces: c.faces,
+      label: c.votes > 0 ? String(c.votes) : "—",
+      size: c.votes >= 3 ? "26px" : "21px",
+      bg: c.votes > 0 ? cream : codeEmpty,
+      fg: c.votes > 0 ? ink : inkDim,
+      edge: c.votes >= 3 ? gold : c.votes > 0 ? teal : codeEmpty,
+    }));
+
+    const sorted = raw.filter((c) => c.votes > 0).sort((a, b) => b.votes - a.votes);
+    const podium = sorted.slice(0, 3).map((c, i) => ({
+      name: c.name, faces: c.faces, pct: pctOf(c.votes), grow: c.votes,
+      size: ["52px", "34px", "30px"][i], pctSize: ["36px", "26px", "24px"][i],
+      tilt: ["-1.5deg", "1deg", "-1deg"][i],
+    }));
+    const rest = sorted.slice(3).map((c) => ({ name: c.name, faces: c.faces, pct: pctOf(c.votes) }));
+    const restTilt = rest.map((c, i) => ({ ...c, tilt: tilts[i % tilts.length] }));
+    const closedSlats = sorted.slice(1).map((c, i) => ({
+      rank: i + 2, name: c.name, faces: c.faces, pct: pctOf(c.votes),
+      bg: i === 0 ? cream : codeEmpty,
+      fg: i === 0 ? ink : inkDim,
+      edge: i === 0 ? teal : codeEmpty,
+    }));
+
+    const myOpen = { movie: 1 };
+    const myLocked = {};
+    myPicks.forEach((name) => { myLocked[name] = 1; });
+    const tilesOpen = raw.map((c) => ({ name: c.name, voted: Boolean(myOpen[c.name]) }));
+    const tilesOpenTilt = tilesOpen.map((t, i) => ({ ...t, tilt: tilts[i % tilts.length] }));
+    const tilesLocked = raw.map((c) => {
+      const voted = Boolean(myLocked[c.name]);
+      // Your picks are unchanged from the voting grid — same cream tile, same
+      // shadow, same gold badge — so the screen reads as the one you were just
+      // tapping. Everything you didn't back presses down into its own shadow,
+      // which is how .vote-tile--locked says "not tappable" in style.css.
+      return {
+        name: c.name, voted,
+        bg: voted ? cream : codeEmpty,
+        fg: voted ? ink : inkDim,
+        shadow: voted ? "5px 5px 0 " + ink : "none",
+        press: voted ? "none" : "translate(4px,4px)",
+        // On your own picks, show the odds that category gets drawn — the same
+        // share the host screen is showing on the big board right now.
+        pct: pctOf(c.votes),
+      };
+    });
+    const tilesLockedTilt = tilesLocked.map((t, i) => ({ ...t, tilt: tilts[i % tilts.length] }));
+    const tileSlatsOpen = tilesOpen.map((t) => ({ ...t, edge: t.voted ? gold : codeEmpty }));
+    const tileSlatsLocked = tilesLocked.map((t) => ({
+      ...t, edge: t.voted ? gold : codeEmpty,
+      // Same 4px lift the open slat row has, kept only on your picks.
+      shadow: t.voted ? "4px 4px 0 " + ink : "none",
+    }));
+
+    const spent = Math.min(1, budget);
+    const pips = Array.from({ length: budget }, (_, i) => ({ bg: i < spent ? gold : codeEmpty }));
+    const leftCount = budget - spent;
+    const readyCount = players.filter((p) => p.ready).length;
+    const waiting = playerCount - readyCount;
+    const winner = sorted[0] || { name: "—", faces: "", votes: 0 };
+
+    const AVATARS = ["🐙","🦊","🐸","🐼","🦉","🐝","🦀","🐬","🌵","🍄","🌶️","🍋","⚡","🌙","🔥","💎","🎩","👾","🤖","👻"];
+    const avatarStyle = (e) => ({
+      e,
+      bg: e === "👾" ? cream : "#E7D3BE",
+      border: e === "👾" ? ink : "transparent",
+      shadow: e === "👾" ? "4px 4px 0 " + gold : "none",
+    });
+    const avatarsB = AVATARS.map(avatarStyle);
+
+    return {
+      pulseCss: (this.props.pulseDots ?? true) ? "pulseDot 1.2s infinite" : "none",
+      players, playerSlats, teams, teamsSlat,
+      catsTop: rowA, catsBottom: rowB, catSlats,
+      podium, rest, restTilt, closedSlats,
+      tilesOpen, tilesOpenTilt, tilesLocked, tilesLockedTilt, tileSlatsOpen, tileSlatsLocked,
+      pips, myTeam: myTeamView, stillPicking,
+      playersLabel: playerCount + (playerCount === 1 ? " PLAYER" : " PLAYERS"),
+      readyLabel: readyCount + " READY",
+      votesInLabel: "VOTING CLOSED · " + totalVotes + (totalVotes === 1 ? " VOTE IN" : " VOTES IN"),
+      budgetLabel: budget + (budget === 1 ? " VOTE EACH" : " VOTES EACH"),
+      settingsLine: "FREE-FOR-ALL · 3 ROUNDS · 0:30 · " + teamCount + " TEAMS",
+      // Fixed-width panels, five to a row: adding a team adds a panel rather
+      // than shrinking the others, and teams 6–10 spill onto a second row.
+      // Teams are on whenever the room has more than one, so the back-out
+      // lands wherever the host actually came from.
+      backLabel: teamCount > 1 ? "Back to teams" : "Back to room",
+      teamCols: "repeat(" + Math.min(teamCount, 5) + ",182px)",
+      leftCount: String(leftCount),
+      leftLabel: leftCount === 1 ? "vote left" : "votes left",
+      spentLabel: "all " + budget + (budget === 1 ? " vote" : " votes") + " spent — waiting on " + waiting,
+      waitingLabel: "waiting on " + waiting,
+      winnerName: winner.name, winnerFaces: winner.faces, winnerPct: pctOf(winner.votes),
+      avatarsA: avatarsB.slice(0, 18), avatarsB,
+      modes: [{ name: "Free-for-All", blurb: "Race to list items in a category. A word scores only if nobody else wrote it." }],
+      settings: [
+        { label: "ROUNDS", value: "3", hint: "", tilt: "-1deg" },
+        { label: "TIMER", value: "30", hint: "0:30", tilt: "1deg" },
+        { label: "TEAMS", value: "4", hint: "4 teams", tilt: "-1deg" },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

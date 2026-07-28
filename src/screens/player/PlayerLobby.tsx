@@ -36,7 +36,7 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
         Back
       </button>
 
-      <p className="player-lobby__room">ROOM {room.code}</p>
+      <p className="plaque player-lobby__room">Room {room.code}</p>
       <p className="player-lobby__settings">
         {modeSpec(room.settings.mode).name}
         {" · "}
