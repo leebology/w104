@@ -1,5 +1,6 @@
 import { useRemaining } from "../../net/clock";
 import { computeStandings } from "../../../shared/standings";
+import type { Standing } from "../../../shared/standings";
 import { matchComplete } from "../../../shared/state";
 import { BadgeStrip } from "../../components/BadgeStrip";
 import { roomStore } from "../../net/room";
@@ -19,6 +20,10 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
   const me = standings.find((s) => s.members.includes(playerId));
   const ready = room.players.find((p) => p.id === playerId)?.ready ?? false;
   const done = matchComplete(room);
+  const labelOf = (s: Standing) =>
+    s.colorIndex === null
+      ? `${s.emoji} ${s.name}`
+      : `${s.members.map((id) => room.players.find((p) => p.id === id)?.emoji ?? "").join("")} ${s.name}`;
 
   return (
     <main className="screen screen--mobile screen--locked player-standings">
@@ -29,7 +34,7 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
       {me && (
         <section className="card player-standings__me">
           <span className="player-standings__place">{me.place}</span>
-          <span className="player-standings__name">{me.emoji} {me.name}</span>
+          <span className="player-standings__name">{labelOf(me)}</span>
           <BadgeStrip places={me.badges} />
           <span className="player-standings__points">{me.points} pts</span>
         </section>
@@ -39,7 +44,7 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
         {standings.map((s) => (
           <li key={s.id}>
             <span>{s.place}</span>
-            <span>{s.emoji} {s.name}</span>
+            <span>{labelOf(s)}</span>
             <span>{s.points}</span>
           </li>
         ))}

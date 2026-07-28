@@ -6,6 +6,7 @@ import { saveProfile } from "../../net/identity";
 import { roomStore } from "../../net/room";
 import { modeSpec } from "../../../shared/gamemodes";
 import type { PlayerId, RoomState } from "../../../shared/state";
+import { teamsEnabled } from "../../../shared/teams";
 
 type Props = {
   room: RoomState;
@@ -42,6 +43,12 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
         {room.settings.roundCount} {room.settings.roundCount === 1 ? "ROUND" : "ROUNDS"}
         {" · "}
         {formatDuration(room.settings.durationSec)}
+        {teamsEnabled(room.settings) && (
+          <>
+            {" · "}
+            {room.settings.teamCount} TEAMS
+          </>
+        )}
       </p>
       {/* Without this the countdown just vanishes and the room looks broken. */}
       {room.configuring && (

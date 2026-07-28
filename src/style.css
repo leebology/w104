@@ -883,10 +883,34 @@ ul, ol { list-style: none; }
   gap: 12px;
 }
 
-.id-card { padding: 14px; flex: 0 0 auto; }
+/* Same accent convention as `.team-panel`/`.team-tile`: a flat top border
+   read from `--accent`. Unconditional on purpose — `--accent` is only ever
+   set inline for a team, and a `var()` falling back to nothing makes the
+   whole `border-top` declaration invalid, which resolves to its initial
+   value (`border-style: none`), so a player's card renders no border at all. */
+.id-card { padding: 14px; flex: 0 0 auto; border-top: 10px solid var(--accent); }
 
 .id-card__row { display: flex; align-items: center; gap: 10px; }
 .id-card__avatar { font-size: 30px; line-height: 1; }
+
+/* A team has no avatar of its own — a flat block of its accent stands in,
+   sized to match the avatar it replaces. */
+.id-card__swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+
+/* The team's roster, under the card — the only place a player's own face
+   appears on the results screen. */
+.id-card__members {
+  display: flex;
+  gap: 4px;
+  font-size: 18px;
+  padding-top: 6px;
+}
 
 .id-card__who {
   flex: 1;
@@ -991,6 +1015,14 @@ ul, ol { list-style: none; }
 .word-row__also {
   font-size: calc(var(--word-size, 16px) - 3px);
   color: var(--struck);
+  flex: 0 0 auto;
+}
+
+/* Who wrote a word, in team play only — dimmed so it never competes with
+   the word itself. */
+.word-row__by {
+  font-size: calc(var(--word-size, 16px) - 3px);
+  color: var(--ink-dim);
   flex: 0 0 auto;
 }
 
@@ -1387,11 +1419,15 @@ ul, ol { list-style: none; }
   padding: 18px 28px;
 }
 
+/* Same accent convention as `.id-card`: a flat left border read from
+   `--accent`. Unconditional on purpose — see the comment on `.id-card` for
+   why a player's row, with no `--accent` set, renders no border at all. */
 .standing-card {
   display: flex;
   align-items: center;
   gap: 16px;
   padding: 10px 18px;
+  border-left: 10px solid var(--accent);
 }
 
 .standing-card__place {
@@ -1405,6 +1441,16 @@ ul, ol { list-style: none; }
   font-size: clamp(22px, 2.6vw, 34px);
 }
 
+/* A team has no avatar of its own — a flat block of its accent stands in,
+   sized to match the avatar it replaces. */
+.standing-card__swatch {
+  width: clamp(22px, 2.6vw, 34px);
+  height: clamp(22px, 2.6vw, 34px);
+  border-radius: var(--radius);
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+
 .standing-card__name {
   flex: 1;
   font-weight: 700;
@@ -1412,6 +1458,15 @@ ul, ol { list-style: none; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* The team's roster, trailing its name — dimmed and smaller so the name
+   itself still reads first. */
+.standing-card__members {
+  margin-left: 8px;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--ink-dim);
 }
 
 .standing-card__points {

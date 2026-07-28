@@ -135,7 +135,7 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
       return <PlayerStandings room={room} playerId={getPlayerId()} countdown={countdown} />;
     }
     case "playing":
-      return <PlayerPlaying category={room.category} entries={state.entries} />;
+      return <PlayerPlaying room={room} playerId={getPlayerId()} entries={state.entries} />;
     case "timesup":
       return <TimesUp />;
     case "scoring":

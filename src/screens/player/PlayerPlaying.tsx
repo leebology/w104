@@ -1,8 +1,11 @@
 import { useEffect, useRef } from "react";
+import { teamsEnabled } from "../../../shared/teams";
+import type { PlayerId, RoomState } from "../../../shared/state";
 import type { LocalEntry } from "../../net/room";
 
 type Props = {
-  category: string;
+  room: RoomState;
+  playerId: PlayerId;
   entries: LocalEntry[];
 };
 
@@ -11,8 +14,11 @@ type Props = {
  * reads it at once; on the phone it only competed with the one thing this
  * screen is for, which is getting words down.
  */
-export function PlayerPlaying({ category, entries }: Props) {
+export function PlayerPlaying({ room, playerId, entries }: Props) {
   const list = useRef<HTMLDivElement>(null);
+  const shared = teamsEnabled(room.settings);
+  const emojiOf = (id: PlayerId) =>
+    room.players.find((p) => p.id === id)?.emoji ?? "";
 
   // Scrolls the list by its own `scrollTop`, never `scrollIntoView` on a
   // trailing sentinel. `block: "end"` aligns the sentinel with the scrollport's
@@ -37,18 +43,17 @@ export function PlayerPlaying({ category, entries }: Props) {
       <div className="playing__head">
         <span className="playing__name-a">NAME A:</span>
         <div className="banner playing__banner">
-          <span className="banner__text">{category}</span>
+          <span className="banner__text">{room.category}</span>
         </div>
       </div>
 
-      {/* Only ever this player's own words. Nothing here, and nothing in the
-          broadcast behind it, reveals what anyone else has written.
-
-          The card runs to the bottom of the screen and the entry input sits
-          over its last line, so typing reads as writing directly onto the
-          list. The input itself is still mounted in PlayerView — it has to
-          outlive this screen to keep the keyboard up — which is why the two
-          are aligned in CSS rather than nested here. */}
+      {/* In team play the list is the whole team's, shared by every
+          teammate's socket — not only this player's own words. The card
+          runs to the bottom of the screen and the entry input sits over
+          its last line, so typing reads as writing directly onto the
+          list. The input itself is still mounted in PlayerView — it has
+          to outlive this screen to keep the keyboard up — which is why
+          the two are aligned in CSS rather than nested here. */}
       <div className="card playing__card">
         <div className="word-list playing__list" ref={list}>
           {entries.length === 0 && (
@@ -56,6 +61,13 @@ export function PlayerPlaying({ category, entries }: Props) {
           )}
           {entries.map((entry, i) => (
             <div className="word-row" key={entry.seq ?? `${entry.at}-${i}`}>
+              {/* In team play the list is the whole team's, so a word needs
+                  to say who got it — otherwise teammates re-type each
+                  other's. Never shown in free-for-all, where every word is
+                  yours and the emoji would be noise. */}
+              {shared && entry.by !== playerId && (
+                <span className="word-row__by">{emojiOf(entry.by)}</span>
+              )}
               <span className="word">{entry.text}</span>
             </div>
           ))}
