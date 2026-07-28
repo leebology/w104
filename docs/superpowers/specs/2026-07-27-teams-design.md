@@ -273,15 +273,26 @@ if a player then leaves their team, `leaveTeam` clears their `ready` and
 From `lobby` with teams enabled, `startGame` lands on `teams` rather than a
 countdown, with `ready` cleared — the same `enterTeams` the natural path uses.
 
-### Auto-assignment runs at the tick, not at countdown-open
+### Auto-assignment runs at the host's Continue, and again at the tick
 
-Any player still unassigned when the `countdown(to:"voting")` **fires** is
-placed by `assignStragglers`. That happens in the `tick` that opens `voting` —
-the same tick that already clears `ready` and resets `votes`.
+> Revised after the original design. The first version placed stragglers only
+> at the tick, on the reasoning that placing them earlier would make everyone
+> instantly "ready" and leave `settle` unable to tear the countdown down. That
+> reasoning was wrong: `joinTeam`/`leaveTeam` are legal *through* the countdown
+> (`inTeamSelect`), so a placed player can still leave, which clears `ready`
+> and drops the room straight back into `teams`.
 
-Doing it when the countdown *opens* would be wrong twice over: every player
-would instantly be "ready", so `settle` could never tear the countdown down, and
-a player could therefore never leave their team to cancel it.
+`startGame` from `teams` places every unassigned player with `assignStragglers`
+and then readies everyone. That keeps `ready` honest — in this phase it means
+"on a team", and a force-ready laid over a teamless player is a flag with
+nothing behind it and, more to the point, nothing for that player to *leave*.
+The host's Continue is therefore fully undoable by anyone in the room, whether
+they picked their own team or were dropped into one.
+
+The `tick` that opens `voting` still runs `assignStragglers` as a backstop.
+Continue cannot see every straggler: readiness counts only *connected* players,
+so someone whose phone died during team selection never blocked the countdown
+and arrives at the whistle without a team.
 
 ### `cancelStart` is rejected on the teams countdown
 
@@ -294,6 +305,24 @@ is `to: "voting"` and teams are enabled, and `HostTeams` renders no Stop button.
 Leaving a team is the cancel — which is the design's own rule, applied to the
 host screen as well as the player's. The alternative, clearing every `teamId` on
 cancel, throws away everyone's choice to undo one host tap.
+
+`HostTeams` does render **Back to room**, and renders it throughout — countdown
+included. That is a different action, not a softened Stop: it abandons team
+selection rather than pausing it, and it lands in a phase (`lobby`) whose
+readiness rules can be satisfied again. `backToLobby` is legal wherever
+`inTeamSelect` is true, which is the `teams` phase and the countdown out of it.
+
+### Back out of voting returns to team selection
+
+With teams on, the host's Back button in `voting` steps back one phase rather
+than all the way home: `backToLobby` returns `enterTeams(room)` with `votes`
+cleared. With teams off it behaves exactly as before and lands in the lobby.
+
+`enterTeams` keeps the existing `teams` array when `teams.length` already equals
+`settings.teamCount`, so names players typed survive the trip; only the lobby
+path, which reaches it with `teams: []`, builds fresh. Membership *is* cleared,
+which is not merely tidiness — with everyone still teamed the room would be
+instantly ready and `settle` would close team selection again on the next event.
 
 For the same reason `setConfiguring`'s countdown-drop is narrowed to fire only
 when `backPhase(room).name === "lobby"`. Drawers only ever open on the host
@@ -534,9 +563,12 @@ enabled, and clears every `ready` flag on the edge; `joinTeam` sets `ready` and
 `leaveTeam` clears it; all-on-a-team opens `countdown(to:"voting")`; leaving
 during that countdown drops back to `teams`; switching teams during it does not;
 `setTeamName` from a non-member returns the identical object; the `ready` event
-is rejected in `teams`; `startGame` from `teams` force-readies and opens the
-countdown; **auto-assignment happens at the voting tick and not at
-countdown-open**; `backToLobby` from `teams` clears `teams` and every `teamId`;
+is rejected in `teams`; `startGame` from `teams` places the stragglers and opens
+the countdown, and a player it placed can still leave to halt it; **the voting
+tick assigns the straggler Continue could not see — a disconnected one**;
+`backToLobby` from `teams` clears `teams` and every `teamId`, works during the
+countdown too, and from `voting` with teams on lands in `teams` with the team
+names intact;
 `joinTeam` to an unknown team id and every other no-op return the identical
 object.
 
