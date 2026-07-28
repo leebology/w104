@@ -280,6 +280,9 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
   rule, top-right back-outs, the close-room confirmation, inset drawers, and
   the revised team accents. Read with `docs/design/2026-07-27-v1-screens-handoff.md`,
   which is the brief it answers.
+- `docs/superpowers/specs/2026-07-28-score-persistence-design.md` — the D1
+  archive: schema, where the writes happen, and the rule that the game never
+  reads it back. Approved, not yet implemented.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.
@@ -288,10 +291,18 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
 ## Workflow
 
 Branch off `main`, open a PR. CI (`.github/workflows/ci.yml`) runs typecheck,
-tests, build. PRs deploy an isolated `w104-staging` Worker; merges to `main`
-deploy production (Vercel for the app, GitHub Actions → `wrangler deploy` for
-the Worker). Named Wrangler environments do not inherit `durable_objects`
-bindings, so `env.staging` repeats them.
+tests, build. Merges to `main` deploy production (Vercel for the app, GitHub
+Actions → `wrangler deploy` for the Worker).
+
+Two long-lived branches: `main` (production, `w104.leebo.io`) and `staging`
+(`staging.oknameone.com` + the `w104-staging` Worker). **PRs no longer deploy
+the Worker** — they used to, which meant any open PR overwrote the shared
+staging Worker and changed what people testing on phones were talking to. Merge
+to `staging` to test a `party/` change or to get a URL three phones can type.
+Vercel still previews every PR, pointed at the staging Worker.
+
+Named Wrangler environments do not inherit `durable_objects` bindings, so
+`env.staging` repeats them.
 
 Commits here stage explicit paths — never `git add -A`, so the untracked
 working note `Project W-104.md` stays untracked.

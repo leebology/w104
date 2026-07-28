@@ -1,18 +1,27 @@
 name: Deploy Worker
 
 # The web app is deployed by Vercel's own Git integration (no workflow needed).
-# This workflow deploys the realtime server (Cloudflare Worker) on push to main.
+# This workflow deploys the realtime server (Cloudflare Worker).
+#
+# Two long-lived branches, one Worker each:
+#   main    -> w104          (production)
+#   staging -> w104-staging  (staging, at staging.oknameone.com)
+#
+# Deliberately NOT on pull_request. A PR used to deploy the staging Worker,
+# which meant any open PR silently changed what the staging URL was serving —
+# unusable once staging is a stable environment people test against. A Worker
+# change is now tested by merging it to `staging`, which is what that branch is
+# for. Vercel still builds a frontend preview per PR; those point at the
+# staging Worker, which is stable precisely because PRs no longer touch it.
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    branches: [main, staging]
   workflow_dispatch: # allow manual "Run workflow" from the Actions tab
 
 jobs:
-  # Production: only ships on merge to main (or manual dispatch), never on PRs.
+  # Production: only ships from main.
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5 # a missing/invalid credential must fail fast, never hang
     steps:
@@ -27,13 +36,12 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
 
-  # Staging: deploys a fully isolated w104-staging Worker on every PR into
-  # main, so PR previews (Vercel) have a matching realtime server to talk to.
-  # Note: PRs from forks don't receive repository secrets, so this job fails
-  # for outside contributors. Acceptable for a private-collaborator repo —
-  # revisit if the repo opens up.
+  # Staging: a fully isolated w104-staging Worker with its own Durable Object
+  # storage, so nothing here can touch production room state. Tracks the
+  # `staging` branch, which is what makes the staging URL stable enough to hand
+  # to a room full of people testing on their phones.
   staging:
-    if: github.event_name == 'pull_request'
+    if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

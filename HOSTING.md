@@ -37,21 +37,49 @@ leebo.io (your portfolio) — untouched
 
 ### Staging
 
-`wrangler.jsonc` defines an `env.staging` that deploys a second, fully
-isolated Worker: `w104-staging.<subdomain>.workers.dev`, with its own Durable
-Object storage (Durable Object bindings are not inherited by named
-environments, so they're repeated inside `env.staging`; `migrations` is
-top-level and applies to every environment already). `.github/workflows/deploy.yml`
-runs `wrangler deploy --env staging` on every pull request into `main`, so a PR
-never touches the production room state.
+There are two long-lived branches, each with its own complete environment —
+web app, Worker, and Durable Object storage. Nothing in staging can touch
+production room state.
 
-Vercel's **Preview** environment (as opposed to Production) should set
-`VITE_PARTYKIT_HOST` to the staging host, e.g. `w104-staging.liam-donaher.workers.dev`,
-so PR preview builds of the web app talk to the staging Worker instead of
-production.
+| Branch    | Web app (Vercel)             | Worker (Cloudflare)                     |
+| --------- | ---------------------------- | --------------------------------------- |
+| `main`    | `https://w104.leebo.io`      | `wss://w104.liam-donaher.workers.dev`         |
+| `staging` | `https://staging.oknameone.com` | `wss://w104-staging.liam-donaher.workers.dev` |
+
+`wrangler.jsonc` defines the `env.staging` that produces the second Worker
+(Durable Object bindings are not inherited by named environments, so they're
+repeated inside `env.staging`; `migrations` is top-level and applies to every
+environment already). `.github/workflows/deploy.yml` runs
+`wrangler deploy --env staging` on **push to `staging`**.
+
+`staging` is a soak environment, not a release gate. Merge anything into it
+freely to try it on real phones; `main` still takes PRs directly from feature
+branches. The two are independent, and staging is allowed to be broken.
+
+> **Why the Worker no longer deploys on PRs.** It used to, which meant every
+> open pull request overwrote the one shared `w104-staging` Worker. That is
+> fine for throwaway previews and useless for an environment people are
+> actively testing against — the behaviour would change mid-session with
+> nothing to point at the cause. Worker changes are now tested by merging them
+> to `staging`. Vercel still builds a frontend preview per PR, and those
+> previews point at the staging Worker, which is stable precisely because PRs
+> no longer deploy it.
+
+Three Vercel environment settings make this work. `VITE_PARTYKIT_HOST` is set
+per environment, so each frontend talks to its matching Worker:
+
+| Vercel environment       | `VITE_PARTYKIT_HOST`                     |
+| ------------------------ | ---------------------------------------- |
+| Production (`main`)      | `w104.liam-donaher.workers.dev`          |
+| Preview (`staging`)      | `w104-staging.liam-donaher.workers.dev`  |
+| Preview (all other branches) | `w104-staging.liam-donaher.workers.dev` |
+
+Feature-branch previews deliberately share the staging Worker rather than
+getting one each — a Worker per branch would mean a Wrangler environment per
+branch.
 
 Note: pull requests opened from a fork do not receive repository secrets, so
-the `staging` job fails for outside contributors. That's acceptable for a
+Worker deploys fail for outside contributors. Acceptable for a
 private-collaborator repo — revisit if the repo opens up.
 
 ### Testing on phones
@@ -148,16 +176,52 @@ gh api -X PUT repos/leebology/w104/branches/main/protection \
 Set `required_approving_review_count` to `1` to require a review. Add friends at
 **repo → Settings → Collaborators**.
 
+### 5. Staging web app (`staging.oknameone.com`)
+
+The `staging` branch and the Worker side are already wired by
+`.github/workflows/deploy.yml`. The web app half is Vercel dashboard work,
+done once:
+
+1. **Settings → Domains → Add** `staging.oknameone.com`. When Vercel asks which
+   git branch it should serve, choose **`staging`** — not Production. This is
+   the step that turns a throwaway preview into a stable environment.
+2. Add the `CNAME` Vercel shows at whoever hosts `oknameone.com`'s DNS.
+3. **Settings → Environment Variables** → add `VITE_PARTYKIT_HOST` scoped to
+   **Preview**, with the value `w104-staging.liam-donaher.workers.dev`. Vercel
+   lets a Preview variable target a specific branch; either target `staging` or
+   leave it branch-wide so feature-branch previews use the staging Worker too.
+   Leave the existing Production value pointing at the production Worker.
+4. Confirm the production variable is still Production-scoped only. A
+   Production-and-Preview variable would silently point staging at the
+   production Worker, and the symptom — staging players landing in production
+   rooms — looks like a game bug, not a config one.
+
+Staging is publicly reachable. It's a party game with no accounts and no
+personal data, so that's acceptable; if you'd rather it not be indexed, add a
+`X-Robots-Tag: noindex` header for the staging domain in `vercel.json`.
+
 ---
 
 ## Everyday workflow (for you and friends)
 
+**Shipping to production:**
+
 1. Branch off `main`: `git checkout -b my-feature`
 2. Push and open a PR against `main`.
-3. **CI** runs `typecheck` + `build`; **Vercel** posts a preview URL for the PR.
+3. **CI** runs `typecheck` + `test` + `build`; **Vercel** posts a preview URL
+   for the PR, pointed at the staging Worker.
 4. Merge when green. On merge to `main`:
    - Vercel deploys the web app to `https://w104.leebo.io`.
-   - GitHub Actions runs `wrangler deploy` for the Worker.
+   - GitHub Actions runs `wrangler deploy` for the production Worker.
+
+**Testing on real phones:** merge into `staging` instead. Within a minute or so
+both halves redeploy and `https://staging.oknameone.com` is live for whoever
+you hand it to. Nothing about that touches production, and staging is expected
+to break sometimes — that's the point of it.
+
+A PR preview URL is enough for anything frontend-only. Use `staging` when the
+change touches `party/` (a PR no longer deploys the Worker), or when you need a
+URL that three people can type into their phones.
 
 No dashboard access needed to contribute — just push branches and open PRs.
 
