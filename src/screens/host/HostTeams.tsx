@@ -3,9 +3,8 @@ import { useRemaining } from "../../net/clock";
 import { RoomChip } from "../../components/RoomChip";
 import { roomStore } from "../../net/room";
 import { TEAM_COLORS, membersOf } from "../../../shared/teams";
-import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
-import { HostHeader, PlayerCount } from "./HostHeader";
+import { HostExit, HostHeader, HostHeaderRight, PlayerCount } from "./HostHeader";
 
 type Props = {
   room: RoomState;
@@ -17,8 +16,12 @@ type Props = {
  * The room's view of team selection. No Stop button during the countdown:
  * cancelling would clear everyone's readiness while they are all still on a
  * team, which nothing could then undo. Leaving a team is the cancel, and it
- * happens on the phones. "Back to room" is a different thing entirely and is
- * offered throughout — it abandons team select rather than pausing it.
+ * happens on the phones — which is why the hint says so rather than leaving
+ * the room to work out that the TV has no brake on it.
+ *
+ * "Back to room" is a different thing entirely and lives top-right with every
+ * other host back-out: it abandons team select rather than pausing it, and is
+ * offered throughout, countdown included.
  */
 export function HostTeams({ room, countdown }: Props) {
   const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
@@ -26,28 +29,41 @@ export function HostTeams({ room, countdown }: Props) {
 
   return (
     <main className="screen screen--host host-teams">
-      {/* Same header shape as HostVoting, which also sits before a round has
-          started: `currentRound` names the round about to be played. */}
+      {/* No round marker: team selection only ever happens before round one,
+          so the number could not change while this screen is up. */}
       <HostHeader
         left={<RoomChip code={room.code} />}
-        round={currentRound(room)}
-        of={room.settings.roundCount}
-        right={<PlayerCount n={room.players.length} />}
+        right={
+          <HostHeaderRight>
+            <PlayerCount n={room.players.length} />
+            <HostExit
+              label="Back to room"
+              onClick={() => roomStore.send({ type: "backToLobby" })}
+            />
+          </HostHeaderRight>
+        }
       />
 
+      <p className="plaque host-teams__plaque">Pick a team</p>
+
+      {/* Fixed-width panels, five to a row. Adding a team adds a panel rather
+          than shrinking the others, so the card a player is aiming at does
+          not move under them as the room fills up. */}
       <div
         className="team-grid"
         style={{ "--cols": Math.min(room.teams.length, 5) } as CSSProperties}
       >
         {room.teams.map((team) => (
           <section
-            className="card team-panel"
+            className="team-panel"
             key={team.id}
             style={{ "--accent": `var(${TEAM_COLORS[team.colorIndex].token})` } as CSSProperties}
           >
             {/* The name is live and the accent is not — renaming must never
                 recolour a team, because the colour is what the room is
-                actually navigating by. */}
+                actually navigating by. It rides the tab rather than a top
+                border so the panel's ink outline stays unbroken on all four
+                sides. */}
             <h2 className="team-panel__name">{team.name}</h2>
             <ul className="team-panel__members">
               {membersOf(room, team.id).map((p) => (
@@ -64,43 +80,40 @@ export function HostTeams({ room, countdown }: Props) {
       {unassigned.length > 0 && (
         <div className="team-unassigned">
           <span className="team-unassigned__label">STILL PICKING</span>
-          {unassigned.map((p) => (
-            <span className="team-unassigned__avatar" key={p.id} title={p.name}>
-              {p.emoji}
-            </span>
-          ))}
+          <ul className="team-unassigned__list">
+            {unassigned.map((p) => (
+              <li className="pill team-straggler" key={p.id}>
+                <span className="team-member__avatar">{p.emoji}</span>
+                <span className="team-straggler__name">{p.name || "…"}</span>
+                <span className="player-pill__dot" aria-hidden="true" />
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
       <div className="host-teams__footer">
         {countdown ? (
-          <p className="get-ready">Get ready… {remaining}</p>
+          <>
+            <p className="get-ready get-ready--tv">Get ready… {remaining}</p>
+            <p className="host-teams__hint">
+              Leaving a team on your phone stops the countdown.
+            </p>
+          </>
         ) : (
-          <p className="host-teams__hint">
-            Anyone still picking gets dropped into the emptiest team.
-          </p>
+          <>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => roomStore.send({ type: "startGame" })}
+            >
+              Continue
+            </button>
+            <p className="host-teams__hint">
+              Anyone still picking gets dropped into the emptiest team.
+            </p>
+          </>
         )}
-        {!countdown && (
-          <button
-            type="button"
-            className="btn"
-            onClick={() => roomStore.send({ type: "startGame" })}
-          >
-            Continue
-          </button>
-        )}
-        {/* Deliberately outside the countdown fork: the way out of team select
-            stays available the whole time, including mid-countdown. It is not
-            a Stop — stopping is `cancelStart`, which is rejected here because
-            it would clear a readiness nothing could restore. Leaving a team is
-            the stop, and it happens on the phones. */}
-        <button
-          type="button"
-          className="btn btn--ghost btn--small"
-          onClick={() => roomStore.send({ type: "backToLobby" })}
-        >
-          Back to room
-        </button>
       </div>
     </main>
   );

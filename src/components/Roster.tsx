@@ -21,6 +21,13 @@ type PillProps = {
 
 export function PlayerPill({ player, variant, onKick }: PillProps) {
   const classes = ["pill", "player-pill"];
+  // Readiness is the whole pill, not a glyph beside the name: a ready player
+  // lifts off the page in gold and a waiting one sits flat and sunken, so the
+  // host can read the room's state from the shape of the row alone, at a
+  // distance where a tick mark is already gone.
+  if (variant === "lobby") {
+    classes.push(player.ready ? "player-pill--ready" : "player-pill--waiting");
+  }
   if (!player.connected) classes.push("player-pill--offline");
   return (
     <li className={classes.join(" ")}>
@@ -36,15 +43,8 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
           aria-hidden="true"
         />
       ) : (
-        <span
-          className={
-            player.ready
-              ? "player-pill__ready"
-              : "player-pill__ready player-pill__ready--waiting"
-          }
-          aria-label={player.ready ? "ready" : "not ready"}
-        >
-          {player.ready ? "✓" : "···"}
+        <span className="player-pill__mark">
+          {player.ready ? "✓ READY" : "··· WAITING"}
         </span>
       )}
       {onKick && (

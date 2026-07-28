@@ -1,13 +1,13 @@
+import type { CSSProperties } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
 import { CATEGORIES } from "../../../shared/categories";
 import { tallyVotes, voteBudget, voteShares } from "../../../shared/voting";
 import { teamsEnabled } from "../../../shared/teams";
-import { currentRound } from "../../../shared/state";
 import type { Player, RoomState } from "../../../shared/state";
 import { VOTING_MS } from "../../../shared/reduce";
 import { RoomChip } from "../../components/RoomChip";
 import { roomStore } from "../../net/room";
-import { HostHeader, VotingCount } from "./HostHeader";
+import { HostExit, HostHeader, HostHeaderRight, VotingCount } from "./HostHeader";
 
 type Props = {
   room: RoomState;
@@ -59,17 +59,65 @@ function VoteFoot({
 }
 
 /**
- * Name size steps with share so the leader reads from the sofa. A step
- * function rather than per-card magic numbers, so adding a category cannot
- * quietly change the type scale. This governs the open grid only, where any
- * of 16 categories can land at any vote count — see `rankNameSize` below for
- * why the closed reveal's fixed 3-slot podium is different.
+ * The back-out. One event, two destinations: with teams on it steps to team
+ * select rather than all the way to the room — the server derives that, so
+ * this only has to name it correctly.
  */
-function nameSize(votes: number): string {
-  if (votes >= 8) return "38px";
-  if (votes >= 3) return "26px";
-  if (votes === 2) return "24px";
-  return "21px";
+function VotingExit({ room }: { room: RoomState }) {
+  return (
+    <HostExit
+      label={teamsEnabled(room.settings) ? "Back to teams" : "Back to room"}
+      onClick={() => roomStore.send({ type: "backToLobby" })}
+    />
+  );
+}
+
+/**
+ * Name size scales continuously with share of the leader rather than stepping,
+ * so a card that just grew wide never sits half empty. The `17cqw` ceiling in
+ * the CSS is the other half of this: a narrow card clamps its own name against
+ * its own width, which is what keeps a long category from clipping in the
+ * one-vote column. See `rankNameSize` below for why the closed reveal's fixed
+ * 3-slot podium steps instead.
+ */
+function nameSize(votes: number, max: number): string {
+  if (votes === 0) return "20px";
+  return `${Math.round(26 + 40 * (votes / max))}px`;
+}
+
+/**
+ * The ten cards split into the two rows the TV shows, balanced so the rows
+ * carry near-equal total grow.
+ *
+ * Width is the odds, but `flex-grow` is only ever relative to the row a card
+ * is in — so without this a one-vote card in a quiet row comes out wider than
+ * a two-vote card in a loud one, and the whole mechanic quietly lies. Heaviest
+ * card to the lighter row, five per row, then each row is put back into pool
+ * order: the list itself never re-sorts, only which row a card lands in.
+ */
+type VoteCard = { category: string; votes: number };
+
+function balancedRows(cards: VoteCard[]): VoteCard[][] {
+  const rowA: VoteCard[] = [];
+  const rowB: VoteCard[] = [];
+  let sumA = 0;
+  let sumB = 0;
+  const half = Math.ceil(cards.length / 2);
+  for (const card of [...cards].sort((a, b) => b.votes - a.votes)) {
+    const toA = rowB.length >= half || (rowA.length < half && sumA <= sumB);
+    if (toA) {
+      rowA.push(card);
+      sumA += card.votes + 1;
+    } else {
+      rowB.push(card);
+      sumB += card.votes + 1;
+    }
+  }
+  const poolIndex = (c: VoteCard) =>
+    CATEGORIES.indexOf(c.category as (typeof CATEGORIES)[number]);
+  rowA.sort((a, b) => poolIndex(a) - poolIndex(b));
+  rowB.sort((a, b) => poolIndex(a) - poolIndex(b));
+  return rowB.length > 0 ? [rowA, rowB] : [rowA];
 }
 
 export function HostVoting({ room, offset, countdown }: Props) {
@@ -91,18 +139,26 @@ export function HostVoting({ room, offset, countdown }: Props) {
     return <HostVotingClosed room={room} totals={totals} remaining={remaining} cast={cast} />;
   }
 
-  // Two rows of five, in fixed pool order — nothing sorts this. Five across
-  // is the same width the scoring grid already uses, and it is the most a TV
-  // reads at a glance.
-  const rows = [0, 5].map((i) => CATEGORIES.slice(i, i + 5));
+  const cards = CATEGORIES.map((category) => ({
+    category,
+    votes: totals[category] ?? 0,
+  }));
+  // One scale across both rows, so a name's size means the same thing
+  // wherever the card sits.
+  const maxVotes = Math.max(1, ...cards.map((c) => c.votes));
+  const rows = balancedRows(cards);
 
   return (
     <main className="screen screen--host host-voting">
+      {/* No round marker: voting only ever happens before round one. */}
       <HostHeader
         left={<RoomChip code={room.code} />}
-        round={currentRound(room)}
-        of={room.settings.roundCount}
-        right={<VotingCount n={room.players.length} ready={ready} />}
+        right={
+          <HostHeaderRight>
+            <VotingCount n={room.players.length} ready={ready} />
+            <VotingExit room={room} />
+          </HostHeaderRight>
+        }
       />
 
       <p className="host-voting__prompt">
@@ -112,28 +168,24 @@ export function HostVoting({ room, offset, countdown }: Props) {
       <div className="host-voting__grid">
         {rows.map((row, i) => (
           <div className="host-voting__row" key={i}>
-            {row.map((category) => {
-              const votes = totals[category] ?? 0;
-              return (
-                <div
-                  key={category}
-                  className={votes > 0 ? "vote-card" : "vote-card vote-card--zero"}
-                  // The whole mechanic: card width IS the odds. No measurement,
-                  // no JS layout pass — flex-grow carries it.
-                  style={{ flexGrow: votes + 1 }}
-                >
-                  <span
-                    className="vote-card__name"
-                    style={votes > 0 ? { fontSize: nameSize(votes) } : undefined}
-                  >
-                    {category}
-                  </span>
-                  {votes > 0 && (
-                    <VoteFoot room={room} category={category} total={String(votes)} />
-                  )}
-                </div>
-              );
-            })}
+            {row.map(({ category, votes }) => (
+              <div
+                key={category}
+                className={votes > 0 ? "vote-card" : "vote-card vote-card--zero"}
+                // The whole mechanic: card width IS the odds. No measurement,
+                // no JS layout pass — flex-grow carries it. `--name-size` is
+                // the ideal; the CSS clamps it against the card's own width.
+                style={{
+                  flexGrow: votes + 1,
+                  "--name-size": nameSize(votes, maxVotes),
+                } as CSSProperties}
+              >
+                <span className="vote-card__name">{category}</span>
+                {votes > 0 && (
+                  <VoteFoot room={room} category={category} total={String(votes)} />
+                )}
+              </div>
+            ))}
           </div>
         ))}
       </div>
@@ -148,16 +200,6 @@ export function HostVoting({ room, offset, countdown }: Props) {
             style={{ width: `${Math.min(100, (remaining / (VOTING_MS / 1000)) * 100)}%` }}
           />
         </span>
-        {/* One event, two destinations. With teams on, Back steps to team
-            select rather than all the way to the room — the server derives
-            that; this only has to name it correctly. */}
-        <button
-          type="button"
-          className="btn btn--ghost btn--small"
-          onClick={() => roomStore.send({ type: "backToLobby" })}
-        >
-          {teamsEnabled(room.settings) ? "Back to teams" : "Back to room"}
-        </button>
         <button
           type="button"
           className="btn"
@@ -192,18 +234,19 @@ function HostVotingClosed({
   // to hand-tune rather than an open-ended scale that a 17th category could
   // quietly perturb.
   const rankNameSize = ["52px", "34px", "30px"];
-  const rankShareSize = ["46px", "34px", "30px"];
+  const rankShareSize = ["36px", "26px", "24px"];
 
   return (
     <main className="screen screen--host host-voting host-voting--closed">
       <HostHeader
         left={<RoomChip code={room.code} />}
-        round={currentRound(room)}
-        of={room.settings.roundCount}
         right={
-          <span className="host-header__count">
-            VOTING CLOSED · {cast} {cast === 1 ? "VOTE" : "VOTES"} IN
-          </span>
+          <HostHeaderRight>
+            <span className="host-header__count">
+              VOTING CLOSED · {cast} {cast === 1 ? "VOTE" : "VOTES"} IN
+            </span>
+            <VotingExit room={room} />
+          </HostHeaderRight>
         }
       />
 
@@ -248,16 +291,14 @@ function HostVotingClosed({
       </div>
 
       {/* Nothing here names the drawn category. It has not been drawn yet — the
-          draw happens at the whistle. */}
+          draw happens at the whistle.
+
+          No Stop button: `cancelStart` from here lands back in `voting`, which
+          is a hair's breadth from where "Back to teams" goes and reads as the
+          same escape to anyone watching. One way out per screen, in the corner
+          every other host screen keeps it in. */}
       <div className="host-voting__closed-footer">
         <p className="get-ready get-ready--tv">Get ready… {remaining}</p>
-        <button
-          type="button"
-          className="btn btn--secondary btn--small"
-          onClick={() => roomStore.send({ type: "cancelStart" })}
-        >
-          Stop
-        </button>
       </div>
     </main>
   );
