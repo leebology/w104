@@ -91,8 +91,10 @@ export function HostVoting({ room, offset, countdown }: Props) {
     return <HostVotingClosed room={room} totals={totals} remaining={remaining} cast={cast} />;
   }
 
-  // Four rows of four, in fixed pool order — nothing sorts this.
-  const rows = [0, 4, 8, 12].map((i) => CATEGORIES.slice(i, i + 4));
+  // Two rows of five, in fixed pool order — nothing sorts this. Five across
+  // is the same width the scoring grid already uses, and it is the most a TV
+  // reads at a glance.
+  const rows = [0, 5].map((i) => CATEGORIES.slice(i, i + 5));
 
   return (
     <main className="screen screen--host host-voting">

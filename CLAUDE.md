@@ -11,7 +11,7 @@ word scores only if no other player wrote it.
 
 v1 scope is a match of 1–10 rounds, with the host setting round count and a
 per-round timer from 15 seconds to 10 minutes. The category is no longer
-fixed: up front, the room votes once on which of 16 categories to play, and
+fixed: up front, the room votes once on which of 10 categories to play, and
 each round draws from that pool weighted by vote share, spending a category
 once it has been played. This match structure and the voting phase have
 landed — see `docs/superpowers/specs/2026-07-26-match-structure-design.md` and
@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (285 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (293 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -246,7 +246,7 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
   structure spec: host-set round count/timer, the standings phase, golf
   placement scoring. Supersedes the single-round scope in the MVP spec above.
 - `docs/superpowers/specs/2026-07-26-category-voting-design.md` — the category
-  voting spec: the 16-category pool, vote budget, the weighted draw, spent
+  voting spec: the 10-category pool, vote budget, the weighted draw, spent
   categories. Supersedes the fixed `"woman"` category assumed by the MVP spec
   above.
 - `docs/superpowers/specs/2026-07-27-teams-design.md` — the teams spec: the

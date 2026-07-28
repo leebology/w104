@@ -670,7 +670,7 @@ ul, ol { list-style: none; }
 .host-voting__result { justify-content: center; }
 .host-voting__row--top { flex: 0 0 206px; }
 
-/* Survivors below the top three can number up to 13 (16 categories, one vote
+/* Survivors below the top three can number up to 7 (10 categories, one vote
    each). A fixed-height, non-wrapping row clips them off both edges past
    ~5 cards, so this row sizes to its own content instead of a magic number,
    and wraps rather than overflow — `.host-voting__result`'s `justify-content:

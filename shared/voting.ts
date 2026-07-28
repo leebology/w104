@@ -102,7 +102,10 @@ export function pickCategory(
   const isSpent = new Set(spent);
   const available = CATEGORIES.filter((c) => !isSpent.has(c));
 
-  // Unreachable at 16 categories and MAX_ROUND_COUNT 10 — a guard, not a case.
+  // Still unreachable at ten categories and MAX_ROUND_COUNT 10, but with no
+  // margin left: round ten draws with nine spent, so `available` is exactly
+  // one. A guard, not a case — and the reason a pool smaller than the round
+  // cap would be a real bug rather than a shorter game.
   if (available.length === 0) {
     return weightedPick(CATEGORIES.map((c) => [c, 1]), roll);
   }

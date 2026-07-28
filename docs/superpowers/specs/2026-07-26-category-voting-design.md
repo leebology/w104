@@ -12,7 +12,7 @@ Visual source: `design_handoff_ok_name_one/Ok Name One MVP.dc.html`, frames
 ## The idea
 
 The category stops being fixed. After the host taps **Start game**, the room
-votes once, up front, on which of 16 categories it wants to play. Every round
+votes once, up front, on which of 10 categories it wants to play. Every round
 then draws from that vote pool weighted by share, and a category that has been
 played is spent for the rest of the match — so the shares recalculate as the
 match goes on, and a category the room voted for heavily is likely but never
@@ -24,11 +24,11 @@ Voting happens exactly once per match, not once per round.
 
 ### The pool
 
-16 categories, fixed set, fixed order, in `shared/categories.ts`:
+10 categories, fixed set, fixed order, in `shared/categories.ts`:
 
 ```
-woman · man · animal · plant · song · movie · brand · country ·
-city · colour · sport · car · food · drink · job · body part
+woman · animal · song · movie · country ·
+colour · sport · car · food · job
 ```
 
 Singular and lowercase, per the existing copy voice. The array order is the
@@ -36,7 +36,22 @@ render order in every grid — nothing sorts it. Categories are rendered as text
 only: no icon, no per-category emoji. The only emoji on a category card are
 player avatars.
 
-16 exceeds `MAX_ROUND_COUNT` (10), so the pool can never be exhausted mid-match.
+> **Revised 2026-07-27, sixteen down to ten.** Cut: `man`, `city` and `drink`
+> each sat too close to a neighbour that survived (`woman`, `country`, `food`)
+> to feel like a different round; `plant`, `brand` and `body part` have answer
+> spaces too thin to reward a full timer.
+
+The pool now exactly equals `MAX_ROUND_COUNT` (10). The draw runs at round N
+with N-1 spent, so a full match reaches round ten with exactly one category
+left: the pool is consumed to the last card but never runs dry. **A pool
+smaller than the round cap would be a real bug**, not a shorter game — it would
+make the guard below reachable and let a match replay a category.
+`voting.test.ts` asserts `CATEGORIES.length >= MAX_ROUND_COUNT` for that
+reason.
+
+The trade this buys: at the full ten rounds every category gets played, so the
+vote decides the *order* rather than the set. Below ten rounds — the common
+case — it still decides which ones come up at all.
 
 ### The budget
 
@@ -85,8 +100,8 @@ already banked by then, this list is always complete at the moment it is read.
    cumulative distribution with `roll`.
 2. If every voted category is already spent, fall back to equal weights over the
    unspent categories nobody voted for.
-3. If nothing is unspent — unreachable at 16 categories and 10 rounds — equal
-   weights over the whole pool. A guard, not a case.
+3. If nothing is unspent — unreachable while the pool is at least as large as
+   the round cap — equal weights over the whole pool. A guard, not a case.
 
 `roll` is a uniform `[0,1)` injected at the edge: the tick event carries it
 (`{ t: "tick"; now; roll }`) and the Durable Object supplies `Math.random()`.

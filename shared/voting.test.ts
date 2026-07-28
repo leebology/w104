@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { CATEGORIES } from "./categories";
+import { CATEGORIES, DEFAULT_CATEGORY } from "./categories";
+import { MAX_ROUND_COUNT } from "./gamemodes";
 import {
   pickCategory,
   spentCategories,
@@ -112,6 +113,20 @@ describe("spentCategories", () => {
   });
 });
 
+describe("the pool against the round cap", () => {
+  test("a full match consumes the pool to the last card without exhausting it", () => {
+    // The draw runs at round N with N-1 spent, so the worst case is round
+    // MAX_ROUND_COUNT with one category left. Shrinking the pool below the
+    // round cap would make the last-resort guard in pickCategory reachable and
+    // let a match replay a category — this is the assertion that catches it.
+    expect(CATEGORIES.length).toBeGreaterThanOrEqual(MAX_ROUND_COUNT);
+  });
+
+  test("the default category is in the pool", () => {
+    expect(CATEGORIES).toContain(DEFAULT_CATEGORY);
+  });
+});
+
 describe("pickCategory", () => {
   const votes: VoteMap = { p0: { song: 3 }, p1: { movie: 1 } };
   // song weighs 3, movie weighs 1, so the cumulative edge is at 0.75.
@@ -160,10 +175,13 @@ describe("pickCategory", () => {
   });
 
   test("the unvoted fallback is uniform, not weighted", () => {
-    // 14 categories remain after song and movie are spent; a roll of 0.5
-    // lands on the 8th of them (indices 0-13, edge at 7/14 = 0.5).
+    // 8 categories remain after song and movie are spent; a roll of 0.5 lands
+    // on the 5th of them (indices 0-7, edge at 4/8 = 0.5). Derived from the
+    // live pool rather than hardcoded, so resizing the pool moves the
+    // expectation with it.
     const remaining = CATEGORIES.filter((c) => c !== "song" && c !== "movie");
-    expect(pickCategory(votes, ["song", "movie"], 0.5)).toBe(remaining[7]);
+    const mid = remaining.length / 2;
+    expect(pickCategory(votes, ["song", "movie"], 0.5)).toBe(remaining[mid]);
   });
 
   test("no votes at all still yields a category", () => {
