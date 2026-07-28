@@ -3,7 +3,7 @@ import { DEFAULT_CATEGORY } from "./categories";
 import { DEFAULT_MODE, defaultSettings } from "./gamemodes";
 import type { GameModeId } from "./gamemodes";
 import type { VoteMap } from "./voting";
-import type { Team, TeamId } from "./teams";
+import type { ScorerId, Team, TeamId } from "./teams";
 import { teamsEnabled } from "./teams";
 
 export type PlayerId = string;
@@ -51,7 +51,8 @@ export type RoundPlace = {
  */
 export type RoundSummary = {
   category: string;
-  places: Record<PlayerId, RoundPlace>;
+  /** Keyed by scorer — a player id in free-for-all, a team id in team play. */
+  places: Record<ScorerId, RoundPlace>;
 };
 
 export type Player = {

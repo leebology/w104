@@ -1,13 +1,12 @@
 import { describe, expect, test } from "vitest";
 import { computeStandings, placeRound } from "./standings";
 import type { Results } from "./scoring";
-import type { Player, RoundSummary } from "./state";
+import type { RoundSummary } from "./state";
+import type { Scorer } from "./teams";
 
-function player(id: string): Player {
-  return {
-    id, name: id.toUpperCase(), emoji: "🐙",
-    ready: false, connected: true, teamId: null,
-  };
+/** A solo scorer — one player who is their own team of one. */
+function player(id: string): Scorer {
+  return { id, name: id.toUpperCase(), emoji: "🐙", colorIndex: null, members: [id] };
 }
 
 /** Results carrying only the fields placeRound reads. */
@@ -148,5 +147,45 @@ describe("computeStandings", () => {
     const b = computeStandings(roster, history).find((s) => s.id === "b")!;
     expect(b.badges).toEqual([2]);
     expect(b.points).toBe(2);
+  });
+});
+
+function scorer(id: string, members: string[], colorIndex: number | null): Scorer {
+  return { id, name: id.toUpperCase(), emoji: "", colorIndex, members };
+}
+
+describe("computeStandings over teams", () => {
+  test("a team places as one row and carries its members", () => {
+    const scorers = [scorer("t0", ["p0", "p1"], 0), scorer("t1", ["p2"], 1)];
+    const standings = computeStandings(scorers, [
+      round(["t0", 5, 5], ["t1", 2, 2]),
+      round(["t0", 4, 4], ["t1", 9, 9]),
+    ]);
+    expect(standings.map((s) => s.id)).toEqual(["t0", "t1"]);
+    expect(standings[0].points).toBe(3); // 1st + 2nd
+    expect(standings[0].members).toEqual(["p0", "p1"]);
+    expect(standings[0].colorIndex).toBe(0);
+  });
+
+  test("a team whose member was kicked keeps its points and badges", () => {
+    // Iterating the live roster and looking history up by id is what buys
+    // this — the same direction that already keeps a disconnected player's
+    // badges and makes a kicked one vanish.
+    const before = [scorer("t0", ["p0", "p1"], 0), scorer("t1", ["p2"], 1)];
+    const history = [round(["t0", 5, 5], ["t1", 2, 2])];
+    const after = [scorer("t0", ["p0"], 0), scorer("t1", ["p2"], 1)];
+    expect(computeStandings(after, history)[0].points).toBe(
+      computeStandings(before, history)[0].points,
+    );
+  });
+
+  test("a player scorer keeps its emoji and a null colour", () => {
+    const standings = computeStandings(
+      [{ id: "a", name: "A", emoji: "🐙", colorIndex: null, members: ["a"] }],
+      [round(["a", 3, 3])],
+    );
+    expect(standings[0].emoji).toBe("🐙");
+    expect(standings[0].colorIndex).toBeNull();
+    expect(standings[0].members).toEqual(["a"]);
   });
 });

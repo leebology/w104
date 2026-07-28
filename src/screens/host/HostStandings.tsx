@@ -5,6 +5,7 @@ import { BadgeStrip } from "../../components/BadgeStrip";
 import { RoomChip } from "../../components/RoomChip";
 import { roomStore } from "../../net/room";
 import type { RoomState } from "../../../shared/state";
+import { rosterOf } from "../../../shared/teams";
 import { HostHeader } from "./HostHeader";
 
 type Props = {
@@ -14,7 +15,7 @@ type Props = {
 };
 
 export function HostStandings({ room, countdown }: Props) {
-  const standings = computeStandings(room.players, room.history);
+  const standings = computeStandings(rosterOf(room), room.history);
   const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   const done = matchComplete(room);
   // On the final screen the round marker would otherwise read one past the

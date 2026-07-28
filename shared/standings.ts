@@ -1,11 +1,16 @@
 import type { Results } from "./scoring";
-import type { Player, PlayerId, RoundPlace, RoundSummary } from "./state";
+import type { PlayerId, RoundPlace, RoundSummary } from "./state";
+import type { Scorer, ScorerId } from "./teams";
 
 export type Standing = {
-  id: PlayerId;
+  id: ScorerId;
   name: string;
   emoji: string;
-  /** Sum of places across every round this player was scored in. */
+  /** The team's accent; null for a player. */
+  colorIndex: number | null;
+  /** Who this row is made of. [self] for a player. */
+  members: PlayerId[];
+  /** Sum of places across every round this scorer was scored in. */
   points: number;
   /** Place per round, in play order. The badge strip renders this directly. */
   badges: number[];
@@ -34,9 +39,9 @@ function rankAscending<T>(items: T[], scoreOf: (item: T) => number): Map<T, numb
 }
 
 /** Ranks one round's results by unique words, highest first. */
-export function placeRound(results: Results): Record<PlayerId, RoundPlace> {
+export function placeRound(results: Results): Record<ScorerId, RoundPlace> {
   const ranked = rankAscending(results.scorers, (s) => -s.unique);
-  const places: Record<PlayerId, RoundPlace> = {};
+  const places: Record<ScorerId, RoundPlace> = {};
   for (const s of results.scorers) {
     places[s.id] = { unique: s.unique, total: s.total, place: ranked.get(s)! };
   }
@@ -46,23 +51,26 @@ export function placeRound(results: Results): Record<PlayerId, RoundPlace> {
 /**
  * Match standings: lowest points first, ties sharing a place.
  *
- * Iterates the live roster and looks history up by id, never the reverse.
- * That direction is what makes a kicked player vanish from the standings with
- * no special-casing, while a merely disconnected player keeps their seat,
- * points and badges.
+ * Iterates the live scorer list and looks history up by id, never the
+ * reverse. That direction is what makes a kicked player vanish from the
+ * standings with no special-casing, while a merely disconnected player keeps
+ * their seat, points and badges — and it is what lets a team keep its points
+ * when one of its members is removed.
  */
 export function computeStandings(
-  players: Player[],
+  scorers: Scorer[],
   history: RoundSummary[],
 ): Standing[] {
-  const rows = players.map((p) => {
+  const rows = scorers.map((s) => {
     const badges = history
-      .map((summary) => summary.places[p.id]?.place)
+      .map((summary) => summary.places[s.id]?.place)
       .filter((place): place is number => place !== undefined);
     return {
-      id: p.id,
-      name: p.name,
-      emoji: p.emoji,
+      id: s.id,
+      name: s.name,
+      emoji: s.emoji,
+      colorIndex: s.colorIndex,
+      members: s.members,
       badges,
       points: badges.reduce((sum, place) => sum + place, 0),
       place: 0,

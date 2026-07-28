@@ -4,6 +4,7 @@ import { matchComplete } from "../../../shared/state";
 import { BadgeStrip } from "../../components/BadgeStrip";
 import { roomStore } from "../../net/room";
 import type { PlayerId, RoomState } from "../../../shared/state";
+import { rosterOf } from "../../../shared/teams";
 
 type Props = {
   room: RoomState;
@@ -13,9 +14,9 @@ type Props = {
 };
 
 export function PlayerStandings({ room, playerId, countdown }: Props) {
-  const standings = computeStandings(room.players, room.history);
+  const standings = computeStandings(rosterOf(room), room.history);
   const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
-  const me = standings.find((s) => s.id === playerId);
+  const me = standings.find((s) => s.members.includes(playerId));
   const ready = room.players.find((p) => p.id === playerId)?.ready ?? false;
   const done = matchComplete(room);
 
