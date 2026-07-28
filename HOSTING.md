@@ -215,7 +215,7 @@ personal data, so that's acceptable; if you'd rather it not be indexed, add a
 3. **CI** runs `typecheck` + `test` + `build`; **Vercel** posts a preview URL
    for the PR, pointed at the staging Worker.
 4. Merge when green. On merge to `main`:
-   - Vercel deploys the web app to `https://w104.leebo.io`.
+   - Vercel deploys the web app to `https://www.oknameone.com`.
    - GitHub Actions runs `wrangler deploy` for the production Worker.
 
 **Testing on real phones:** merge into `staging` instead. Within a minute or so
