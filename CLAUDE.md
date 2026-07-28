@@ -24,6 +24,12 @@ and **Game settings** (right). Modes and their settings are declared in
 `shared/gamemodes.ts`; adding a gamemode is a catalog change, not a layout
 change. See `docs/superpowers/specs/2026-07-27-gamemode-drawers-design.md`.
 
+A match can also be played in **teams**. The Team Count setting (off, or 2–10)
+inserts a team-selection phase between the lobby and category voting, gives
+each team one shared word list, and scores and places teams rather than
+players. Category voting stays individual. See
+`docs/superpowers/specs/2026-07-27-teams-design.md`.
+
 ## Commands
 
 Requires Node 22 (`.nvmrc`). Two terminals for a working local setup:
@@ -36,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (184 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (285 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -84,9 +90,10 @@ replaced wholesale on each `state` push; every client action is a *request*.
   anything that changes readiness re-evaluates it. "Pre-round" covers both the
   lobby before round one and the standings screen between rounds, guarded by
   `matchComplete` so readying up on the final standings cannot open a countdown
-  for a round that does not exist. `startGame` is legal from lobby, voting, and
-  standings and is still the one exception (host solo-start bypasses
-  `MIN_PLAYERS`), and `reduce` skips `settle` for it.
+  for a round that does not exist. `startGame` is legal from lobby, team select,
+  voting, and standings, and is still the one exception (host solo-start
+  bypasses `MIN_PLAYERS`), and `reduce` skips `settle` for it. From a lobby with
+  teams on it opens team select rather than a countdown.
 - Voting is bookended by a countdown on both sides, so `countdown` carries a
   `to: "voting" | "playing"`. It is the one phase field that is stored rather
   than derived: two distinct countdowns now sit at `history.length === 0`, so
@@ -168,6 +175,39 @@ Three distinct ids, easy to confuse:
 A kick is durable for the room's lifetime (`backToLobby` does not clear it) and
 is enforced at the connect gate, before `join` can seat anyone.
 
+### Teams
+
+- **The unit of scoring is a `Scorer`, not a `Player`.** `rosterOf(room)` in
+  `shared/teams.ts` returns one scorer per player when teams are off and one
+  per *non-empty* team when they are on — and it is the only place the "empty
+  teams do not score" rule lives, so no render site has to re-check.
+- **Membership lives on `Player.teamId`, never on `Team`.** One source of
+  truth, so nobody can be on two teams and no member list can desync. A team's
+  roster is derived by filtering `players`, which gives it a stable order free.
+- **Entries stay keyed by `PlayerId` even in team play.** A team's list is its
+  members' lists merged by `at`. Keying by team would have meant a persistence
+  migration, a second shape for `toRoomState`, and a special case for a player
+  kicked mid-round; this way a kick already scrubs their words.
+- **`ready` in the `teams` phase is derived from membership.** `joinTeam` and
+  `leaveTeam` own the flag and the `ready` event is rejected there — the same
+  arrangement `castVote`/`resetVotes` have during voting. This is why there is
+  no unready button: leaving a team *is* the unready.
+- **Straggler auto-assignment happens at the tick that opens `voting`,** never
+  when the countdown opens. Assigning early would make everyone instantly
+  ready, so `settle` could never tear the countdown down and no player could
+  leave a team to cancel it.
+- **`cancelStart` is rejected on the teams countdown.** It clears readiness so
+  `settle` cannot re-open the countdown, which would wedge a room landing back
+  in `teams` with everyone still on a team and no way to become ready again.
+  `HostTeams` therefore renders no Stop button.
+- **A rename never recolours.** `Team.colorIndex` is written once at creation;
+  the colour is what the room navigates by.
+- **The shared list reaches teammates by `sendTo`, never `broadcast`.** On an
+  accepted entry the server pushes `yourEntries` to that team's connected
+  members only — the "no per-player entry counts in broadcasts" boundary is
+  untouched — and sends it *before* the `entryAck`, so the authoritative copy
+  lands ahead of the message that retires the client's optimistic one.
+
 ### Client
 
 `src/net/room.ts` is a single `RoomStore` singleton exposed via
@@ -198,6 +238,9 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
   voting spec: the 16-category pool, vote budget, the weighted draw, spent
   categories. Supersedes the fixed `"woman"` category assumed by the MVP spec
   above.
+- `docs/superpowers/specs/2026-07-27-teams-design.md` — the teams spec: the
+  `teamCount` setting, the team-selection phase, shared word lists, and
+  scorer-generic scoring and standings.
 - `docs/superpowers/specs/2026-07-27-gamemode-drawers-design.md` — the gamemode
   and settings drawers: the catalog, descriptor-driven validation, and the
   countdown hold.
