@@ -35,10 +35,10 @@ function rankAscending<T>(items: T[], scoreOf: (item: T) => number): Map<T, numb
 
 /** Ranks one round's results by unique words, highest first. */
 export function placeRound(results: Results): Record<PlayerId, RoundPlace> {
-  const ranked = rankAscending(results.players, (p) => -p.unique);
+  const ranked = rankAscending(results.scorers, (s) => -s.unique);
   const places: Record<PlayerId, RoundPlace> = {};
-  for (const p of results.players) {
-    places[p.id] = { unique: p.unique, total: p.total, place: ranked.get(p)! };
+  for (const s of results.scorers) {
+    places[s.id] = { unique: s.unique, total: s.total, place: ranked.get(s)! };
   }
   return places;
 }

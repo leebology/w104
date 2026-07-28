@@ -13,10 +13,12 @@ function player(id: string): Player {
 /** Results carrying only the fields placeRound reads. */
 function results(...rows: [string, number, number][]): Results {
   return {
-    players: rows.map(([id, unique, total]) => ({
+    scorers: rows.map(([id, unique, total]) => ({
       id,
       name: id.toUpperCase(),
       emoji: "🐙",
+      colorIndex: null,
+      members: [id],
       unique,
       total,
       entries: [],

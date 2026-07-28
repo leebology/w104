@@ -80,6 +80,53 @@ export function membersOf(view: TeamView, teamId: TeamId): Player[] {
   return view.players.filter((p) => p.teamId === teamId);
 }
 
+/** A PlayerId or a TeamId — whichever owns the word list being scored. */
+export type ScorerId = string;
+
+/**
+ * Whoever owns a word list. One per player when teams are off, one per
+ * non-empty team when they are on. Everything downstream of the round —
+ * scoring, placement, standings — works on this rather than on `Player`, so
+ * teams need no parallel code path.
+ */
+export type Scorer = {
+  id: ScorerId;
+  name: string;
+  /** The player's emoji; "" for a team, which is identified by its colour. */
+  emoji: string;
+  /** The team's accent; null for a player. */
+  colorIndex: number | null;
+  /** [self] for a player; the roster for a team. */
+  members: PlayerId[];
+};
+
+/**
+ * This match's scorers. **The one place the "empty teams do not score" rule
+ * is enforced** — no render or scoring site has to remember it.
+ */
+export function rosterOf(
+  view: TeamView & Pick<Room, "settings">,
+): Scorer[] {
+  if (!teamsEnabled(view.settings)) {
+    return view.players.map((p) => ({
+      id: p.id,
+      name: p.name,
+      emoji: p.emoji,
+      colorIndex: null,
+      members: [p.id],
+    }));
+  }
+  return view.teams
+    .map((t) => ({
+      id: t.id,
+      name: t.name,
+      emoji: "",
+      colorIndex: t.colorIndex,
+      members: membersOf(view, t.id).map((p) => p.id),
+    }))
+    .filter((s) => s.members.length > 0);
+}
+
 /**
  * Places every player who never picked a team into the team with the fewest
  * members, ties breaking by lowest colour index. Assignments are applied one

@@ -1,5 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { allowedEdits, editDistance, isMatch, normalize, scoreRound } from "./scoring";
+import { rosterOf } from "./teams";
+import { defaultSettings } from "./gamemodes";
+import { makeTeams } from "./teams";
+import { createRoom } from "./state";
+import type { Entry, Player, Room } from "./state";
+import type { Scorer } from "./teams";
 
 describe("normalize", () => {
   test("folds case", () => {
@@ -70,111 +76,129 @@ describe("isMatch", () => {
   });
 });
 
-const players = [
-  { id: "a", name: "Akshay", emoji: "🐙", ready: true, connected: true, teamId: null },
-  { id: "b", name: "Aidan", emoji: "🦊", ready: true, connected: true, teamId: null },
-  { id: "c", name: "Liam", emoji: "🐸", ready: true, connected: true, teamId: null },
+function entry(by: string, text: string, at: number): Entry {
+  return { text, at, by };
+}
+
+function teamRoom(teamCount: number, assignments: (string | null)[]): Room {
+  const base = createRoom("PLUM", 1000);
+  return {
+    ...base,
+    settings: { ...defaultSettings("ffa"), teamCount },
+    teams: makeTeams(teamCount),
+    players: assignments.map((teamId, i): Player => ({
+      id: `p${i}`, name: `P${i}`, emoji: "🐙",
+      ready: false, connected: true, teamId,
+    })),
+  };
+}
+
+const scorers: Scorer[] = [
+  { id: "a", name: "Akshay", emoji: "🐙", colorIndex: null, members: ["a"] },
+  { id: "b", name: "Aidan", emoji: "🦊", colorIndex: null, members: ["b"] },
+  { id: "c", name: "Liam", emoji: "🐸", colorIndex: null, members: ["c"] },
 ];
 
-const at = (by: string, n: number) => ({ at: n, by });
+/** Spread into an entry literal: `{ text: "Zendaya", ...by("a", 1) }`. */
+const by = (id: string, n: number) => ({ at: n, by: id });
 
 describe("scoreRound", () => {
   test("a word only one player wrote is unique", () => {
     const results = scoreRound({
-      players,
+      scorers,
       entries: {
-        a: [{ text: "Zendaya", ...at("a", 1) }],
-        b: [{ text: "Adele", ...at("b", 2) }],
+        a: [{ text: "Zendaya", ...by("a", 1) }],
+        b: [{ text: "Adele", ...by("b", 2) }],
         c: [],
       },
     });
-    const a = results.players.find((p) => p.id === "a")!;
+    const a = results.scorers.find((p) => p.id === "a")!;
     expect(a.total).toBe(1);
     expect(a.unique).toBe(1);
-    expect(a.entries[0]).toEqual({ text: "Zendaya", unique: true, alsoBy: [] });
+    expect(a.entries[0]).toEqual({ text: "Zendaya", by: "a", unique: true, alsoBy: [] });
   });
 
   test("a shared word scores for nobody and carries the other emoji", () => {
     const results = scoreRound({
-      players,
+      scorers,
       entries: {
-        a: [{ text: "Adele", ...at("a", 1) }],
-        b: [{ text: "adele", ...at("b", 2) }],
+        a: [{ text: "Adele", ...by("a", 1) }],
+        b: [{ text: "adele", ...by("b", 2) }],
         c: [],
       },
     });
-    const a = results.players.find((p) => p.id === "a")!;
+    const a = results.scorers.find((p) => p.id === "a")!;
     expect(a.unique).toBe(0);
     expect(a.entries[0].unique).toBe(false);
-    expect(a.entries[0].alsoBy).toEqual(["🦊"]);
+    expect(a.entries[0].alsoBy).toEqual(["b"]);
   });
 
   test("a typo still counts as the same word", () => {
     const results = scoreRound({
-      players,
+      scorers,
       entries: {
-        a: [{ text: "Zendaya", ...at("a", 1) }],
-        b: [{ text: "Zendya", ...at("b", 2) }],
+        a: [{ text: "Zendaya", ...by("a", 1) }],
+        b: [{ text: "Zendya", ...by("b", 2) }],
         c: [],
       },
     });
-    expect(results.players.find((p) => p.id === "a")!.unique).toBe(0);
+    expect(results.scorers.find((p) => p.id === "a")!.unique).toBe(0);
   });
 
   test("three players on one word list both other emoji", () => {
     const results = scoreRound({
-      players,
+      scorers,
       entries: {
-        a: [{ text: "Adele", ...at("a", 1) }],
-        b: [{ text: "adele", ...at("b", 2) }],
-        c: [{ text: "ADELE", ...at("c", 3) }],
+        a: [{ text: "Adele", ...by("a", 1) }],
+        b: [{ text: "adele", ...by("b", 2) }],
+        c: [{ text: "ADELE", ...by("c", 3) }],
       },
     });
-    expect(results.players.find((p) => p.id === "a")!.entries[0].alsoBy.sort())
-      .toEqual(["🐸", "🦊"]);
+    expect(results.scorers.find((s) => s.id === "a")!.entries[0].alsoBy.sort())
+      .toEqual(["b", "c"]);
   });
 
   test("a player repeating a word does not inflate their total", () => {
     const results = scoreRound({
-      players,
+      scorers,
       entries: {
-        a: [{ text: "Adele", ...at("a", 1) }, { text: "adele", ...at("a", 2) }],
+        a: [{ text: "Adele", ...by("a", 1) }, { text: "adele", ...by("a", 2) }],
         b: [],
         c: [],
       },
     });
-    const a = results.players.find((p) => p.id === "a")!;
+    const a = results.scorers.find((p) => p.id === "a")!;
     expect(a.total).toBe(1);
     expect(a.unique).toBe(1);
   });
 
   test("blank entries are discarded", () => {
     const results = scoreRound({
-      players,
-      entries: { a: [{ text: "   ", ...at("a", 1) }], b: [], c: [] },
+      scorers,
+      entries: { a: [{ text: "   ", ...by("a", 1) }], b: [], c: [] },
     });
-    expect(results.players.find((p) => p.id === "a")!.total).toBe(0);
+    expect(results.scorers.find((p) => p.id === "a")!.total).toBe(0);
   });
 
   test("short lookalikes both score", () => {
     const results = scoreRound({
-      players,
+      scorers,
       entries: {
-        a: [{ text: "Anne", ...at("a", 1) }],
-        b: [{ text: "Anna", ...at("b", 2) }],
+        a: [{ text: "Anne", ...by("a", 1) }],
+        b: [{ text: "Anna", ...by("b", 2) }],
         c: [],
       },
     });
-    expect(results.players.find((p) => p.id === "a")!.unique).toBe(1);
-    expect(results.players.find((p) => p.id === "b")!.unique).toBe(1);
+    expect(results.scorers.find((p) => p.id === "a")!.unique).toBe(1);
+    expect(results.scorers.find((p) => p.id === "b")!.unique).toBe(1);
   });
 
   test("a player with no entries scores zero", () => {
     const results = scoreRound({
-      players,
-      entries: { a: [{ text: "Adele", ...at("a", 1) }], b: [], c: [] },
+      scorers,
+      entries: { a: [{ text: "Adele", ...by("a", 1) }], b: [], c: [] },
     });
-    const c = results.players.find((p) => p.id === "c")!;
+    const c = results.scorers.find((p) => p.id === "c")!;
     expect(c.total).toBe(0);
     expect(c.unique).toBe(0);
     expect(c.entries).toEqual([]);
@@ -182,14 +206,77 @@ describe("scoreRound", () => {
 
   test("entries stay in submission order", () => {
     const results = scoreRound({
-      players,
+      scorers,
       entries: {
-        a: [{ text: "Cher", ...at("a", 3) }, { text: "Adele", ...at("a", 1) }],
+        a: [{ text: "Cher", ...by("a", 3) }, { text: "Adele", ...by("a", 1) }],
         b: [],
         c: [],
       },
     });
-    expect(results.players.find((p) => p.id === "a")!.entries.map((e) => e.text))
+    expect(results.scorers.find((p) => p.id === "a")!.entries.map((e) => e.text))
       .toEqual(["Adele", "Cher"]);
+  });
+});
+
+describe("scoreRound with teams", () => {
+  test("two teammates writing the same word count it once for the team", () => {
+    const room = teamRoom(2, ["t0", "t0", "t1"]);
+    const results = scoreRound({
+      scorers: rosterOf(room),
+      entries: {
+        p0: [entry("p0", "zendaya", 1)],
+        p1: [entry("p1", "Zendaya", 2)],
+        p2: [entry("p2", "adele", 3)],
+      },
+    });
+    const t0 = results.scorers.find((s) => s.id === "t0")!;
+    expect(t0.total).toBe(1);
+    expect(t0.unique).toBe(1);
+    expect(t0.entries[0].by).toBe("p0");
+  });
+
+  test("two teams sharing a word cancel it for both", () => {
+    const room = teamRoom(2, ["t0", "t1"]);
+    const results = scoreRound({
+      scorers: rosterOf(room),
+      entries: {
+        p0: [entry("p0", "zendaya", 1)],
+        p1: [entry("p1", "zendaya", 2)],
+      },
+    });
+    for (const s of results.scorers) {
+      expect(s.unique).toBe(0);
+      expect(s.entries[0].unique).toBe(false);
+    }
+    expect(results.scorers.find((s) => s.id === "t0")!.entries[0].alsoBy).toEqual(["t1"]);
+  });
+
+  test("a team's list is its members' merged in submission order", () => {
+    const room = teamRoom(2, ["t0", "t0", "t1"]);
+    const results = scoreRound({
+      scorers: rosterOf(room),
+      entries: {
+        p0: [entry("p0", "adele", 3)],
+        p1: [entry("p1", "cher", 1)],
+        p2: [entry("p2", "dido", 2)],
+      },
+    });
+    const t0 = results.scorers.find((s) => s.id === "t0")!;
+    expect(t0.entries.map((e) => e.text)).toEqual(["cher", "adele"]);
+    expect(t0.entries.map((e) => e.by)).toEqual(["p1", "p0"]);
+  });
+
+  test("a one-member scorer scores exactly as a solo player always did", () => {
+    const results = scoreRound({
+      scorers: rosterOf(teamRoom(0, [null, null])),
+      entries: {
+        p0: [entry("p0", "zendaya", 1), entry("p0", "adele", 2)],
+        p1: [entry("p1", "adele", 3)],
+      },
+    });
+    const p0 = results.scorers.find((s) => s.id === "p0")!;
+    expect(p0.total).toBe(2);
+    expect(p0.unique).toBe(1);
+    expect(p0.entries[1].alsoBy).toEqual(["p1"]);
   });
 });

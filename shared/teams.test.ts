@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { TEAM_COLORS, assignStragglers, makeTeams, membersOf, teamOf, teamsEnabled } from "./teams";
+import { TEAM_COLORS, assignStragglers, makeTeams, membersOf, rosterOf, teamOf, teamsEnabled } from "./teams";
 import { MAX_TEAM_COUNT, MIN_TEAM_COUNT, snapTeamCount, defaultSettings } from "./gamemodes";
 import { createRoom } from "./state";
 import type { Player, Room } from "./state";
@@ -160,5 +160,29 @@ describe("assignStragglers", () => {
   test("returns the identical array when there are no teams", () => {
     const players = roster(null, null);
     expect(assignStragglers(players, [])).toBe(players);
+  });
+});
+
+describe("rosterOf", () => {
+  test("with teams off, one scorer per player", () => {
+    // withTeams(0) already gives teamCount 0 and makeTeams(0) === [].
+    const scorers = rosterOf(withTeams(0, [null, null]));
+    expect(scorers.map((s) => s.id)).toEqual(["p0", "p1"]);
+    expect(scorers[0].members).toEqual(["p0"]);
+    expect(scorers[0].colorIndex).toBeNull();
+  });
+
+  test("with teams on, one scorer per team", () => {
+    const room = withTeams(2, ["t0", "t1", "t0"]);
+    const scorers = rosterOf(room);
+    expect(scorers.map((s) => s.id)).toEqual(["t0", "t1"]);
+    expect(scorers[0].members).toEqual(["p0", "p2"]);
+    expect(scorers[0].name).toBe(TEAM_COLORS[0].name);
+    expect(scorers[0].colorIndex).toBe(0);
+  });
+
+  test("empty teams are excluded — this is the one place that rule lives", () => {
+    const room = withTeams(4, ["t0", "t0"]);
+    expect(rosterOf(room).map((s) => s.id)).toEqual(["t0"]);
   });
 });

@@ -6,7 +6,7 @@ import { CATEGORIES } from "./categories";
 import { isGameModeId, modeSpec, normalizeSetting } from "./gamemodes";
 import type { NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
-import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, makeTeams, teamsEnabled } from "./teams";
+import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, makeTeams, rosterOf, teamsEnabled } from "./teams";
 import type { TeamId } from "./teams";
 
 export const COUNTDOWN_MS = 5_000;
@@ -610,7 +610,7 @@ function tick(room: Room, now: number, roll: number): Room {
       ...room,
       phase: {
         name: "scoring",
-        results: scoreRound({ players: room.players, entries: room.entries }),
+        results: scoreRound({ scorers: rosterOf(room), entries: room.entries }),
       },
     };
   }

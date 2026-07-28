@@ -212,8 +212,8 @@ describe("round progression", () => {
     room = reduce(room, { t: "tick", now: upEnd, roll: 0 });
 
     expect(room.phase.name).toBe("scoring");
-    const results = (room.phase as { results: { players: { id: string; total: number; unique: number }[] } }).results;
-    const p0 = results.players.find((p) => p.id === "p0")!;
+    const results = (room.phase as { results: { scorers: { id: string; total: number; unique: number }[] } }).results;
+    const p0 = results.scorers.find((p) => p.id === "p0")!;
     expect(p0.total).toBe(2);
     expect(p0.unique).toBe(1);
   });

@@ -7,7 +7,9 @@ type Props = { room: RoomState; results: Results; playerId: PlayerId };
 
 /** Your own results, on your own phone — the same two cards as one host column. */
 export function PlayerScoring({ room, results, playerId }: Props) {
-  const me = results.players.find((p) => p.id === playerId);
+  const me = results.scorers.find((s) => s.id === playerId);
+  const labelFor = (id: string) =>
+    results.scorers.find((s) => s.id === id)?.emoji || "?";
   if (!me) {
     return (
       <main className="screen screen--centered">
@@ -44,7 +46,7 @@ export function PlayerScoring({ room, results, playerId }: Props) {
       </div>
 
       <div className="card list-card">
-        <WordList entries={me.entries} size={19} />
+        <WordList entries={me.entries} size={19} labelFor={labelFor} />
       </div>
 
       <p className="player-scoring__footer">

@@ -19,9 +19,11 @@ function columnsFor(n: number): number {
 type Props = { room: RoomState; results: Results };
 
 export function HostScoring({ room, results }: Props) {
-  const ranked = [...results.players].sort(
+  const ranked = [...results.scorers].sort(
     (a, b) => b.unique - a.unique || b.total - a.total,
   );
+  const labelFor = (id: string) =>
+    results.scorers.find((s) => s.id === id)?.emoji || "?";
 
   return (
     <main className="screen screen--host host-scoring">
@@ -60,7 +62,12 @@ export function HostScoring({ room, results }: Props) {
             {/* The list scrolls inside its card; the grid around it never
                 grows, so the Standings button stays on screen. */}
             <div className="card list-card">
-              <WordList entries={p.entries} size={16} empty="Nothing written." />
+              <WordList
+                entries={p.entries}
+                size={16}
+                empty="Nothing written."
+                labelFor={labelFor}
+              />
             </div>
           </section>
         ))}
