@@ -3,6 +3,7 @@ import { createRoom, currentRound, matchComplete, preRoundPhase } from "./state"
 import type { Room } from "./state";
 import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, TIMESUP_MS, VOTING_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
 import { voteBudget } from "./voting";
+import { MAX_TEAM_NAME_LEN, TEAM_COLORS } from "./teams";
 
 /** A room with `n` joined players, none ready, plus a host. */
 function seed(n: number, now = 1000): Room {
@@ -1104,6 +1105,125 @@ describe("the teams phase", () => {
     room = reduce(room, { t: "startGame", playerId: "host", now: 2100 });
     expect(room.phase.name).toBe("countdown");
     const next = reduce(room, { t: "cancelStart", playerId: "host", now: 2200 });
+    expect(next).toBe(room);
+  });
+});
+
+/** A room sitting in team select with `n` players and `teamCount` teams. */
+function inTeams(n: number, teamCount = 2, now = 2000): Room {
+  return readyAll(seedTeams(n, teamCount), now);
+}
+
+describe("joinTeam and leaveTeam", () => {
+  test("joining a team readies you", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    const me = room.players.find((p) => p.id === "p0")!;
+    expect(me.teamId).toBe("t0");
+    expect(me.ready).toBe(true);
+    expect(room.phase.name).toBe("teams");
+  });
+
+  test("everyone on a team opens the countdown to voting", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 2200 + COUNTDOWN_MS, to: "voting",
+    });
+  });
+
+  test("leaving during the countdown drops back to team select", () => {
+    // Leaving *is* the unready — there is no second button.
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
+    room = reduce(room, { t: "leaveTeam", playerId: "p1", now: 2300 });
+    expect(room.phase).toEqual({ name: "teams" });
+    const p1 = room.players.find((p) => p.id === "p1")!;
+    expect(p1.teamId).toBeNull();
+    expect(p1.ready).toBe(false);
+  });
+
+  test("switching teams during the countdown does not cancel it", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t0", now: 2300 });
+    expect(room.phase.name).toBe("countdown");
+    expect(room.players.find((p) => p.id === "p1")!.teamId).toBe("t0");
+  });
+
+  test("an unknown team id is a no-op", () => {
+    const room = inTeams(2);
+    expect(reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t9", now: 2100 })).toBe(room);
+  });
+
+  test("re-joining the team you are already on is a no-op", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    expect(reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2200 })).toBe(room);
+  });
+
+  test("leaving when you are on no team is a no-op", () => {
+    const room = inTeams(2);
+    expect(reduce(room, { t: "leaveTeam", playerId: "p0", now: 2100 })).toBe(room);
+  });
+
+  test("neither is legal outside team select", () => {
+    const room = seed(2);
+    expect(reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 })).toBe(room);
+  });
+});
+
+describe("setTeamName", () => {
+  test("a member can rename their team without recolouring it", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, {
+      t: "setTeamName", playerId: "p0", teamId: "t0", name: "  The Sharks  ", now: 2200,
+    });
+    const t0 = room.teams.find((t) => t.id === "t0")!;
+    expect(t0.name).toBe("The Sharks");
+    expect(t0.colorIndex).toBe(0);
+  });
+
+  test("a non-member cannot rename it", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    const next = reduce(room, {
+      t: "setTeamName", playerId: "p1", teamId: "t0", name: "Hijacked", now: 2200,
+    });
+    expect(next).toBe(room);
+  });
+
+  test("an empty name falls back to the colour", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, {
+      t: "setTeamName", playerId: "p0", teamId: "t0", name: "Zed", now: 2200,
+    });
+    room = reduce(room, {
+      t: "setTeamName", playerId: "p0", teamId: "t0", name: "   ", now: 2300,
+    });
+    expect(room.teams.find((t) => t.id === "t0")!.name).toBe(TEAM_COLORS[0].name);
+  });
+
+  test("a long name is cut to the cap", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, {
+      t: "setTeamName", playerId: "p0", teamId: "t0", name: "x".repeat(80), now: 2200,
+    });
+    expect(room.teams.find((t) => t.id === "t0")!.name).toHaveLength(MAX_TEAM_NAME_LEN);
+  });
+
+  test("renaming to the same name is a no-op", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    const next = reduce(room, {
+      t: "setTeamName", playerId: "p0", teamId: "t0", name: TEAM_COLORS[0].name, now: 2200,
+    });
     expect(next).toBe(room);
   });
 });

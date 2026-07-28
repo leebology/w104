@@ -1,6 +1,7 @@
 import type { Entry, PlayerId, RoomState } from "./state";
 import type { RejectReason } from "./reduce";
 import type { NumericSettingKey } from "./gamemodes";
+import type { TeamId } from "./teams";
 
 export type ClientMessage =
   | { type: "setProfile"; name: string; emoji: string }
@@ -16,6 +17,9 @@ export type ClientMessage =
   | { type: "backToLobby" }
   | { type: "castVote"; category: string }
   | { type: "resetVotes" }
+  | { type: "joinTeam"; teamId: TeamId }
+  | { type: "leaveTeam" }
+  | { type: "setTeamName"; teamId: TeamId; name: string }
   | { type: "endGame" };
 
 export type ServerMessage =

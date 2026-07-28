@@ -6,7 +6,8 @@ import { CATEGORIES } from "./categories";
 import { isGameModeId, modeSpec, normalizeSetting } from "./gamemodes";
 import type { NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
-import { makeTeams, teamsEnabled } from "./teams";
+import { MAX_TEAM_NAME_LEN, TEAM_COLORS, makeTeams, teamsEnabled } from "./teams";
+import type { TeamId } from "./teams";
 
 export const COUNTDOWN_MS = 5_000;
 /** One voting window per match, whatever the round count. */
@@ -60,6 +61,9 @@ export type RoomEvent =
   | { t: "backToLobby"; playerId: PlayerId; now: number }
   | { t: "castVote"; playerId: PlayerId; category: string; now: number }
   | { t: "resetVotes"; playerId: PlayerId; now: number }
+  | { t: "joinTeam"; playerId: PlayerId; teamId: TeamId; now: number }
+  | { t: "leaveTeam"; playerId: PlayerId; now: number }
+  | { t: "setTeamName"; playerId: PlayerId; teamId: TeamId; name: string; now: number }
   /**
    * `roll` is a uniform [0,1) supplied by the caller. Randomness is injected
    * at the edge so `reduce` stays a pure function and the draw is testable
@@ -214,6 +218,21 @@ function backPhase(room: Room): Room["phase"] {
     return { name: "teams" };
   }
   return preRoundPhase(room) === "lobby" ? { name: "lobby" } : { name: "standings" };
+}
+
+/**
+ * Where the three team actions are legal: team select itself, and the
+ * countdown out of it. The countdown case is what lets a player cancel the
+ * start by leaving their team — allowing a *switch* in the same window costs
+ * nothing extra.
+ */
+function inTeamSelect(room: Room): boolean {
+  if (room.phase.name === "teams") return true;
+  return (
+    room.phase.name === "countdown" &&
+    room.phase.to === "voting" &&
+    teamsEnabled(room.settings)
+  );
 }
 
 export function reduce(room: Room, ev: RoomEvent): Room {
@@ -442,6 +461,54 @@ function apply(room: Room, ev: RoomEvent): Room {
         ...room,
         votes,
         players: mapPlayer(room.players, ev.playerId, (p) => ({ ...p, ready: false })),
+      };
+    }
+
+    case "joinTeam": {
+      if (!inTeamSelect(room)) return room;
+      if (!room.teams.some((t) => t.id === ev.teamId)) return room;
+      const me = room.players.find((p) => p.id === ev.playerId);
+      if (!me || me.teamId === ev.teamId) return room;
+      // `ready` is derived from membership and set only here and in
+      // leaveTeam — the `ready` event is rejected in this phase, exactly as
+      // castVote and resetVotes own the flag during voting.
+      return {
+        ...room,
+        players: mapPlayer(room.players, ev.playerId, (p) => ({
+          ...p, teamId: ev.teamId, ready: true,
+        })),
+      };
+    }
+
+    case "leaveTeam": {
+      if (!inTeamSelect(room)) return room;
+      const me = room.players.find((p) => p.id === ev.playerId);
+      if (!me || me.teamId === null) return room;
+      // Clearing `ready` is what makes `settle` tear the countdown back down.
+      // Leaving is the unready; there is no separate button for it.
+      return {
+        ...room,
+        players: mapPlayer(room.players, ev.playerId, (p) => ({
+          ...p, teamId: null, ready: false,
+        })),
+      };
+    }
+
+    case "setTeamName": {
+      if (!inTeamSelect(room)) return room;
+      const team = room.teams.find((t) => t.id === ev.teamId);
+      if (!team) return room;
+      // Members only. Last write wins — a rename race between two teammates
+      // is not worth a lock in a party game.
+      const me = room.players.find((p) => p.id === ev.playerId);
+      if (!me || me.teamId !== ev.teamId) return room;
+      const trimmed = ev.name.trim().slice(0, MAX_TEAM_NAME_LEN);
+      const name = trimmed === "" ? TEAM_COLORS[team.colorIndex].name : trimmed;
+      if (name === team.name) return room;
+      // `colorIndex` is deliberately untouched: renaming must never recolour.
+      return {
+        ...room,
+        teams: room.teams.map((t) => (t.id === ev.teamId ? { ...t, name } : t)),
       };
     }
 
