@@ -1,6 +1,7 @@
 import { formatClock, useRemaining } from "../../net/clock";
 import { CATEGORIES } from "../../../shared/categories";
 import { tallyVotes, voteBudget, voteShares } from "../../../shared/voting";
+import { teamsEnabled } from "../../../shared/teams";
 import { currentRound } from "../../../shared/state";
 import type { Player, RoomState } from "../../../shared/state";
 import { VOTING_MS } from "../../../shared/reduce";
@@ -145,12 +146,15 @@ export function HostVoting({ room, offset, countdown }: Props) {
             style={{ width: `${Math.min(100, (remaining / (VOTING_MS / 1000)) * 100)}%` }}
           />
         </span>
+        {/* One event, two destinations. With teams on, Back steps to team
+            select rather than all the way to the room — the server derives
+            that; this only has to name it correctly. */}
         <button
           type="button"
           className="btn btn--ghost btn--small"
           onClick={() => roomStore.send({ type: "backToLobby" })}
         >
-          Back to room
+          {teamsEnabled(room.settings) ? "Back to teams" : "Back to room"}
         </button>
         <button
           type="button"

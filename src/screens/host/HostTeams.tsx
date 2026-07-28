@@ -17,7 +17,8 @@ type Props = {
  * The room's view of team selection. No Stop button during the countdown:
  * cancelling would clear everyone's readiness while they are all still on a
  * team, which nothing could then undo. Leaving a team is the cancel, and it
- * happens on the phones.
+ * happens on the phones. "Back to room" is a different thing entirely and is
+ * offered throughout — it abandons team select rather than pausing it.
  */
 export function HostTeams({ room, countdown }: Props) {
   const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
@@ -75,19 +76,31 @@ export function HostTeams({ room, countdown }: Props) {
         {countdown ? (
           <p className="get-ready">Get ready… {remaining}</p>
         ) : (
-          <>
-            <p className="host-teams__hint">
-              Anyone still picking gets dropped into the emptiest team.
-            </p>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => roomStore.send({ type: "startGame" })}
-            >
-              Continue
-            </button>
-          </>
+          <p className="host-teams__hint">
+            Anyone still picking gets dropped into the emptiest team.
+          </p>
         )}
+        {!countdown && (
+          <button
+            type="button"
+            className="btn"
+            onClick={() => roomStore.send({ type: "startGame" })}
+          >
+            Continue
+          </button>
+        )}
+        {/* Deliberately outside the countdown fork: the way out of team select
+            stays available the whole time, including mid-countdown. It is not
+            a Stop — stopping is `cancelStart`, which is rejected here because
+            it would clear a readiness nothing could restore. Leaving a team is
+            the stop, and it happens on the phones. */}
+        <button
+          type="button"
+          className="btn btn--ghost btn--small"
+          onClick={() => roomStore.send({ type: "backToLobby" })}
+        >
+          Back to room
+        </button>
       </div>
     </main>
   );

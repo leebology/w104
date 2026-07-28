@@ -128,19 +128,28 @@ function clampToMode(settings: MatchSettings): MatchSettings {
 }
 
 /**
- * Opens team select: fresh teams from the current count, nobody assigned, and
- * every ready flag cleared.
+ * Opens team select: teams for the current count, nobody assigned, and every
+ * ready flag cleared.
  *
  * That clear is load-bearing, exactly as the one at the voting edge is:
  * `ready` means "waiting in the room" on the lobby side and "has a team" on
  * this side. Carried across, the next `settle` would see everyone ready and
  * close team select before a single player had picked.
+ *
+ * The existing teams are kept when the count already matches, which is the
+ * case when the host steps *back* here from voting: the names players typed
+ * are theirs and must survive the trip. Coming from the lobby there are none
+ * to keep — `backToLobby` cleared them — so that path builds fresh.
  */
 function enterTeams(room: Room): Room {
+  const teams =
+    room.teams.length === room.settings.teamCount
+      ? room.teams
+      : makeTeams(room.settings.teamCount);
   return {
     ...room,
     phase: { name: "teams" },
-    teams: makeTeams(room.settings.teamCount),
+    teams,
     players: room.players.map((p) => ({ ...p, ready: false, teamId: null })),
   };
 }
@@ -318,17 +327,31 @@ function apply(room: Room, ev: RoomEvent): Room {
       // "start the match" — and readiness is cleared, not set, because on the
       // far side of that edge `ready` means "has a team".
       if (from === "lobby" && teamsEnabled(room.settings)) return enterTeams(room);
-      // Force-readying a player who has no team is briefly a lie; the tick
-      // that closes this countdown makes it true by auto-assigning them. It
-      // is still the right flag: if they then leave a team, `leaveTeam`
-      // clears it and `settle` tears the countdown down, which is correct.
+      // Continue out of team select assigns the stragglers *now* rather than
+      // leaving them teamless behind a force-ready that is not true yet.
+      // `ready` in this phase means "on a team", and the countdown it opens is
+      // still fully cancellable: anyone — including someone just placed here —
+      // can leave their team, which clears the flag and has `settle` drop the
+      // room back into team select. Assigning here is what gives an auto-placed
+      // player something to leave.
+      if (from === "teams") {
+        return {
+          ...room,
+          players: assignStragglers(room.players, room.teams).map((p) => ({
+            ...p, ready: true,
+          })),
+          phase: { name: "countdown", endsAt: ev.now + COUNTDOWN_MS, to: "voting" },
+        };
+      }
       return {
         ...room,
         players: room.players.map((p) => ({ ...p, ready: true })),
         phase: {
           name: "countdown",
           endsAt: ev.now + COUNTDOWN_MS,
-          to: from === "lobby" || from === "teams" ? "voting" : "playing",
+          // Only `lobby` (with teams off — the teams-on lobby returned above)
+          // heads for voting; `voting` and `standings` head for a round.
+          to: from === "lobby" ? "voting" : "playing",
         },
       };
     }
@@ -535,14 +558,26 @@ function apply(room: Room, ev: RoomEvent): Room {
       };
     }
 
-    case "backToLobby":
+    case "backToLobby": {
       if (ev.playerId !== room.hostId) return room;
+      // `inTeamSelect` rather than a bare `=== "teams"`: the host's Back button
+      // stays on screen through the countdown out of team select, so it has to
+      // work there too.
       if (
         room.phase.name !== "standings" &&
         room.phase.name !== "voting" &&
-        room.phase.name !== "teams"
+        !inTeamSelect(room)
       ) {
         return room;
+      }
+      // With teams on, Back out of voting is one step, not all the way home:
+      // the room returns to team selection. The teams themselves survive —
+      // `enterTeams` keeps them when the count still matches — but nobody is
+      // on one, which is also what stops `settle` closing team select again
+      // the instant it opens. The votes go: they belonged to the voting round
+      // being abandoned, and a stale tally must not sit under the team screen.
+      if (room.phase.name === "voting" && teamsEnabled(room.settings)) {
+        return { ...enterTeams(room), votes: {} };
       }
       // Settings survive — the host usually wants the same match again — and
       // so does `kicked`, which is durable for the room's lifetime. The votes
@@ -557,6 +592,7 @@ function apply(room: Room, ev: RoomEvent): Room {
         votes: {},
         teams: [],
       };
+    }
 
     case "tick":
       return tick(room, ev.now, ev.roll);
@@ -577,10 +613,11 @@ function tick(room: Room, now: number, roll: number): Room {
         // Load-bearing, not housekeeping: `ready` means "has a team" on this
         // side of the edge and "votes spent" on the other.
         //
-        // Auto-assignment happens *here*, at the whistle, and not when the
-        // countdown opened: doing it there would make everyone instantly
-        // ready, so `settle` could never tear the countdown down and a player
-        // could never leave a team to cancel it.
+        // The backstop for auto-assignment. The host's Continue already places
+        // every straggler, and leaving a team tears the countdown down rather
+        // than reaching this tick — but readiness counts only *connected*
+        // players, so someone whose phone died in team select can still arrive
+        // here without a team.
         players: assignStragglers(room.players, room.teams).map((p) => ({
           ...p, ready: false,
         })),

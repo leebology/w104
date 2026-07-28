@@ -192,14 +192,25 @@ is enforced at the connect gate, before `join` can seat anyone.
   `leaveTeam` own the flag and the `ready` event is rejected there — the same
   arrangement `castVote`/`resetVotes` have during voting. This is why there is
   no unready button: leaving a team *is* the unready.
-- **Straggler auto-assignment happens at the tick that opens `voting`,** never
-  when the countdown opens. Assigning early would make everyone instantly
-  ready, so `settle` could never tear the countdown down and no player could
-  leave a team to cancel it.
+- **Stragglers are auto-assigned at the host's Continue, and again at the tick
+  that opens `voting`.** Assigning at Continue is what keeps `ready` honest —
+  it means "on a team", and a force-ready over a teamless player is a flag with
+  nothing behind it and nothing for them to leave. The countdown stays fully
+  cancellable either way: anyone, including someone just placed, can leave and
+  have `settle` drop the room back into team select. The tick is the backstop
+  for the one case Continue cannot see — readiness counts only *connected*
+  players, so a phone that died in team select arrives at the whistle teamless.
 - **`cancelStart` is rejected on the teams countdown.** It clears readiness so
   `settle` cannot re-open the countdown, which would wedge a room landing back
   in `teams` with everyone still on a team and no way to become ready again.
-  `HostTeams` therefore renders no Stop button.
+  `HostTeams` therefore renders no Stop button. It does render **Back to room
+  throughout**, countdown included — abandoning team select is a different
+  thing from pausing it, so `backToLobby` is legal wherever `inTeamSelect` is.
+- **With teams on, `backToLobby` out of `voting` steps back to `teams`,** not
+  to the lobby — one step, not all the way home. `enterTeams` keeps the
+  existing teams when the count still matches, so the names players typed
+  survive the trip; membership does not, which is also what stops `settle`
+  closing team select again the instant it opens.
 - **A rename never recolours.** `Team.colorIndex` is written once at creation;
   the colour is what the room navigates by.
 - **The shared list reaches teammates by `sendTo`, never `broadcast`.** On an
