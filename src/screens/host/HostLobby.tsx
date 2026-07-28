@@ -5,7 +5,8 @@ import { Wordmark } from "../../components/Wordmark";
 import { roomStore } from "../../net/room";
 import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
-import { HostHeader, PlayerCount } from "./HostHeader";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { HostExit, HostHeader, HostHeaderRight, PlayerCount } from "./HostHeader";
 import { GameModesDrawer } from "./GameModesDrawer";
 import { GameSettingsDrawer } from "./GameSettingsDrawer";
 
@@ -23,6 +24,7 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
   const host = typeof location === "undefined" ? "" : location.host.toUpperCase();
   const waiting = room.players.length === 0;
   const [drawer, setDrawer] = useState<OpenDrawer>(null);
+  const [closing, setClosing] = useState(false);
 
   // Only the null <-> open transitions cross the wire: switching straight from
   // one drawer to the other must not flap the server flag, which would drop and
@@ -46,10 +48,6 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
 
   return (
     <main className="screen screen--host">
-      <button type="button" className="back-pill" onClick={onLeave}>
-        Back
-      </button>
-
       {/* The room chip other host screens carry would only repeat the code
           that is already the hero here, so the lobby leads with the wordmark
           instead — the join instruction below is louder than any chip. */}
@@ -57,7 +55,19 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
         left={<Wordmark small />}
         round={currentRound(room)}
         of={room.settings.roundCount}
-        right={<PlayerCount n={room.players.length} />}
+        right={
+          <HostHeaderRight>
+            <PlayerCount n={room.players.length} />
+            {/* Closing kicks everyone in the room, so it asks first — this is
+                the one host control whose damage cannot be undone by pressing
+                it again. */}
+            <HostExit
+              label="Close room"
+              active={closing}
+              onClick={() => setClosing(true)}
+            />
+          </HostHeaderRight>
+        }
       />
 
       <div className="host-lobby__stage">
@@ -132,6 +142,17 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
         onClose={closeDrawer}
         disabled={Boolean(countdown)}
       />
+
+      {closing && (
+        <ConfirmDialog
+          title="Close this room?"
+          body="Are you sure you want to close this room? All players will be kicked."
+          cancelLabel="No, keep playing"
+          confirmLabel="Yes, close it"
+          onCancel={() => setClosing(false)}
+          onConfirm={onLeave}
+        />
+      )}
     </main>
   );
 }

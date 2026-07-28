@@ -213,6 +213,15 @@ is enforced at the connect gate, before `join` can seat anyone.
   closing team select again the instant it opens.
 - **A rename never recolours.** `Team.colorIndex` is written once at creation;
   the colour is what the room navigates by.
+- **Team panels are fixed-width and wrap; they never rescale.** `.team-grid`
+  is `repeat(var(--cols), 182px)`, not `1fr` tracks. Adding a team adds a
+  panel — players are aiming at a colour on a TV, and a target that moves when
+  somebody else joins is the one thing this screen cannot do.
+- **On a surface players aim at, the accent is an inner strip, never a
+  border.** `.team-panel`'s name tab, `.team-tile__strip`,
+  `.player-teams__strip` — the card's ink outline stays continuous on all four
+  sides. `.id-card`/`.standing-card` keep `--accent` borders on purpose: those
+  are read, not aimed at.
 - **The shared list reaches teammates by `sendTo`, never `broadcast`.** On an
   accepted entry the server pushes `yourEntries` to that team's connected
   members only — the "no per-player entry counts in broadcasts" boundary is
@@ -225,6 +234,15 @@ is enforced at the connect gate, before `join` can seat anyone.
 `useSyncExternalStore`; screens read `useRoom()` and call `roomStore.send(...)`.
 Entries render optimistically and reconcile on `entryAck` (a 30s round cannot
 wait on a round trip); `seq` is present only while an entry is unacked.
+
+**Every host screen's back-out lives top-right, as `HostExit`** — a cream
+outline on the field, deliberately not a `.btn`. Gold with a hard shadow means
+"go forward" in this app, so the footer carries exactly one forward action and
+the button that abandons the phase is never beside it. Closing the room is the
+one host action that asks first (`ConfirmDialog`), because `endGame` kicks
+everyone and cannot be undone by pressing it again. The round marker is
+**omitted** on team select and voting: both only happen at `history.length ===
+0`, so `HostHeader`'s `round` is optional.
 
 Screens are a pure `switch` on `room.phase.name` in `HostView`/`PlayerView`.
 Both have an explicit `ReactElement` return type — **that annotation is what
@@ -255,6 +273,13 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
 - `docs/superpowers/specs/2026-07-27-gamemode-drawers-design.md` — the gamemode
   and settings drawers: the catalog, descriptor-driven validation, and the
   countdown hold.
+- `docs/superpowers/specs/2026-07-26-ok-name-one-ui-design.md` — the design
+  system as first absorbed: tokens, shape constants, the never-scroll rule.
+- `docs/superpowers/specs/2026-07-28-marquee-2a-design.md` — the second design
+  handoff, covering the lobby, team select and category voting: the gold-band
+  rule, top-right back-outs, the close-room confirmation, inset drawers, and
+  the revised team accents. Read with `docs/design/2026-07-27-v1-screens-handoff.md`,
+  which is the brief it answers.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.
