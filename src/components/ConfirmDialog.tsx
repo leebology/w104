@@ -16,9 +16,8 @@ type Props = {
  * in the app and appears inside a cream card nowhere but here, so a dialog
  * wearing it reads as a different kind of question before a word is read.
  *
- * Escape cancels; there is no click-away. Closing the room kicks everyone in
- * it, and a stray tap on the scrim is not consent to that — the two buttons
- * are the only exits, and Cancel is the one nearer the reading edge.
+ * Escape and a tap on the scrim both cancel — either way it is the safe exit,
+ * never the confirm.
  */
 export function ConfirmDialog({
   title, body, confirmLabel, cancelLabel, onConfirm, onCancel,
@@ -33,7 +32,7 @@ export function ConfirmDialog({
 
   return (
     <div className="confirm">
-      <div className="confirm__scrim" />
+      <div className="confirm__scrim" onClick={onCancel} />
       <div className="confirm__box" role="alertdialog" aria-label={title}>
         <div className="confirm__cap" />
         <div className="confirm__copy">
@@ -41,7 +40,11 @@ export function ConfirmDialog({
           <p className="confirm__body">{body}</p>
         </div>
         <div className="confirm__actions">
-          <button type="button" className="btn btn--secondary" onClick={onCancel}>
+          <button
+            type="button"
+            className="btn btn--secondary confirm__cancel"
+            onClick={onCancel}
+          >
             {cancelLabel}
           </button>
           <button type="button" className="btn" onClick={onConfirm}>

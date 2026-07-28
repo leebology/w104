@@ -2,11 +2,11 @@ import type { CSSProperties } from "react";
 import type { Player } from "../../shared/state";
 
 /**
- * A stable pulse interval per player, 0.9s–1.6s, so the dots on the host
- * screen breathe out of step with each other. Derived from the id rather than
- * randomised, or every re-render would resynchronise them.
+ * A stable animation interval per player, 0.9s–1.6s, so the dots and bobbing
+ * avatars on the host screen move out of step with each other. Derived from
+ * the id rather than randomised, or every re-render would resynchronise them.
  */
-function pulseInterval(id: string): string {
+export function pulseInterval(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
   return `${(0.9 + (hash % 8) * 0.1).toFixed(2)}s`;
@@ -29,9 +29,15 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
     classes.push(player.ready ? "player-pill--ready" : "player-pill--waiting");
   }
   if (!player.connected) classes.push("player-pill--offline");
+  const bobbing = variant === "lobby" && !player.ready;
   return (
     <li className={classes.join(" ")}>
-      <span className="player-pill__avatar">{player.emoji}</span>
+      <span
+        className={bobbing ? "player-pill__avatar player-pill__avatar--bob" : "player-pill__avatar"}
+        style={bobbing ? ({ "--bob": pulseInterval(player.id) } as CSSProperties) : undefined}
+      >
+        {player.emoji}
+      </span>
       <span className="player-pill__name">{player.name || "…"}</span>
       {variant === "playing" ? (
         // Purely decorative. It says somebody is writing, never how much —
@@ -43,9 +49,7 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
           aria-hidden="true"
         />
       ) : (
-        <span className="player-pill__mark">
-          {player.ready ? "✓ READY" : "··· WAITING"}
-        </span>
+        player.ready && <span className="player-pill__mark">✓ READY</span>
       )}
       {onKick && (
         <button

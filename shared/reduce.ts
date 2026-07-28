@@ -560,23 +560,34 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "backToLobby": {
       if (ev.playerId !== room.hostId) return room;
+      // The round-1 countdown out of voting renders the same `HostVoting`
+      // closed reveal with its exit button still on screen (`countdownScreen`
+      // gives it the "voting" screen), so the button has to work there too —
+      // round 2+'s post-standings countdown does not qualify, since that one
+      // renders `HostStandings` with no exit button at all.
+      const postVotingCountdown =
+        room.phase.name === "countdown" &&
+        room.phase.to === "playing" &&
+        room.history.length === 0;
       // `inTeamSelect` rather than a bare `=== "teams"`: the host's Back button
       // stays on screen through the countdown out of team select, so it has to
       // work there too.
       if (
         room.phase.name !== "standings" &&
         room.phase.name !== "voting" &&
+        !postVotingCountdown &&
         !inTeamSelect(room)
       ) {
         return room;
       }
-      // With teams on, Back out of voting is one step, not all the way home:
-      // the room returns to team selection. The teams themselves survive —
-      // `enterTeams` keeps them when the count still matches — but nobody is
-      // on one, which is also what stops `settle` closing team select again
-      // the instant it opens. The votes go: they belonged to the voting round
-      // being abandoned, and a stale tally must not sit under the team screen.
-      if (room.phase.name === "voting" && teamsEnabled(room.settings)) {
+      // With teams on, Back out of voting (or the countdown right after it)
+      // is one step, not all the way home: the room returns to team
+      // selection. The teams themselves survive — `enterTeams` keeps them
+      // when the count still matches — but nobody is on one, which is also
+      // what stops `settle` closing team select again the instant it opens.
+      // The votes go: they belonged to the voting round being abandoned, and
+      // a stale tally must not sit under the team screen.
+      if ((room.phase.name === "voting" || postVotingCountdown) && teamsEnabled(room.settings)) {
         return { ...enterTeams(room), votes: {} };
       }
       // Settings survive — the host usually wants the same match again — and

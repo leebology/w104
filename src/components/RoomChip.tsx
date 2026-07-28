@@ -10,7 +10,7 @@ export function RoomChip({ code }: { code: string }) {
   return (
     <div className="pill room-chip">
       <span className="room-chip__label">
-        {host ? `JOIN AT ${host.toUpperCase()} · ROOM` : "ROOM"}
+        {host ? `JOIN AT ${host.toUpperCase()} · CODE:` : "CODE:"}
       </span>
       <span className="room-chip__code">{code}</span>
     </div>

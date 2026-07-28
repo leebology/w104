@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SettingKind } from "../../shared/gamemodes";
 import { MIN_TEAM_COUNT, snapTeamCount } from "../../shared/gamemodes";
 
@@ -26,10 +26,22 @@ export function Stepper({
   // state — committing on every keystroke would fight the server echo, and
   // "3" on the way to "30" would be clamped to a different number entirely.
   const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
+  const [editing, setEditing] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!editing) setDraft(String(value));
+  }, [value, editing]);
+
+  // The display button and the edit input trade places rather than
+  // coexisting, so entering edit mode has to hand focus to the input itself —
+  // a click lands on the button underneath it.
+  useEffect(() => {
+    if (editing) inputRef.current?.select();
+  }, [editing]);
 
   const commit = () => {
     const parsed = Number.parseInt(draft, 10);
+    setEditing(false);
     if (Number.isNaN(parsed)) {
       setDraft(String(value));
       return;
@@ -46,6 +58,16 @@ export function Stepper({
     if (next !== value) onChange(next);
   };
 
+  // Formatted ("30s", "1:00", "OFF") while settled — the label above already
+  // says what's being adjusted, so a bare "TEAMS" subtext under it would just
+  // repeat that. Raw digits while the field is focused, or typing "1" on the
+  // way to "10" would render as "OFF" mid-keystroke.
+  const formatted = format?.(value);
+  // A bare "30s" reads as "thirty S", not seconds — shrinking the trailing
+  // unit is what tells the eye it's a suffix, not another digit. Only a plain
+  // "<digits>s" qualifies, so "10 teams" and "1:00" pass through untouched.
+  const unitMatch = !editing && formatted ? /^(\d+)(s)$/.exec(formatted) : null;
+
   return (
     <div className={disabled ? "stepper stepper--disabled" : "stepper"}>
       <span className="stepper__label">{label}</span>
@@ -59,22 +81,45 @@ export function Stepper({
         >
           −
         </button>
-        <input
-          className="stepper__value"
-          inputMode="numeric"
-          value={draft}
-          disabled={disabled}
-          aria-label={label}
-          onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter") return;
-            e.preventDefault();
-            commit();
-            e.currentTarget.blur();
-          }}
-          size={4}
-        />
+        {editing ? (
+          <input
+            ref={inputRef}
+            className="stepper__value"
+            inputMode="numeric"
+            value={draft}
+            disabled={disabled}
+            aria-label={label}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key !== "Enter") return;
+              e.preventDefault();
+              commit();
+              e.currentTarget.blur();
+            }}
+            size={8}
+          />
+        ) : (
+          <button
+            type="button"
+            className="stepper__value stepper__value--display"
+            disabled={disabled}
+            aria-label={label}
+            onClick={() => {
+              setDraft(String(value));
+              setEditing(true);
+            }}
+          >
+            {unitMatch ? (
+              <>
+                {unitMatch[1]}
+                <span className="stepper__unit">{unitMatch[2]}</span>
+              </>
+            ) : (
+              formatted ?? value
+            )}
+          </button>
+        )}
         <button
           type="button"
           className="stepper__btn"
@@ -85,7 +130,6 @@ export function Stepper({
           +
         </button>
       </div>
-      {format && <span className="stepper__hint">{format(value)}</span>}
     </div>
   );
 }

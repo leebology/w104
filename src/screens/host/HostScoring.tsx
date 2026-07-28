@@ -1,11 +1,11 @@
 import type { CSSProperties } from "react";
 import { RoomChip } from "../../components/RoomChip";
+import { TeamBadge } from "../../components/TeamBadge";
 import { WordList } from "../../components/WordList";
 import { roomStore } from "../../net/room";
 import type { Results } from "../../../shared/scoring";
 import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
-import { TEAM_COLORS } from "../../../shared/teams";
 import { HostHeader } from "./HostHeader";
 
 /**
@@ -35,11 +35,14 @@ export function HostScoring({ room, results }: Props) {
 
   return (
     <main className="screen screen--host host-scoring">
+      {/* The chip leads, as it does on every other host screen — the join
+          instruction is the one thing on a TV that has to be in the same
+          corner every time, so the screen's own title takes the far end. */}
       <HostHeader
-        left={<h1 className="host-scoring__title">Results · {room.category}</h1>}
+        left={<RoomChip code={room.code} />}
         round={currentRound(room)}
         of={room.settings.roundCount}
-        right={<RoomChip code={room.code} />}
+        right={<h1 className="host-scoring__title">Results · {room.category}</h1>}
       />
 
       <div
@@ -48,22 +51,21 @@ export function HostScoring({ room, results }: Props) {
       >
         {ranked.map((s, i) => (
           <section className="result-col" key={s.id}>
-            <div
-              className="card id-card"
-              style={
-                s.colorIndex !== null
-                  ? ({ "--accent": `var(${TEAM_COLORS[s.colorIndex].token})` } as CSSProperties)
-                  : undefined
-              }
-            >
+            <div className={`card id-card${s.colorIndex !== null ? " id-card--team" : ""}`}>
+              {/* A team is named by its tab, exactly as it was in team select
+                  and on the phones — so the row below drops the swatch and the
+                  name it would otherwise repeat. */}
+              {s.colorIndex !== null && (
+                <TeamBadge
+                  name={s.name}
+                  colorIndex={s.colorIndex}
+                  className="team-badge--sm"
+                />
+              )}
               <div className="id-card__row">
-                {s.colorIndex === null ? (
-                  <span className="id-card__avatar">{s.emoji}</span>
-                ) : (
-                  <span className="id-card__swatch" aria-hidden="true" />
-                )}
+                {s.colorIndex === null && <span className="id-card__avatar">{s.emoji}</span>}
                 <div className="id-card__who">
-                  <span className="id-card__name">{s.name}</span>
+                  {s.colorIndex === null && <span className="id-card__name">{s.name}</span>}
                   <span className="id-card__meta">RANK {i + 1}</span>
                 </div>
                 <div className="id-card__stats">

@@ -137,11 +137,16 @@ export default function App() {
   // about everyone, and a player who gets the wrong one draws the wrong
   // conclusion about whether they can rejoin.
   const banner = endedNotice && (
-    <p className="kicked-banner">
+    <button
+      type="button"
+      className="kicked-banner"
+      onClick={() => setEndedNotice(null)}
+    >
       {endedNotice === "kicked"
         ? "The host removed you from the game."
         : "The host ended the game."}
-    </p>
+      <span className="kicked-banner__close" aria-hidden="true">✕</span>
+    </button>
   );
 
   if (!session) {

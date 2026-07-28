@@ -21,7 +21,7 @@ export function GameSettingsDrawer({ room, open, onClose, disabled }: Props) {
 
   return (
     <Drawer side="right" open={open} title="Game settings" onClose={onClose}>
-      <p className="drawer__note">{mode.name}</p>
+      <p className="drawer__note">Current game mode: {mode.name}</p>
       <div className="drawer__settings">
         {mode.settings.map((spec) => (
           <Stepper

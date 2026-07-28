@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRemaining } from "../../net/clock";
 import { roomStore } from "../../net/room";
+import { TeamBadge } from "../../components/TeamBadge";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS, membersOf, teamOf } from "../../../shared/teams";
 import type { PlayerId, RoomState } from "../../../shared/state";
 
@@ -52,18 +53,21 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
           className="player-teams__mine"
           style={{ "--accent": `var(${TEAM_COLORS[mine.colorIndex].token})` } as CSSProperties}
         >
-          {/* The colour is a strip *inside* the card rather than a top border,
-              so the ink outline stays continuous on all four sides. */}
-          <span className="player-teams__strip" />
           <span className="player-teams__joined">Joined!</span>
-          {/* The pen leads the name rather than trailing it: trailing, it
-              collides with the JOINED! badge pinned to this card's top-right
-              corner, and a long team name pushes it straight under one. */}
-          <div className="player-teams__title">
+          {/* Your team wears the same tilted name tab as it does on the TV —
+              this one is just editable, so the badge is the row itself rather
+              than a `TeamBadge`. The pen leads the name rather than trailing
+              it: trailing, it collides with the JOINED! badge pinned to this
+              card's top-right corner, and a long name pushes it under one. */}
+          <div className="team-badge player-teams__title">
             <PenGlyph />
             <input
               className="player-teams__name"
               value={draft}
+              // Sized to the name rather than to a fixed width, so the tab is
+              // as long as what is written on it — a fixed field made every
+              // team's tab the width of the longest name any team could have.
+              size={Math.max(draft.length, 3)}
               maxLength={MAX_TEAM_NAME_LEN}
               aria-label="Team name — shared with your teammates"
               onChange={(e) => setDraft(e.target.value)}
@@ -77,10 +81,6 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
               }}
             />
           </div>
-          {/* Says whose name it is. The field is shared and last write wins,
-              so a teammate's edit arriving under your thumb has to be the
-              expected thing rather than a glitch. */}
-          <p className="player-teams__shared">Your whole team can rename this</p>
           <ul className="player-teams__members">
             {membersOf(room, mine.id).map((p) => (
               <li key={p.id}>
@@ -101,16 +101,18 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
       )}
 
       <ul className="player-teams__grid">
-        {room.teams.map((team) => (
+        {room.teams.filter((team) => team.id !== mine?.id).map((team) => (
           <li key={team.id}>
             <button
               type="button"
-              className={team.id === mine?.id ? "team-tile team-tile--mine" : "team-tile"}
-              style={{ "--accent": `var(${TEAM_COLORS[team.colorIndex].token})` } as CSSProperties}
+              className="team-tile"
               onClick={() => roomStore.send({ type: "joinTeam", teamId: team.id })}
             >
-              <span className="team-tile__strip" />
-              <span className="team-tile__name">{team.name}</span>
+              <TeamBadge
+                name={team.name}
+                colorIndex={team.colorIndex}
+                className="team-badge--sm"
+              />
               <span className="team-tile__count">
                 {membersOf(room, team.id).map((p) => p.emoji).join("") || "—"}
               </span>

@@ -217,11 +217,20 @@ is enforced at the connect gate, before `join` can seat anyone.
   is `repeat(var(--cols), 182px)`, not `1fr` tracks. Adding a team adds a
   panel — players are aiming at a colour on a TV, and a target that moves when
   somebody else joins is the one thing this screen cannot do.
-- **On a surface players aim at, the accent is an inner strip, never a
-  border.** `.team-panel`'s name tab, `.team-tile__strip`,
-  `.player-teams__strip` — the card's ink outline stays continuous on all four
-  sides. `.id-card`/`.standing-card` keep `--accent` borders on purpose: those
-  are read, not aimed at.
+- **A team is named by `TeamBadge`, on every screen that shows one.** The
+  tilted name tab in the team's accent, overhanging the card's top-left corner
+  — team select on the TV and on the phones, the round, and the results. It is
+  a component (`src/components/TeamBadge.tsx`) rather than a rule per screen,
+  and it sets `--accent` itself so it is correct wherever it is dropped. A card
+  that carries one needs `position: relative`, top padding, and **no**
+  `overflow: hidden`, or the overhang is shaved off.
+- **The accent is never a border.** It rides the badge; the card's ink outline
+  stays continuous and one weight on all four sides. A `10px` accent border
+  against `3px` sides flares the corners the radius rounds, and `--accent` is
+  set inline only for a *team*, so on a solo card the whole border declaration
+  resolves invalid and that edge loses its stroke entirely. `.standing-card` is
+  the last one still on a border (`border-left`); it has both problems waiting
+  in it, and no badge yet.
 - **The shared list reaches teammates by `sendTo`, never `broadcast`.** On an
   accepted entry the server pushes `yourEntries` to that team's connected
   members only — the "no per-player entry counts in broadcasts" boundary is

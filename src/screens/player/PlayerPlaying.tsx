@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { teamsEnabled } from "../../../shared/teams";
+import { TeamBadge } from "../../components/TeamBadge";
+import { teamsEnabled, teamOf } from "../../../shared/teams";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import type { LocalEntry } from "../../net/room";
 
@@ -17,6 +18,7 @@ type Props = {
 export function PlayerPlaying({ room, playerId, entries }: Props) {
   const list = useRef<HTMLDivElement>(null);
   const shared = teamsEnabled(room.settings);
+  const team = teamOf(room, playerId);
   const emojiOf = (id: PlayerId) =>
     room.players.find((p) => p.id === id)?.emoji ?? "";
 
@@ -54,7 +56,16 @@ export function PlayerPlaying({ room, playerId, entries }: Props) {
           list. The input itself is still mounted in PlayerView — it has
           to outlive this screen to keep the keyboard up — which is why
           the two are aligned in CSS rather than nested here. */}
-      <div className="card playing__card">
+      <div className={`card playing__card${team ? " playing__card--team" : ""}`}>
+        {/* Whose list this is. The words on it are the whole team's, so the
+            card says so in the same tab the team wore in team select. */}
+        {team && (
+          <TeamBadge
+            name={team.name}
+            colorIndex={team.colorIndex}
+            className="team-badge--playing"
+          />
+        )}
         <div className="word-list playing__list" ref={list}>
           {entries.length === 0 && (
             <p className="playing__empty">Type anything. Obvious answers score nothing.</p>

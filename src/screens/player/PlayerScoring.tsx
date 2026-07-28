@@ -1,9 +1,8 @@
-import type { CSSProperties } from "react";
+import { TeamBadge } from "../../components/TeamBadge";
 import { WordList } from "../../components/WordList";
 import { currentRound } from "../../../shared/state";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import type { Results } from "../../../shared/scoring";
-import { TEAM_COLORS } from "../../../shared/teams";
 
 type Props = { room: RoomState; results: Results; playerId: PlayerId };
 
@@ -31,22 +30,19 @@ export function PlayerScoring({ room, results, playerId }: Props) {
 
   return (
     <main className="screen screen--mobile screen--locked player-scoring">
-      <div
-        className="card id-card"
-        style={
-          me.colorIndex !== null
-            ? ({ "--accent": `var(${TEAM_COLORS[me.colorIndex].token})` } as CSSProperties)
-            : undefined
-        }
-      >
+      <div className={`card id-card${me.colorIndex !== null ? " id-card--team" : ""}`}>
+        {/* Same tab the team wore in team select and during the round. */}
+        {me.colorIndex !== null && (
+          <TeamBadge
+            name={me.name}
+            colorIndex={me.colorIndex}
+            className="team-badge--sm"
+          />
+        )}
         <div className="id-card__row">
-          {me.colorIndex === null ? (
-            <span className="id-card__avatar">{me.emoji}</span>
-          ) : (
-            <span className="id-card__swatch" aria-hidden="true" />
-          )}
+          {me.colorIndex === null && <span className="id-card__avatar">{me.emoji}</span>}
           <div className="id-card__who">
-            <span className="id-card__name">{me.name}</span>
+            {me.colorIndex === null && <span className="id-card__name">{me.name}</span>}
             <span className="id-card__meta">
               ROOM {room.code} · ROUND {currentRound(room)}
             </span>
