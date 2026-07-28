@@ -44,7 +44,8 @@ const REJECTIONS: Record<RejectReason, string> = {
   "not-playing": "Round isn't running.",
   empty: "Type something first.",
   "too-long": "That's too long.",
-  duplicate: "You already wrote that.",
+  // In a team match the list is shared, so it may well have been a teammate.
+  duplicate: "That's already on the list.",
   limit: "That's enough words!",
 };
 
@@ -186,15 +187,24 @@ export class RoomStore {
         break;
       }
       case "yourEntries":
-        this.set({ entries: msg.entries });
+        // Server truth, plus anything typed since that has not been acked
+        // yet. In team play this message also arrives when a *teammate*
+        // submits, so dropping the local unacked entries here would make the
+        // word you are mid-submitting vanish and come back.
+        this.set({
+          entries: [
+            ...msg.entries,
+            ...this.state.entries.filter((e) => e.seq !== undefined),
+          ],
+        });
         break;
       case "entryAck":
         if (msg.accepted) {
-          this.set({
-            entries: this.state.entries.map((e) =>
-              e.seq === msg.seq ? { text: e.text, at: e.at, by: e.by } : e,
-            ),
-          });
+          // Drop the optimistic copy rather than stripping its `seq`: the
+          // server sends the authoritative list immediately *before* this
+          // message, so its copy of this entry is already in `entries` and
+          // keeping both would show the word twice.
+          this.set({ entries: this.state.entries.filter((e) => e.seq !== msg.seq) });
         } else {
           this.set({
             entries: this.state.entries.filter((e) => e.seq !== msg.seq),
