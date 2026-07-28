@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { SettingKind } from "../../shared/gamemodes";
+import { MIN_TEAM_COUNT, snapTeamCount } from "../../shared/gamemodes";
 
 type Props = {
   label: string;
@@ -11,13 +12,15 @@ type Props = {
   format?: (value: number) => string;
   /** Next value in the given direction. Defaults to ±1. */
   step?: (value: number, direction: 1 | -1) => number;
+  /** Normalizes a typed value before it commits. */
+  normalize?: (value: number) => number;
   onChange: (value: number) => void;
 };
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 
 export function Stepper({
-  label, value, min, max, disabled, format, step, onChange,
+  label, value, min, max, disabled, format, step, normalize, onChange,
 }: Props) {
   // Mirrors `value` while the field is not being edited. Typing needs local
   // state — committing on every keystroke would fight the server echo, and
@@ -31,7 +34,9 @@ export function Stepper({
       setDraft(String(value));
       return;
     }
-    const next = clamp(parsed, min, max);
+    const next = normalize
+      ? normalize(clamp(parsed, min, max))
+      : clamp(parsed, min, max);
     setDraft(String(next));
     if (next !== value) onChange(next);
   };
@@ -106,12 +111,35 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
+ * 0 means off and 1 is not a match, so the value below two is zero in both
+ * directions. Everything from two up steps by one.
+ */
+export function stepTeams(value: number, direction: 1 | -1): number {
+  if (direction === 1) return value < MIN_TEAM_COUNT ? MIN_TEAM_COUNT : value + 1;
+  return value <= MIN_TEAM_COUNT ? 0 : value - 1;
+}
+
+/** "0" -> "OFF", "4" -> "4 teams". */
+export function formatTeams(value: number): string {
+  return value < MIN_TEAM_COUNT ? "OFF" : `${value} teams`;
+}
+
+/**
  * Maps a setting descriptor's kind to the Stepper behaviour it needs. One
  * place, so a new kind is a change here rather than at every drawer call site.
  */
 export function stepperPropsForKind(kind: SettingKind): {
   step?: (value: number, direction: 1 | -1) => number;
   format?: (value: number) => string;
+  normalize?: (value: number) => number;
 } {
-  return kind === "duration" ? { step: stepDuration, format: formatDuration } : {};
+  if (kind === "duration") return { step: stepDuration, format: formatDuration };
+  // `normalize` matters only for the typed field: the server snaps a typed 1
+  // to 0, which is a no-op against a current value of 0, so no state push
+  // comes back to correct the input. Applying the same rule locally is what
+  // stops "1" sitting in the box forever.
+  if (kind === "teams") {
+    return { step: stepTeams, format: formatTeams, normalize: snapTeamCount };
+  }
+  return {};
 }
