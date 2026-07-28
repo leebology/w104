@@ -4,6 +4,7 @@ import { DEFAULT_MODE, defaultSettings } from "./gamemodes";
 import type { GameModeId } from "./gamemodes";
 import type { VoteMap } from "./voting";
 import type { Team, TeamId } from "./teams";
+import { teamsEnabled } from "./teams";
 
 export type PlayerId = string;
 
@@ -70,6 +71,11 @@ export type Player = {
 
 export type Phase =
   | { name: "lobby" }
+  /**
+   * Players picking teams. Untimed, like `standings` — everyone readies by
+   * joining a team, or the host forces it. Only reachable when teams are on.
+   */
+  | { name: "teams" }
   /** The room picking this match's categories. One 60-second window per match. */
   | { name: "voting"; endsAt: number }
   /**
@@ -218,7 +224,12 @@ export function preRoundPhase(view: MatchView): "lobby" | "standings" {
  */
 export function countdownScreen(
   view: MatchView & { phase: Phase },
-): "lobby" | "voting" | "standings" {
-  if (view.phase.name === "countdown" && view.phase.to === "voting") return "lobby";
+): "lobby" | "voting" | "standings" | "teams" {
+  if (view.phase.name === "countdown" && view.phase.to === "voting") {
+    // With teams on there is no lobby→voting countdown at all — the lobby
+    // hands off to `teams` first — so a `to: "voting"` countdown can only
+    // have come out of team select. Derived, so nothing extra is stored.
+    return teamsEnabled(view.settings) ? "teams" : "lobby";
+  }
   return view.history.length === 0 ? "voting" : "standings";
 }

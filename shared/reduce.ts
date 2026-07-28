@@ -6,6 +6,7 @@ import { CATEGORIES } from "./categories";
 import { isGameModeId, modeSpec, normalizeSetting } from "./gamemodes";
 import type { NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
+import { makeTeams, teamsEnabled } from "./teams";
 
 export const COUNTDOWN_MS = 5_000;
 /** One voting window per match, whatever the round count. */
@@ -123,6 +124,24 @@ function clampToMode(settings: MatchSettings): MatchSettings {
 }
 
 /**
+ * Opens team select: fresh teams from the current count, nobody assigned, and
+ * every ready flag cleared.
+ *
+ * That clear is load-bearing, exactly as the one at the voting edge is:
+ * `ready` means "waiting in the room" on the lobby side and "has a team" on
+ * this side. Carried across, the next `settle` would see everyone ready and
+ * close team select before a single player had picked.
+ */
+function enterTeams(room: Room): Room {
+  return {
+    ...room,
+    phase: { name: "teams" },
+    teams: makeTeams(room.settings.teamCount),
+    players: room.players.map((p) => ({ ...p, ready: false, teamId: null })),
+  };
+}
+
+/**
  * The pre-round <-> countdown edge is derived, not commanded: any event that
  * changes readiness re-evaluates it, so un-readying mid-countdown backs out
  * without needing its own case.
@@ -134,11 +153,22 @@ function settle(room: Room, now: number): Room {
   const phase = room.phase;
 
   if (phase.name === "lobby") {
-    // A drawer open on the host TV holds the countdown down: without this,
-    // any event at all — a join, a ready toggle — would re-derive it while
-    // the host is still mid-adjustment.
+    // A drawer open on the host TV holds this edge shut: without it, any
+    // event at all — a join, a ready toggle — would fire it while the host is
+    // still mid-adjustment.
     if (room.configuring) return room;
-    return everyoneReady(room, MIN_PLAYERS) ? openCountdown(room, now, "voting") : room;
+    if (!everyoneReady(room, MIN_PLAYERS)) return room;
+    return teamsEnabled(room.settings)
+      ? enterTeams(room)
+      : openCountdown(room, now, "voting");
+  }
+
+  if (phase.name === "teams") {
+    // `ready` here means "on a team" — joinTeam and leaveTeam own the flag,
+    // the way castVote and resetVotes own it during voting.
+    return everyoneReady(room, MIN_PLAYERS)
+      ? openCountdown(room, now, "voting")
+      : room;
   }
 
   if (phase.name === "voting") {
@@ -169,11 +199,20 @@ function settle(room: Room, now: number): Room {
 }
 
 /**
- * Written as an explicit ternary rather than `{ name: preRoundPhase(room) }`
+ * Written as explicit branches rather than `{ name: preRoundPhase(room) }`
  * because TypeScript will not assign `{ name: "lobby" | "standings" }` to the
  * `Phase` union.
  */
 function backPhase(room: Room): Room["phase"] {
+  if (
+    room.phase.name === "countdown" &&
+    room.phase.to === "voting" &&
+    teamsEnabled(room.settings)
+  ) {
+    // Same derivation as `countdownScreen`: with teams on, a `to: "voting"`
+    // countdown can only have come out of team select.
+    return { name: "teams" };
+  }
   return preRoundPhase(room) === "lobby" ? { name: "lobby" } : { name: "standings" };
 }
 
@@ -245,11 +284,21 @@ function apply(room: Room, ev: RoomEvent): Room {
       // Needs its own guard: `reduce` deliberately skips `settle` for
       // `startGame`, so a countdown opened here would survive the hold.
       if (room.configuring) return room;
-      // Legal from the room, from voting, and from standings between rounds.
-      // It always means the same thing: force-ready everyone and open a
-      // countdown. Only the destination differs.
+      // Legal from the room, from team select, from voting, and from
+      // standings between rounds. It always means the same thing:
+      // force-ready everyone and open a countdown. Only the destination
+      // differs. `teams` forces the same edge `lobby` does when teams are
+      // off — the host closing out team select the same way they close a
+      // solo lobby.
       const from = room.phase.name;
-      if (from !== "lobby" && from !== "voting" && from !== "standings") return room;
+      if (
+        from !== "lobby" &&
+        from !== "teams" &&
+        from !== "voting" &&
+        from !== "standings"
+      ) {
+        return room;
+      }
       if (from === "standings" && matchComplete(room)) return room;
       // A deliberate host override: unlike the natural everyoneReady path,
       // this can start the countdown with just one connected player.
@@ -260,7 +309,7 @@ function apply(room: Room, ev: RoomEvent): Room {
         phase: {
           name: "countdown",
           endsAt: ev.now + COUNTDOWN_MS,
-          to: from === "lobby" ? "voting" : "playing",
+          to: from === "lobby" || from === "teams" ? "voting" : "playing",
         },
       };
     }
@@ -268,6 +317,12 @@ function apply(room: Room, ev: RoomEvent): Room {
     case "cancelStart": {
       if (ev.playerId !== room.hostId) return room;
       if (room.phase.name !== "countdown") return room;
+      // Cancelling clears everyone's readiness so `settle` cannot re-open the
+      // countdown. Landing back in `teams` that would wedge the room: every
+      // player is still on a team, and nothing they can do would set `ready`
+      // again short of leaving and rejoining. Leaving a team is already the
+      // cancel here, so the host screen offers no Stop button either.
+      if (backPhase(room).name === "teams") return room;
       const back = backPhase(room);
       // Resets everyone's readiness rather than leaving it as-is: it was
       // solo-start's `startGame` that force-readied everyone, and leaving
@@ -342,8 +397,15 @@ function apply(room: Room, ev: RoomEvent): Room {
       // tail derive a brand-new countdown with no host action and no stored
       // remaining-ms. `cancelStart` clears readiness for the opposite reason —
       // it wants the countdown to stay down.
+      // Drawers only ever open on the host *lobby*, so this only ever drops a
+      // lobby countdown. The guard stops a hand-rolled message from dropping a
+      // teams countdown into a phase whose readiness it cannot restore.
       const phase =
-        ev.open && room.phase.name === "countdown" ? backPhase(room) : room.phase;
+        ev.open &&
+        room.phase.name === "countdown" &&
+        backPhase(room).name === "lobby"
+          ? backPhase(room)
+          : room.phase;
       return { ...room, configuring: ev.open, phase };
     }
 

@@ -1048,3 +1048,62 @@ describe("the drawer hold", () => {
     expect(room.configuring).toBe(true);
   });
 });
+
+/** A room with `n` players and teams switched on. */
+function seedTeams(n: number, teamCount = 2, now = 1000): Room {
+  const room = seed(n, now);
+  return reduce(room, {
+    t: "setSettings", playerId: "host", values: { teamCount }, now,
+  });
+}
+
+describe("the teams phase", () => {
+  test("readying up in the lobby opens team select, not a countdown", () => {
+    const room = readyAll(seedTeams(2), 2000);
+    expect(room.phase).toEqual({ name: "teams" });
+    expect(room.teams.map((t) => t.id)).toEqual(["t0", "t1"]);
+  });
+
+  test("with teams off it still opens the countdown to voting", () => {
+    const room = readyAll(seed(2), 2000);
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 2000 + COUNTDOWN_MS, to: "voting",
+    });
+  });
+
+  test("entering team select clears every ready flag", () => {
+    // Load-bearing: `ready` means "waiting in the room" on the lobby side of
+    // this edge and "has a team" on the other. Carried across, the next
+    // settle would close team select before anyone picked.
+    const room = readyAll(seedTeams(2), 2000);
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+    expect(room.players.every((p) => p.teamId === null)).toBe(true);
+  });
+
+  test("a host drawer still holds the lobby edge shut", () => {
+    let room = seedTeams(2);
+    room = reduce(room, { t: "setConfiguring", playerId: "host", open: true, now: 2000 });
+    room = readyAll(room, 2100);
+    expect(room.phase.name).toBe("lobby");
+    // Closing it derives the transition with no further host action.
+    room = reduce(room, { t: "setConfiguring", playerId: "host", open: false, now: 2200 });
+    expect(room.phase.name).toBe("teams");
+  });
+
+  test("the ready event is rejected in team select", () => {
+    const room = readyAll(seedTeams(2), 2000);
+    const next = reduce(room, { t: "ready", playerId: "p0", ready: true, now: 2100 });
+    expect(next).toBe(room);
+  });
+
+  test("cancelStart cannot wedge the teams countdown", () => {
+    // Cancelling clears readiness so settle cannot re-open the countdown.
+    // Landing back in `teams` that would strand the room: everyone is still
+    // on a team and nothing they can do would set `ready` again.
+    let room = readyAll(seedTeams(2), 2000);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2100 });
+    expect(room.phase.name).toBe("countdown");
+    const next = reduce(room, { t: "cancelStart", playerId: "host", now: 2200 });
+    expect(next).toBe(room);
+  });
+});
