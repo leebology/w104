@@ -1291,3 +1291,66 @@ describe("backToLobby from team select", () => {
     expect(room.players.every((p) => p.teamId === null)).toBe(true);
   });
 });
+
+/**
+ * A room mid-round with teams on, p0 and p1 both on t0. Walks the real edges
+ * rather than hand-building a Room, so the helper cannot drift from the rules.
+ * Timestamps ascend past each phase deadline.
+ */
+function playingInTeams(): Room {
+  let room = inTeams(2);                                  // teams, at 2000
+  room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+  room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t0", now: 2200 });
+  // Both on a team -> countdown(to:"voting") ending at 2200 + COUNTDOWN_MS.
+  room = reduce(room, { t: "tick", now: 2200 + COUNTDOWN_MS, roll: 0.5 });
+  expect(room.phase.name).toBe("voting");
+  room = reduce(room, { t: "startGame", playerId: "host", now: 8000 });
+  room = reduce(room, { t: "tick", now: 8000 + COUNTDOWN_MS, roll: 0.5 });
+  expect(room.phase.name).toBe("playing");
+  return room;
+}
+
+describe("submitEntry with a shared team list", () => {
+  test("a word a teammate already wrote is a duplicate", () => {
+    const room = playingInTeams();
+    const first = submitEntry(room, "p0", "Zendaya", 13100);
+    expect(first.accepted).toBe(true);
+    const second = submitEntry(first.room, "p1", "zendaya", 13200);
+    expect(second.accepted).toBe(false);
+    expect(second.reason).toBe("duplicate");
+    expect(second.room).toBe(first.room);
+  });
+
+  test("a word another team wrote is still accepted", () => {
+    let room = playingInTeams();
+    room = {
+      ...room,
+      players: room.players.map((p) =>
+        p.id === "p1" ? { ...p, teamId: "t1" } : p,
+      ),
+    };
+    const first = submitEntry(room, "p0", "Zendaya", 13100);
+    const second = submitEntry(first.room, "p1", "Zendaya", 13200);
+    expect(second.accepted).toBe(true);
+  });
+
+  test("the entry limit is per team, not per player", () => {
+    let room = playingInTeams();
+    for (let i = 0; i < MAX_ENTRIES; i++) {
+      const out = submitEntry(room, "p0", `word ${i}`, 13100 + i);
+      expect(out.accepted).toBe(true);
+      room = out.room;
+    }
+    const over = submitEntry(room, "p1", "one more", 20000);
+    expect(over.accepted).toBe(false);
+    expect(over.reason).toBe("limit");
+  });
+
+  test("the entry is still stored under its own author", () => {
+    const room = playingInTeams();
+    const out = submitEntry(room, "p1", "Adele", 13100);
+    expect(out.room.entries.p1).toHaveLength(1);
+    expect(out.room.entries.p1[0].by).toBe("p1");
+    expect(out.room.entries.p0).toBeUndefined();
+  });
+});

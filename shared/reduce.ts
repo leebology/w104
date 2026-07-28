@@ -649,17 +649,23 @@ export function submitEntry(
   // Punctuation-only survives trim() but normalizes to nothing.
   if (norm === "") return { room, accepted: false, reason: "empty" };
 
-  const own = room.entries[playerId] ?? [];
+  // The list this entry competes against is the *scorer's*, not the player's:
+  // with teams on that is the whole team's merged list, so a word a teammate
+  // already wrote is a duplicate and MAX_ENTRIES is a per-team cap. Storage is
+  // unchanged — the entry still goes under its own author's key.
+  const scorer = rosterOf(room).find((s) => s.members.includes(playerId));
+  const own = (scorer?.members ?? [playerId]).flatMap((id) => room.entries[id] ?? []);
   if (own.length >= MAX_ENTRIES) return { room, accepted: false, reason: "limit" };
   if (own.some((e) => normalize(e.text) === norm)) {
     return { room, accepted: false, reason: "duplicate" };
   }
 
+  const mine = room.entries[playerId] ?? [];
   const entry: Entry = { text: trimmed, at: now, by: playerId };
   return {
     room: {
       ...room,
-      entries: { ...room.entries, [playerId]: [...own, entry] },
+      entries: { ...room.entries, [playerId]: [...mine, entry] },
       lastActivityAt: now,
     },
     accepted: true,
