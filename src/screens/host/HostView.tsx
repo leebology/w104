@@ -7,6 +7,7 @@ import { HostLobby } from "./HostLobby";
 import { HostPlaying } from "./HostPlaying";
 import { HostScoring } from "./HostScoring";
 import { HostStandings } from "./HostStandings";
+import { HostTeams } from "./HostTeams";
 import { HostVoting } from "./HostVoting";
 
 // The explicit ReactElement return type is what makes tsc flag an unhandled
@@ -36,6 +37,9 @@ export function HostView({ state, onLeave }: { state: ClientState; onLeave: () =
       if (screen === "lobby") {
         return <HostLobby room={room} countdown={countdown} onLeave={leave} />;
       }
+      if (screen === "teams") {
+        return <HostTeams room={room} countdown={countdown} />;
+      }
       if (screen === "voting") {
         return <HostVoting room={room} offset={state.clockOffset} countdown={countdown} />;
       }
@@ -55,5 +59,7 @@ export function HostView({ state, onLeave }: { state: ClientState; onLeave: () =
       return <HostScoring room={room} results={room.phase.results} />;
     case "standings":
       return <HostStandings room={room} />;
+    case "teams":
+      return <HostTeams room={room} />;
   }
 }

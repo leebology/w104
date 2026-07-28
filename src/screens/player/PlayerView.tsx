@@ -10,6 +10,7 @@ import { PlayerLobby } from "./PlayerLobby";
 import { PlayerPlaying } from "./PlayerPlaying";
 import { PlayerScoring } from "./PlayerScoring";
 import { PlayerStandings } from "./PlayerStandings";
+import { PlayerTeams } from "./PlayerTeams";
 import { PlayerVoting } from "./PlayerVoting";
 
 export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: () => void }): ReactElement {
@@ -116,6 +117,11 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
           />
         );
       }
+      if (screen === "teams") {
+        return (
+          <PlayerTeams room={room} playerId={getPlayerId()} countdown={countdown} />
+        );
+      }
       if (screen === "voting") {
         return (
           <PlayerVoting
@@ -138,5 +144,7 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
       );
     case "standings":
       return <PlayerStandings room={room} playerId={getPlayerId()} />;
+    case "teams":
+      return <PlayerTeams room={room} playerId={getPlayerId()} />;
   }
 }

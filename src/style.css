@@ -19,6 +19,22 @@
   --scroll-thumb: #C9B8A2;
   --cream-track: rgba(255, 247, 232, 0.3); /* timer track on a pink field */
 
+  /* Team accents. Ten fixed colours, one per possible team — a team's colour
+     is set once at creation and never changes, so these are the only place
+     any of them is written. Every accented surface reads `--accent`, a
+     custom property set inline from one of these tokens; no other rule in
+     this file names a team colour. */
+  --team-red: #e5484d;
+  --team-blue: #3e63dd;
+  --team-green: #30a46c;
+  --team-yellow: #ffb224;
+  --team-purple: #8e4ec6;
+  --team-orange: #f76b15;
+  --team-pink: #e93d82;
+  --team-teal: #12a594;
+  --team-lime: #99d52a;
+  --team-cyan: #00a2c7;
+
   /* Shape. Nothing here scales with the viewport — enlarging borders and
      shadows on a big screen softens the flat-graphic look the design is
      built on. Only type scales. */
@@ -1905,4 +1921,195 @@ ul, ol { list-style: none; }
   font-size: 13px;
   line-height: 1.35;
   color: var(--ink-dim);
+}
+
+/* --------------------------------------------------------------- teams */
+
+/* Every accented surface reads one custom property, set inline from
+   TEAM_COLORS[colorIndex].token. No rule here knows a colour name, which is
+   what keeps the ten accents in :root as the only place they are written. */
+.team-panel,
+.team-tile,
+.player-teams__mine {
+  border-top: 10px solid var(--accent);
+}
+
+/* The team you are on. A flat fill, not a tint: this design system has no
+   translucency and no colour blending anywhere, and `color-mix` appears
+   nowhere in the file. */
+.team-tile--mine {
+  background: var(--accent);
+  color: var(--ink);
+}
+
+/* Same pattern as `.results` above — --cols is set per render. */
+.team-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+  max-width: calc(var(--cols, 5) * 20vw);
+  margin: 0 auto;
+}
+
+.player-teams__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.team-tile {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+  border-top: 10px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-btn);
+  padding: 12px;
+  font-family: var(--display);
+}
+
+.team-member--gone { opacity: 0.45; }
+
+/* -------------------------------------------------------- host: teams */
+
+.host-teams {
+  padding: 0;
+  gap: 16px;
+}
+
+.host-teams__footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 28px 26px;
+}
+
+.host-teams__hint {
+  color: var(--cream-dim);
+  font-size: 14px;
+  text-align: center;
+}
+
+.team-panel__name {
+  font-family: var(--display);
+  font-size: clamp(16px, 1.8vw, 22px);
+  line-height: 1.06;
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+
+.team-panel__members {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.team-panel__members li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-member__avatar { font-size: 20px; line-height: 1; }
+
+.team-member__name {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-unassigned {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 28px;
+}
+
+.team-unassigned__label {
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--cream-dim);
+}
+
+.team-unassigned__avatar { font-size: 22px; line-height: 1; }
+
+/* ------------------------------------------------------ player: teams */
+
+.player-teams {
+  gap: 16px;
+}
+
+.player-teams__room {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  color: var(--cream);
+  text-align: center;
+}
+
+.player-teams__hint {
+  color: var(--cream-dim);
+  text-align: center;
+  font-size: 14px;
+}
+
+.player-teams__mine { gap: 10px; }
+
+.player-teams__name {
+  font-family: var(--display);
+  font-size: 20px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+}
+
+.player-teams__members {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--ink-dim);
+}
+
+.team-tile__name {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.team-tile__count {
+  font-family: var(--body);
+  font-size: 18px;
+}
+
+.player-teams__footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
 }
