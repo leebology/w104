@@ -5,9 +5,10 @@ import {
 } from "../shared/reduce";
 import type { ClientMessage, ErrorCode, ServerMessage } from "../shared/protocol";
 import { createRoom, toRoomState } from "../shared/state";
-import type { MatchSettings, PlayerId, Room } from "../shared/state";
+import type { Entry, MatchSettings, PlayerId, Room } from "../shared/state";
 import { DEFAULT_DURATION_SEC } from "../shared/categories";
 import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes";
+import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
 
 // Durable Object binding declared in wrangler.jsonc.
 export interface Env {
@@ -73,6 +74,18 @@ export class W104 extends Server<Env> {
       votes: rest.votes ?? {},
       history: rest.history ?? [],
       configuring: rest.configuring ?? false,
+      teams: rest.teams ?? [],
+      // Two backfills in one pass. `teamId` gives players stored before teams
+      // existed a null slot, and `by` gives their words an author — redundant
+      // against the record key on disk, but load-bearing once a team's list is
+      // merged from several keys and a row has to say where it came from.
+      players: (rest.players ?? []).map((p) => ({ ...p, teamId: p.teamId ?? null })),
+      entries: Object.fromEntries(
+        Object.entries(rest.entries ?? {}).map(([id, list]) => [
+          id,
+          (list as Entry[]).map((e) => ({ ...e, by: e.by ?? id })),
+        ]),
+      ),
       settings: (() => {
         const stored = rest.settings as Partial<MatchSettings> | undefined;
         const base = defaultSettings(DEFAULT_MODE);
@@ -184,11 +197,9 @@ export class W104 extends Server<Env> {
         : reduce(this.room, { t: "join", playerId, name, emoji, now });
 
     await this.persist();
-    // Only this socket learns this player's words.
-    this.sendTo(conn, {
-      type: "yourEntries",
-      entries: this.room.entries[playerId] ?? [],
-    });
+    // A player rejoining mid-round gets the list they contribute to — their
+    // own in free-for-all, their team's in team play.
+    this.sendEntriesToTeam(playerId);
     this.broadcastState();
   }
 
@@ -210,6 +221,19 @@ export class W104 extends Server<Env> {
     if (msg.type === "submitEntry") {
       const result = submitEntry(this.room, playerId, msg.text, now);
       this.room = result.room;
+      if (result.accepted) {
+        // Teammates share one list, so they must see each other's words as
+        // they land or they spend the round duplicating each other blind.
+        //
+        // Targeted with `sendTo`, never `broadcast` — the "no per-player entry
+        // counts in broadcasts" boundary is untouched, and other teams learn
+        // nothing. With teams off this is just the submitter's own list back.
+        //
+        // Sent *before* the ack, and socket ordering is what makes that
+        // load-bearing: the authoritative copy has to arrive ahead of the
+        // message that retires the client's optimistic one.
+        this.sendEntriesToTeam(playerId);
+      }
       this.sendTo(conn, {
         type: "entryAck",
         seq: msg.seq,
@@ -218,7 +242,7 @@ export class W104 extends Server<Env> {
       });
       if (!result.accepted) return;
       await this.persist();
-      return; // No broadcast: entry counts are deliberately not published.
+      return; // Still no broadcast: entry counts are not published.
     }
 
     // Ends the room outright rather than producing a new state, so it cannot
@@ -308,6 +332,24 @@ export class W104 extends Server<Env> {
         break;
       case "resetVotes":
         this.room = reduce(this.room, { t: "resetVotes", playerId, now });
+        break;
+      case "joinTeam":
+        this.room = reduce(this.room, {
+          t: "joinTeam", playerId, teamId: msg.teamId, now,
+        });
+        break;
+      case "leaveTeam":
+        this.room = reduce(this.room, { t: "leaveTeam", playerId, now });
+        break;
+      case "setTeamName":
+        this.room = reduce(this.room, {
+          t: "setTeamName",
+          playerId,
+          teamId: msg.teamId,
+          // Bounded at the edge, exactly like setProfile's name.
+          name: msg.name.slice(0, MAX_TEAM_NAME_LEN),
+          now,
+        });
         break;
     }
 
@@ -399,6 +441,26 @@ export class W104 extends Server<Env> {
 
   private sendTo(conn: Connection<ConnState>, msg: ServerMessage): void {
     conn.send(this.encode(msg));
+  }
+
+  /**
+   * Sends the merged list a player contributes to, to every connected member
+   * of that list. With teams off the scorer is the player alone, so this is
+   * the same single-socket send the connect path does.
+   */
+  private sendEntriesToTeam(playerId: PlayerId): void {
+    if (!this.room) return;
+    const scorer = rosterOf(this.room).find((s) => s.members.includes(playerId));
+    const members = scorer?.members ?? [playerId];
+    const entries = members
+      .flatMap((id) => this.room!.entries[id] ?? [])
+      .sort((a, b) => a.at - b.at);
+    const msg: ServerMessage = { type: "yourEntries", entries };
+    for (const conn of this.getConnections<ConnState>()) {
+      if (conn.state && members.includes(conn.state.playerId)) {
+        this.sendTo(conn, msg);
+      }
+    }
   }
 
   private encode(msg: ServerMessage): string {
