@@ -1,5 +1,7 @@
 import type { Entry, PlayerId, RoomState } from "./state";
 import type { RejectReason } from "./reduce";
+import type { NumericSettingKey } from "./gamemodes";
+import type { TeamId } from "./teams";
 
 export type ClientMessage =
   | { type: "setProfile"; name: string; emoji: string }
@@ -8,7 +10,16 @@ export type ClientMessage =
   | { type: "cancelStart" }
   | { type: "kick"; targetId: PlayerId }
   | { type: "submitEntry"; text: string; seq: number }
-  | { type: "newGame" }
+  | { type: "setSettings"; values: Partial<Record<NumericSettingKey, number>> }
+  | { type: "setMode"; mode: string }
+  | { type: "setConfiguring"; open: boolean }
+  | { type: "showStandings" }
+  | { type: "backToLobby" }
+  | { type: "castVote"; category: string }
+  | { type: "resetVotes" }
+  | { type: "joinTeam"; teamId: TeamId }
+  | { type: "leaveTeam" }
+  | { type: "setTeamName"; teamId: TeamId; name: string }
   | { type: "endGame" };
 
 export type ServerMessage =

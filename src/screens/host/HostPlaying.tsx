@@ -1,6 +1,7 @@
 import { formatClock, useRemaining } from "../../net/clock";
 import { RoomChip } from "../../components/RoomChip";
 import { PlayerPill } from "../../components/Roster";
+import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
 import { HostHeader, PlayerCount } from "./HostHeader";
 
@@ -15,13 +16,14 @@ type Props = { room: RoomState; endsAt: number; offset: number };
  */
 export function HostPlaying({ room, endsAt, offset }: Props) {
   const remaining = useRemaining(endsAt, offset);
-  const fill = Math.max(0, Math.min(1, remaining / room.durationSec));
+  const fill = Math.max(0, Math.min(1, remaining / room.settings.durationSec));
 
   return (
     <main className="screen screen--host">
       <HostHeader
         left={<RoomChip code={room.code} />}
-        round={room.round}
+        round={currentRound(room)}
+        of={room.settings.roundCount}
         right={<PlayerCount n={room.players.length} />}
       />
 
@@ -47,7 +49,7 @@ export function HostPlaying({ room, endsAt, offset }: Props) {
           <div className="timer-track__fill" style={{ width: `${fill * 100}%` }} />
         </div>
         <span className="timer-bar__label">
-          {remaining} of {room.durationSec} sec left
+          {remaining} of {room.settings.durationSec} sec left
         </span>
       </div>
     </main>

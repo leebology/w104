@@ -17,6 +17,23 @@
   --card-rule: #E7D3BE;   /* hairlines and the timer track */
   --code-empty: #F6D9C6;  /* unfilled room-code box */
   --scroll-thumb: #C9B8A2;
+  --cream-track: rgba(255, 247, 232, 0.3); /* timer track on a pink field */
+
+  /* Team accents. Ten fixed colours, one per possible team — a team's colour
+     is set once at creation and never changes, so these are the only place
+     any of them is written. Every accented surface reads `--accent`, a
+     custom property set inline from one of these tokens; no other rule in
+     this file names a team colour. */
+  --team-red: #e5484d;
+  --team-blue: #3e63dd;
+  --team-green: #30a46c;
+  --team-yellow: #ffb224;
+  --team-purple: #8e4ec6;
+  --team-orange: #f76b15;
+  --team-pink: #e93d82;
+  --team-teal: #12a594;
+  --team-lime: #99d52a;
+  --team-cyan: #00a2c7;
 
   /* Shape. Nothing here scales with the viewport — enlarging borders and
      shadows on a big screen softens the flat-graphic look the design is
@@ -452,7 +469,16 @@ ul, ol { list-style: none; }
 
 /* In the lobby the pills sit in the flow under the code rather than being
    pinned to the bottom of a full-bleed stage. */
-.roster-row--inline { position: static; width: auto; max-width: 100%; }
+/* Scrolls in its own box rather than pushing the lobby past the viewport: the
+   settings band and the Start button both take their natural height, so a full
+   roster is the one thing left that can outgrow the stage. */
+.roster-row--inline {
+  position: static;
+  width: auto;
+  max-width: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
 
 /* ------------------------------------------------------------ player pill */
 
@@ -617,6 +643,190 @@ ul, ol { list-style: none; }
 
 .get-ready--small { font-size: 17px; padding: 10px 20px; }
 
+/* ----------------------------------------------------------- host voting */
+
+.host-voting { padding: 0; }
+
+.host-voting__prompt {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.16em;
+  color: var(--cream);
+  text-align: center;
+  padding: 0 34px 12px;
+}
+
+.host-voting__grid,
+.host-voting__result {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0 30px 16px;
+}
+
+.host-voting__row { display: flex; gap: 12px; flex: 1; min-height: 0; }
+.host-voting__result { justify-content: center; }
+.host-voting__row--top { flex: 0 0 206px; }
+
+/* Survivors below the top three can number up to 7 (10 categories, one vote
+   each). A fixed-height, non-wrapping row clips them off both edges past
+   ~5 cards, so this row sizes to its own content instead of a magic number,
+   and wraps rather than overflow — `.host-voting__result`'s `justify-content:
+   center` above then centres however tall that content turns out to be.
+   `flex-wrap` also means `justify-content: center` here re-centres each
+   individual line, including a short last line. */
+.host-voting__row--rest {
+  flex: 0 1 auto;
+  min-height: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+}
+
+/* Nobody voted at all — the deadline can force this shut with zero votes
+   cast. The category itself is drawn later, at the whistle, so this says
+   nothing about which one. */
+.host-voting__no-votes {
+  padding: 0 60px;
+  font-size: 24px;
+  line-height: 1.4;
+  color: var(--cream);
+  text-align: center;
+}
+
+/* Width is the odds: flex-grow carries the vote count, so a vote visibly
+   grows its card with no measurement and no JS layout pass. */
+.vote-card {
+  flex: 1 1 0;
+  min-width: 104px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-btn);
+  padding: 9px 12px;
+  overflow: hidden;
+  transition: flex-grow 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* Equal-width, but no longer rigid: a fixed 210px card times up to 13
+   survivors cannot fit (or wrap) in ~1140px. `flex-basis` keeps cards near
+   their old width when there is room; `flex-shrink` (inherited from
+   `.vote-card`) and wrapping let a crowded row give way instead of clipping.
+   `max-width` stops a lone survivor from stretching to the full row. */
+.vote-card--small { flex: 1 1 150px; max-width: 220px; }
+
+/* A category nobody wanted: sunken, flat, name only. */
+.vote-card--zero {
+  background: var(--code-empty);
+  box-shadow: none;
+  justify-content: center;
+}
+
+.vote-card--zero .vote-card__name { font-size: 17px; text-align: center; }
+
+.vote-card__name {
+  font-family: var(--display);
+  line-height: 1.06;
+  overflow-wrap: anywhere;
+}
+
+.vote-card__foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8px;
+  /* The pink total is the graceful degradation: at ten players the avatars
+     clip against this, and the number never does. */
+  overflow: hidden;
+}
+
+.vote-card__voters { display: flex; align-items: center; gap: 4px; overflow: hidden; }
+.vote-card__voter { display: inline-flex; align-items: baseline; font-size: 21px; }
+
+.vote-card__times {
+  font-family: var(--display);
+  font-size: 12px;
+  color: var(--ink-dim);
+  margin-left: 1px;
+}
+
+.vote-card__total {
+  font-family: var(--display);
+  font-size: 20px;
+  color: var(--pink);
+  flex: 0 0 auto;
+}
+
+.host-voting__footer {
+  flex: 0 0 106px;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 28px;
+  background: var(--cream);
+  border-top: var(--border);
+}
+
+.host-voting__clock {
+  font-family: var(--display);
+  font-size: 52px;
+  color: var(--ink);
+  flex: 0 0 auto;
+}
+
+.host-voting__footer .timer-track { flex: 1; height: 28px; }
+
+/* Cream on a cream footer would vanish, so the secondary action is a ghost. */
+.btn--ghost {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
+  border: var(--border);
+}
+
+.host-voting__closed-footer {
+  flex: 0 0 126px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+}
+
+/* The countdown plaque, scaled for a TV. A separate class rather than an
+   override, so the phone-sized one keeps its numbers. */
+.get-ready--tv { font-size: 40px; padding: 14px 36px; }
+
+/* HostVoting and HostVotingClosed render different DOM subtrees, so React
+   remounts rather than transitioning between them — without this the reveal
+   is a hard cut. This only covers the incoming side: the result area and the
+   plaque fade in. A true cross-fade that also fades the zero-vote cards out
+   first would need the two screens to share one DOM subtree (FLIP-style),
+   which is deliberately not attempted here. */
+.host-voting--closed .host-voting__result,
+.host-voting--closed .get-ready--tv {
+  animation: voting-reveal-in 260ms ease-out both;
+}
+
+@keyframes voting-reveal-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vote-card { transition: none; }
+  .host-voting--closed .host-voting__result,
+  .host-voting--closed .get-ready--tv {
+    animation: none;
+  }
+}
+
 /* ---------------------------------------------------------- host scoring */
 
 .host-scoring { padding: 24px 26px 18px; }
@@ -673,10 +883,34 @@ ul, ol { list-style: none; }
   gap: 12px;
 }
 
-.id-card { padding: 14px; flex: 0 0 auto; }
+/* Same accent convention as `.team-panel`/`.team-tile`: a flat top border
+   read from `--accent`. Unconditional on purpose — `--accent` is only ever
+   set inline for a team, and a `var()` falling back to nothing makes the
+   whole `border-top` declaration invalid, which resolves to its initial
+   value (`border-style: none`), so a player's card renders no border at all. */
+.id-card { padding: 14px; flex: 0 0 auto; border-top: 10px solid var(--accent); }
 
 .id-card__row { display: flex; align-items: center; gap: 10px; }
 .id-card__avatar { font-size: 30px; line-height: 1; }
+
+/* A team has no avatar of its own — a flat block of its accent stands in,
+   sized to match the avatar it replaces. */
+.id-card__swatch {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+
+/* The team's roster, under the card — the only place a player's own face
+   appears on the results screen. */
+.id-card__members {
+  display: flex;
+  gap: 4px;
+  font-size: 18px;
+  padding-top: 6px;
+}
 
 .id-card__who {
   flex: 1;
@@ -781,6 +1015,14 @@ ul, ol { list-style: none; }
 .word-row__also {
   font-size: calc(var(--word-size, 16px) - 3px);
   color: var(--struck);
+  flex: 0 0 auto;
+}
+
+/* Who wrote a word, in team play only — dimmed so it never competes with
+   the word itself. */
+.word-row__by {
+  font-size: calc(var(--word-size, 16px) - 3px);
+  color: var(--ink-dim);
   flex: 0 0 auto;
 }
 
@@ -920,9 +1162,13 @@ ul, ol { list-style: none; }
 
 /* Anchored to the bottom, like a chat log: with few entries they sit just
    above the input, and each new one pushes the list up rather than leaving a
-   stretched gap below the header. The bottom padding is the line the entry
-   input occupies — without it the newest word would land underneath it. */
-.playing__list { justify-content: flex-end; gap: 4px; padding-bottom: 26px; }
+   stretched gap below the header.
+
+   The bottom padding is the strip the entry input occupies, and it has to
+   clear the input's whole box — rule, padding and text line — not just the
+   text: 3px border + 10px padding + a 22px line, plus room to breathe. Keep it
+   in step with `.entry-overlay input` or words will run into the rule. */
+.playing__list { justify-content: flex-end; gap: 4px; padding-bottom: 42px; }
 
 .playing__list .word { font-size: 17px; }
 
@@ -961,15 +1207,21 @@ ul, ol { list-style: none; }
 .entry-overlay.offstage { opacity: 0; pointer-events: none; }
 
 /* No box of its own: the card behind it supplies the paper, so this is bare
-   text and a caret on the list's next line. */
+   text and a caret on the list's next line — but with a rule above it, so the
+   list can never appear to run into what is being typed. The rule is drawn by
+   the input rather than by the card so the two cannot drift apart: it is
+   always exactly one padding's distance above the caret, whatever the list
+   below is doing. Growing upward is free — the overlay is anchored by its
+   bottom edge, so the caret itself does not move. */
 .entry-overlay input {
   font-family: var(--body);
   font-size: 17px;
   font-weight: 600;
   line-height: 1.3;
   width: 100%;
-  padding: 0;
+  padding: 10px 0 0;
   border: none;
+  border-top: var(--border);
   border-radius: 0;
   background: transparent;
   color: var(--ink);
@@ -1140,4 +1392,779 @@ ul, ol { list-style: none; }
   .timer-track { height: 22px; }
   .host-scoring { padding: 16px 16px 12px; }
   .host-lobby__code { margin: 0 -50px; }
+}
+
+/* ------------------------------------------------------- host standings */
+
+.host-standings {
+  padding: 0;
+}
+
+.host-standings__title {
+  font-family: var(--display);
+  font-size: clamp(18px, 2.2vw, 28px);
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+/* The list is the only thing allowed to scroll — the footer button has to
+   stay on screen at ten players. */
+.standings-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 28px;
+}
+
+/* Same accent convention as `.id-card`: a flat left border read from
+   `--accent`. Unconditional on purpose — see the comment on `.id-card` for
+   why a player's row, with no `--accent` set, renders no border at all. */
+.standing-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 18px;
+  border-left: 10px solid var(--accent);
+}
+
+.standing-card__place {
+  font-family: var(--display);
+  font-size: clamp(22px, 2.6vw, 34px);
+  color: var(--ink);
+  min-width: 1.6em;
+}
+
+.standing-card__avatar {
+  font-size: clamp(22px, 2.6vw, 34px);
+}
+
+/* A team has no avatar of its own — a flat block of its accent stands in,
+   sized to match the avatar it replaces. */
+.standing-card__swatch {
+  width: clamp(22px, 2.6vw, 34px);
+  height: clamp(22px, 2.6vw, 34px);
+  border-radius: var(--radius);
+  background: var(--accent);
+  flex: 0 0 auto;
+}
+
+.standing-card__name {
+  flex: 1;
+  font-weight: 700;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The team's roster, trailing its name — dimmed and smaller so the name
+   itself still reads first. */
+.standing-card__members {
+  margin-left: 8px;
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--ink-dim);
+}
+
+.standing-card__points {
+  font-family: var(--display);
+  font-size: clamp(20px, 2.4vw, 30px);
+  color: var(--ink);
+}
+
+.host-standings__footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 28px 26px;
+}
+
+.host-standings__hint {
+  color: var(--cream-dim);
+  font-size: 14px;
+}
+
+/* ------------------------------------------------------------- badges */
+
+.badge-strip {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.badge {
+  display: grid;
+  place-items: center;
+  min-width: 28px;
+  height: 28px;
+  padding: 0 6px;
+  border: var(--border);
+  border-radius: 8px;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 14px;
+}
+
+.badge--first {
+  background: var(--gold);
+  color: var(--ink-gold);
+}
+
+/* ----------------------------------------------------- player standings */
+
+.player-standings {
+  gap: 16px;
+}
+
+.player-standings__room {
+  color: var(--cream-dim);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+}
+
+.player-standings__me {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 18px;
+}
+
+.player-standings__place {
+  font-family: var(--display);
+  font-size: 54px;
+  color: var(--ink);
+  line-height: 1;
+}
+
+.player-standings__name {
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.player-standings__points {
+  font-family: var(--display);
+  color: var(--ink-dim);
+}
+
+/* Scrolls inside its own box; the Ready button below must never be pushed
+   off a phone screen. */
+.player-standings__all {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.player-standings__all li {
+  display: grid;
+  grid-template-columns: 2em 1fr auto;
+  gap: 10px;
+  align-items: center;
+  color: var(--ink);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--card-rule);
+}
+
+.player-standings__all li:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.player-standings__footer {
+  margin-top: auto;
+}
+
+.player-standings__hint {
+  color: var(--cream-dim);
+  text-align: center;
+  font-size: 14px;
+}
+
+/* ------------------------------------------------------------ steppers */
+
+.stepper {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: var(--cream);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  /* Deeper at the bottom than the top: the hint line sits under the value and
+     needs to clear the border, where the label above has the row for company. */
+  padding: 8px 14px 12px;
+}
+
+.stepper--disabled {
+  opacity: 0.55;
+}
+
+.stepper__label {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-dim);
+}
+
+.stepper__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stepper__btn {
+  width: 32px;
+  height: 32px;
+  border: var(--border);
+  border-radius: 8px;
+  background: var(--gold);
+  color: var(--ink-gold);
+  font-family: var(--display);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stepper__btn:disabled {
+  background: var(--code-empty);
+  color: var(--struck);
+  cursor: default;
+}
+
+.stepper__value {
+  width: 3.2em;
+  border: none;
+  background: transparent;
+  text-align: center;
+  font-family: var(--display);
+  font-size: 26px;
+  color: var(--ink);
+  padding: 0;
+}
+
+.stepper__value:focus {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.stepper__hint {
+  font-family: var(--display);
+  font-size: 12px;
+  color: var(--ink-dim);
+}
+
+.player-lobby__settings {
+  color: var(--cream-dim);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+
+/* --------------------------------------------------------- player voting */
+
+/* Three bands: pinned head, scrolling grid, pinned foot. The page never
+   scrolls — only the grid does. */
+.player-voting {
+  padding: 44px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.player-voting__meta {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+  text-align: center;
+}
+
+.player-voting__head {
+  flex: 0 0 auto;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+}
+
+.player-voting__count {
+  font-family: var(--display);
+  font-size: 48px;
+  line-height: 1;
+  color: var(--pink);
+  animation: votePop 120ms ease-out;
+}
+
+.player-voting__avatar { font-size: 34px; line-height: 1; }
+
+.player-voting__head-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.player-voting__head-title { font-family: var(--display); font-size: 15px; color: var(--ink); }
+.player-voting__head-sub { font-size: 13px; color: var(--ink-dim); }
+
+.player-voting__pips { display: flex; gap: 7px; margin-top: 2px; }
+
+.pip {
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  border: var(--border);
+  background: var(--code-empty);
+}
+
+.pip--spent { background: var(--gold); }
+
+@keyframes votePop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+/* Scrolls in its own box. The padding is clearance for the corner badges and
+   the offset shadows, not decoration — remove it and both clip. */
+.player-voting__grid {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 14px;
+  align-content: start;
+  padding: 12px 8px;
+}
+
+.player-voting__grid--locked { pointer-events: none; }
+
+.vote-tile {
+  position: relative;
+  width: 100%;
+  min-height: 56px;
+  font: inherit;
+  font-family: var(--display);
+  font-size: 16px;
+  text-align: left;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-btn);
+  padding: 12px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+/* The same press physics as .btn, so the gesture feels like the rest of the app. */
+.vote-tile:active:not(:disabled) {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+/* Locked reuses that press: the card sits down into where its own shadow was,
+   so "you can't tap this" needs no new colour and no icon. */
+.vote-tile--locked {
+  transform: translate(4px, 4px);
+  box-shadow: none;
+  cursor: default;
+}
+
+/* Your own stake stays cream and badged even when locked; everything you
+   didn't back goes sunken. */
+.vote-tile--locked:not(.vote-tile--voted) {
+  background: var(--code-empty);
+  color: var(--ink-dim);
+}
+
+.vote-tile__badge {
+  position: absolute;
+  top: -11px;
+  left: -9px;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  font-size: 15px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 99px;
+  border: var(--border);
+  background: var(--gold);
+  color: var(--ink-gold);
+}
+
+.vote-tile__times { font-family: var(--display); font-size: 10px; }
+
+.player-voting__foot {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.player-voting__timer {
+  width: 100%;
+  height: 10px;
+  border-radius: 99px;
+  background: var(--cream-track);
+  overflow: hidden;
+}
+
+.player-voting__timer-fill { height: 100%; background: var(--teal); }
+.player-voting__clock { font-family: var(--display); font-size: 14px; color: var(--cream); }
+
+@media (prefers-reduced-motion: reduce) {
+  .player-voting__count { animation: none; }
+}
+
+/* ------------------------------------------------------------- drawers */
+
+/* Overlay, not push: the lobby underneath keeps its exact sizing. Fixed
+   rather than absolute so the panel is measured against the viewport the
+   host screen already owns, not against a flex child of it. */
+.drawer {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+}
+
+.drawer--left { justify-content: flex-start; }
+.drawer--right { justify-content: flex-end; }
+
+/* A button, not a div: dismissing by clicking away has to be reachable
+   without a mouse, and this is the whole backdrop. */
+.drawer__scrim {
+  position: absolute;
+  inset: 0;
+  border: none;
+  padding: 0;
+  background: var(--ink);
+  opacity: 0.55;
+  cursor: pointer;
+}
+
+.drawer__panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(420px, 86vw);
+  height: 100%;
+  background: var(--cream);
+  color: var(--ink);
+  border-left: var(--border);
+  border-right: var(--border);
+}
+
+.drawer__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 20px 14px;
+  border-bottom: var(--border);
+}
+
+.drawer__title {
+  font-family: var(--display);
+  font-size: 18px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+.drawer__close {
+  width: 34px;
+  height: 34px;
+  border: var(--border);
+  border-radius: 8px;
+  background: var(--gold);
+  color: var(--ink-gold);
+  font-family: var(--display);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+/* The only thing on a host screen allowed to scroll is a box that asked for
+   it. A long mode list scrolls here; the page still never does. */
+.drawer__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px 24px;
+}
+
+/* The two buttons that open them, pinned to the lobby's lower corners. */
+.drawer-tab {
+  position: absolute;
+  bottom: 26px;
+  z-index: 5;
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  padding: 12px 18px;
+  border: var(--border);
+  border-radius: 99px;
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: var(--shadow-btn);
+  cursor: pointer;
+}
+
+.drawer-tab--left { left: 26px; }
+.drawer-tab--right { right: 26px; }
+
+.drawer-tab:hover { background: var(--gold); color: var(--ink-gold); }
+
+/* One selectable gamemode. */
+.mode-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  text-align: left;
+  padding: 14px 16px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--cream);
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.mode-row--active {
+  background: var(--gold);
+  color: var(--ink-gold);
+  box-shadow: var(--shadow-card);
+}
+
+.mode-row__name {
+  font-family: var(--display);
+  font-size: 16px;
+  letter-spacing: 0.04em;
+}
+
+.mode-row__blurb {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink-dim);
+}
+
+.mode-row--active .mode-row__blurb { color: var(--ink-gold); }
+
+/* The steppers inside the settings drawer stack instead of sitting in a row. */
+.drawer__settings {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 14px;
+}
+
+.drawer__note {
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--ink-dim);
+}
+
+/* --------------------------------------------------------------- teams */
+
+/* Every accented surface reads one custom property, set inline from
+   TEAM_COLORS[colorIndex].token. No rule here knows a colour name, which is
+   what keeps the ten accents in :root as the only place they are written. */
+.team-panel,
+.team-tile,
+.player-teams__mine {
+  border-top: 10px solid var(--accent);
+}
+
+/* The team you are on. A flat fill, not a tint: this design system has no
+   translucency and no colour blending anywhere, and `color-mix` appears
+   nowhere in the file. */
+.team-tile--mine {
+  background: var(--accent);
+  color: var(--ink);
+}
+
+/* Same pattern as `.results` above — --cols is set per render. */
+.team-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 5), minmax(0, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+  max-width: calc(var(--cols, 5) * 20vw);
+  margin: 0 auto;
+}
+
+.player-teams__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.team-tile {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+  border-top: 10px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-btn);
+  padding: 12px;
+  font-family: var(--display);
+}
+
+.team-member--gone { opacity: 0.45; }
+
+/* -------------------------------------------------------- host: teams */
+
+.host-teams {
+  padding: 0;
+  gap: 16px;
+}
+
+.host-teams__footer {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 28px 26px;
+}
+
+.host-teams__hint {
+  color: var(--cream-dim);
+  font-size: 14px;
+  text-align: center;
+}
+
+.team-panel__name {
+  font-family: var(--display);
+  font-size: clamp(16px, 1.8vw, 22px);
+  line-height: 1.06;
+  margin-bottom: 10px;
+  overflow-wrap: anywhere;
+}
+
+.team-panel__members {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.team-panel__members li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-member__avatar { font-size: 20px; line-height: 1; }
+
+.team-member__name {
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.team-unassigned {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 28px;
+}
+
+.team-unassigned__label {
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--cream-dim);
+}
+
+.team-unassigned__avatar { font-size: 22px; line-height: 1; }
+
+/* ------------------------------------------------------ player: teams */
+
+.player-teams {
+  gap: 16px;
+}
+
+.player-teams__room {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.14em;
+  color: var(--cream);
+  text-align: center;
+}
+
+.player-teams__hint {
+  color: var(--cream-dim);
+  text-align: center;
+  font-size: 14px;
+}
+
+.player-teams__mine { gap: 10px; }
+
+.player-teams__name {
+  font-family: var(--display);
+  font-size: 20px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+}
+
+.player-teams__members {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--ink-dim);
+}
+
+.team-tile__name {
+  font-size: 15px;
+  overflow-wrap: anywhere;
+}
+
+.team-tile__count {
+  font-family: var(--body);
+  font-size: 18px;
+}
+
+.player-teams__footer {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
 }

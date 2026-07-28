@@ -44,7 +44,8 @@ const REJECTIONS: Record<RejectReason, string> = {
   "not-playing": "Round isn't running.",
   empty: "Type something first.",
   "too-long": "That's too long.",
-  duplicate: "You already wrote that.",
+  // In a team match the list is shared, so it may well have been a teammate.
+  duplicate: "That's already on the list.",
   limit: "That's enough words!",
 };
 
@@ -63,6 +64,7 @@ export class RoomStore {
   private socket: PartySocket | null = null;
   private seq = 0;
   private state: ClientState = EMPTY;
+  private playerId = "";
 
   subscribe = (fn: () => void): (() => void) => {
     this.listeners.add(fn);
@@ -79,6 +81,7 @@ export class RoomStore {
   connect(opts: ConnectOptions): void {
     this.disconnect();
     this.state = EMPTY;
+    this.playerId = opts.playerId;
 
     // A fresh id per connect() call, distinct from playerId: partysocket
     // reuses the same query — including this — across its own automatic
@@ -138,7 +141,10 @@ export class RoomStore {
     if (trimmed === "") return;
     const seq = ++this.seq;
     this.set({
-      entries: [...this.state.entries, { text: trimmed, at: this.now(), seq }],
+      entries: [
+        ...this.state.entries,
+        { text: trimmed, at: this.now(), by: this.playerId, seq },
+      ],
       rejected: null,
     });
     this.send({ type: "submitEntry", text: trimmed, seq });
@@ -151,30 +157,54 @@ export class RoomStore {
   private receive(msg: ServerMessage): void {
     switch (msg.type) {
       case "state": {
-        const wasScoring = this.state.room?.phase.name === "scoring";
-        const nowLobby = msg.state.phase.name === "lobby";
-        const freshRound = wasScoring && nowLobby;
+        // `history` only ever grows (banked one round at a time by
+        // showStandings) or resets to empty (backToLobby ending the match) —
+        // the only two places shared/reduce.ts touches it — so a length
+        // change is exactly "the round this client was typing in is now
+        // over," regardless of which phases happen to sit on either side of
+        // it. This used to be a direct `scoring -> lobby` phase check, which
+        // silently stopped firing the moment showStandings started landing
+        // on "standings" instead of "lobby"; keying off the data rather than
+        // the phase shape survives the next phase rename too.
+        //
+        // Guarded on `this.state.room` because the very first `state`
+        // message a freshly-connected socket receives has no previous room
+        // to diff against — comparing against nothing would read as a
+        // "change" and wipe out the entries `yourEntries` just populated a
+        // moment earlier, for a player rejoining mid-match.
+        const historyChanged =
+          this.state.room !== null &&
+          this.state.room.history.length !== msg.state.history.length;
         this.set({
           room: msg.state,
           clockOffset: msg.state.serverTime - Date.now(),
-          // A new game wipes the local list; the server already cleared its own.
-          entries: freshRound ? [] : this.state.entries,
+          // The server already cleared its own copy at showStandings/backToLobby.
+          entries: historyChanged ? [] : this.state.entries,
           // Otherwise a rejection from the last round (e.g. "You already wrote
           // that.") would still be showing when the next one starts.
-          rejected: freshRound ? null : this.state.rejected,
+          rejected: historyChanged ? null : this.state.rejected,
         });
         break;
       }
       case "yourEntries":
-        this.set({ entries: msg.entries });
+        // Server truth, plus anything typed since that has not been acked
+        // yet. In team play this message also arrives when a *teammate*
+        // submits, so dropping the local unacked entries here would make the
+        // word you are mid-submitting vanish and come back.
+        this.set({
+          entries: [
+            ...msg.entries,
+            ...this.state.entries.filter((e) => e.seq !== undefined),
+          ],
+        });
         break;
       case "entryAck":
         if (msg.accepted) {
-          this.set({
-            entries: this.state.entries.map((e) =>
-              e.seq === msg.seq ? { text: e.text, at: e.at } : e,
-            ),
-          });
+          // Drop the optimistic copy rather than stripping its `seq`: the
+          // server sends the authoritative list immediately *before* this
+          // message, so its copy of this entry is already in `entries` and
+          // keeping both would show the word twice.
+          this.set({ entries: this.state.entries.filter((e) => e.seq !== msg.seq) });
         } else {
           this.set({
             entries: this.state.entries.filter((e) => e.seq !== msg.seq),

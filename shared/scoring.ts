@@ -1,4 +1,5 @@
-import type { Entry, Player, PlayerId } from "./state";
+import type { Entry, PlayerId } from "./state";
+import type { Scorer, ScorerId } from "./teams";
 
 /**
  * Case, accents and punctuation are noise — "Beyoncé" and "beyonce" are the
@@ -65,44 +66,57 @@ export function isMatch(a: string, b: string): boolean {
 
 export type ScoredEntry = {
   text: string;      // as the player typed it
+  /** Which member wrote it. The scorer's own id when teams are off. */
+  by: PlayerId;
   unique: boolean;
-  alsoBy: string[];  // emoji of every other player who had this word
+  /**
+   * The other scorers who also had this word. Ids rather than display
+   * strings: a team is identified by a colour, which a pre-baked emoji string
+   * cannot carry, and every screen already has the scorer list to resolve
+   * against.
+   */
+  alsoBy: ScorerId[];
 };
 
-export type PlayerResult = {
-  id: PlayerId;
-  name: string;
-  emoji: string;
+export type ScorerResult = Scorer & {
   total: number;   // distinct words written
-  unique: number;  // words no other player had
+  unique: number;  // words no other scorer had
   entries: ScoredEntry[];
 };
 
-export type Results = { players: PlayerResult[] };
+export type Results = { scorers: ScorerResult[] };
 
 export type ScoreInput = {
-  players: Player[];
+  scorers: Scorer[];
+  /** Still keyed by player. A team's list is its members' merged. */
   entries: Record<PlayerId, Entry[]>;
 };
 
-type Flat = { playerId: PlayerId; text: string; norm: string; at: number };
+type Flat = { scorerId: ScorerId; by: PlayerId; text: string; norm: string; at: number };
 
 export function scoreRound(input: ScoreInput): Results {
-  // 1. Flatten every player's list, dropping blanks and their own repeats.
+  // 1. Flatten each scorer's list — for a team, its members' lists merged in
+  //    submission order — dropping blanks and the scorer's own repeats. Two
+  //    teammates writing the same word therefore count once for the team,
+  //    with no special case for it.
   const flat: Flat[] = [];
-  for (const player of input.players) {
+  for (const scorer of input.scorers) {
     const seen = new Set<string>();
-    const own = [...(input.entries[player.id] ?? [])].sort((x, y) => x.at - y.at);
+    const own = scorer.members
+      .flatMap((id) => input.entries[id] ?? [])
+      .sort((x, y) => x.at - y.at);
     for (const entry of own) {
       const norm = normalize(entry.text);
       if (norm === "" || seen.has(norm)) continue;
       seen.add(norm);
-      flat.push({ playerId: player.id, text: entry.text, norm, at: entry.at });
+      flat.push({
+        scorerId: scorer.id, by: entry.by, text: entry.text, norm, at: entry.at,
+      });
     }
   }
 
   // 2. Union-find groups every spelling of the same answer into one cluster.
-  //    Eight players at 40 words is ~51k comparisons — microseconds.
+  //    Eight scorers at 40 words is ~51k comparisons — microseconds.
   const parent = flat.map((_, i) => i);
   const find = (i: number): number => {
     while (parent[i] !== i) {
@@ -120,42 +134,40 @@ export function scoreRound(input: ScoreInput): Results {
     }
   }
 
-  // 3. Which players landed in each cluster.
+  // 3. Which scorers landed in each cluster.
   const roots = flat.map((_, i) => find(i));
-  const clusterPlayers = new Map<number, Set<PlayerId>>();
+  const clusterScorers = new Map<number, Set<ScorerId>>();
   flat.forEach((f, i) => {
-    let set = clusterPlayers.get(roots[i]);
+    let set = clusterScorers.get(roots[i]);
     if (!set) {
-      set = new Set<PlayerId>();
-      clusterPlayers.set(roots[i], set);
+      set = new Set<ScorerId>();
+      clusterScorers.set(roots[i], set);
     }
-    set.add(f.playerId);
+    set.add(f.scorerId);
   });
 
-  // 4. Project back onto each player, preserving their submission order.
-  const emojiOf = new Map(input.players.map((p) => [p.id, p.emoji]));
-  const players: PlayerResult[] = input.players.map((player) => {
+  // 4. Project back onto each scorer, preserving submission order.
+  const scorers: ScorerResult[] = input.scorers.map((scorer) => {
     const entries: ScoredEntry[] = [];
     flat.forEach((f, i) => {
-      if (f.playerId !== player.id) return;
-      const others = [...clusterPlayers.get(roots[i])!].filter(
-        (id) => id !== player.id,
+      if (f.scorerId !== scorer.id) return;
+      const others = [...clusterScorers.get(roots[i])!].filter(
+        (id) => id !== scorer.id,
       );
       entries.push({
         text: f.text,
+        by: f.by,
         unique: others.length === 0,
-        alsoBy: others.map((id) => emojiOf.get(id) ?? "?"),
+        alsoBy: others,
       });
     });
     return {
-      id: player.id,
-      name: player.name,
-      emoji: player.emoji,
+      ...scorer,
       total: entries.length,
       unique: entries.filter((e) => e.unique).length,
       entries,
     };
   });
 
-  return { players };
+  return { scorers };
 }

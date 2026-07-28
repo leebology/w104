@@ -3,11 +3,15 @@ import type { ReactElement } from "react";
 import { getPlayerId } from "../../net/identity";
 import { roomStore } from "../../net/room";
 import type { ClientState } from "../../net/room";
+import { countdownScreen } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
 import { TimesUp } from "../shared/TimesUp";
 import { PlayerLobby } from "./PlayerLobby";
 import { PlayerPlaying } from "./PlayerPlaying";
 import { PlayerScoring } from "./PlayerScoring";
+import { PlayerStandings } from "./PlayerStandings";
+import { PlayerTeams } from "./PlayerTeams";
+import { PlayerVoting } from "./PlayerVoting";
 
 export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
@@ -98,22 +102,49 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
   switch (room.phase.name) {
     case "lobby":
       return <PlayerLobby room={room} playerId={getPlayerId()} onLeave={onLeave} />;
-    case "countdown":
-      return (
-        <PlayerLobby
-          room={room}
-          playerId={getPlayerId()}
-          countdown={{ endsAt: room.phase.endsAt, offset: state.clockOffset }}
-          onLeave={onLeave}
-        />
-      );
+    case "voting":
+      return <PlayerVoting room={room} playerId={getPlayerId()} offset={state.clockOffset} />;
+    case "countdown": {
+      const countdown = { endsAt: room.phase.endsAt, offset: state.clockOffset };
+      const screen = countdownScreen(room);
+      if (screen === "lobby") {
+        return (
+          <PlayerLobby
+            room={room}
+            playerId={getPlayerId()}
+            countdown={countdown}
+            onLeave={onLeave}
+          />
+        );
+      }
+      if (screen === "teams") {
+        return (
+          <PlayerTeams room={room} playerId={getPlayerId()} countdown={countdown} />
+        );
+      }
+      if (screen === "voting") {
+        return (
+          <PlayerVoting
+            room={room}
+            playerId={getPlayerId()}
+            offset={state.clockOffset}
+            countdown={countdown}
+          />
+        );
+      }
+      return <PlayerStandings room={room} playerId={getPlayerId()} countdown={countdown} />;
+    }
     case "playing":
-      return <PlayerPlaying category={room.category} entries={state.entries} />;
+      return <PlayerPlaying room={room} playerId={getPlayerId()} entries={state.entries} />;
     case "timesup":
       return <TimesUp />;
     case "scoring":
       return (
         <PlayerScoring room={room} results={room.phase.results} playerId={getPlayerId()} />
       );
+    case "standings":
+      return <PlayerStandings room={room} playerId={getPlayerId()} />;
+    case "teams":
+      return <PlayerTeams room={room} playerId={getPlayerId()} />;
   }
 }
