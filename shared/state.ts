@@ -3,12 +3,20 @@ import { DEFAULT_CATEGORY } from "./categories";
 import { DEFAULT_MODE, defaultSettings } from "./gamemodes";
 import type { GameModeId } from "./gamemodes";
 import type { VoteMap } from "./voting";
+import type { Team, TeamId } from "./teams";
 
 export type PlayerId = string;
 
 export type Entry = {
-  text: string; // as typed, preserved for display
-  at: number;   // server receipt timestamp, ms
+  text: string;      // as typed, preserved for display
+  at: number;        // server receipt timestamp, ms
+  /**
+   * Who wrote it. Redundant against the `entries` record key on disk, but
+   * load-bearing on the wire: a team's list is the merge of its members'
+   * lists, and a merged row has to say who it came from. `load()` backfills
+   * it from the key for rooms stored before it existed.
+   */
+  by: PlayerId;
 };
 
 export type MatchSettings = {
@@ -51,6 +59,13 @@ export type Player = {
   emoji: string;
   ready: boolean;
   connected: boolean;
+  /**
+   * Which team this player is on, or null. The *single* source of truth for
+   * membership — `Team` carries no member list, so the two cannot desync and
+   * nobody can be on two teams. A team's roster is derived by filtering
+   * `players`, which also gives it a stable order for free.
+   */
+  teamId: TeamId | null;
 };
 
 export type Phase =
@@ -86,6 +101,14 @@ export type Room = {
    * every vote in exchange for nothing.
    */
   votes: VoteMap;
+  /**
+   * This match's teams, or empty when teams are off. Built when the room
+   * enters the `teams` phase and torn down by `backToLobby`.
+   *
+   * Rides in `RoomState`: like `votes` and `configuring`, it is a room-wide
+   * fact the host TV is already showing to everyone present.
+   */
+  teams: Team[];
   /**
    * Every round already played, oldest first. Aggregates only — no words —
    * so it rides in RoomState safely and cheaply.
@@ -142,6 +165,7 @@ export function createRoom(code: string, now: number): Room {
     category: DEFAULT_CATEGORY,
     settings: defaultSettings(DEFAULT_MODE),
     votes: {},
+    teams: [],
     history: [],
     lastActivityAt: now,
     entries: {},

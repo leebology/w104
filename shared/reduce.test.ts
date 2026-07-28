@@ -222,7 +222,7 @@ describe("submitEntry", () => {
   test("accepts a word during the round", () => {
     const result = submitEntry(playing(), "p0", "Adele", 10_000);
     expect(result.accepted).toBe(true);
-    expect(result.room.entries.p0).toEqual([{ text: "Adele", at: 10_000 }]);
+    expect(result.room.entries.p0).toEqual([{ text: "Adele", at: 10_000, by: "p0" }]);
   });
 
   test("trims surrounding whitespace", () => {

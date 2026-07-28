@@ -63,6 +63,7 @@ export class RoomStore {
   private socket: PartySocket | null = null;
   private seq = 0;
   private state: ClientState = EMPTY;
+  private playerId = "";
 
   subscribe = (fn: () => void): (() => void) => {
     this.listeners.add(fn);
@@ -79,6 +80,7 @@ export class RoomStore {
   connect(opts: ConnectOptions): void {
     this.disconnect();
     this.state = EMPTY;
+    this.playerId = opts.playerId;
 
     // A fresh id per connect() call, distinct from playerId: partysocket
     // reuses the same query — including this — across its own automatic
@@ -138,7 +140,10 @@ export class RoomStore {
     if (trimmed === "") return;
     const seq = ++this.seq;
     this.set({
-      entries: [...this.state.entries, { text: trimmed, at: this.now(), seq }],
+      entries: [
+        ...this.state.entries,
+        { text: trimmed, at: this.now(), by: this.playerId, seq },
+      ],
       rejected: null,
     });
     this.send({ type: "submitEntry", text: trimmed, seq });
@@ -187,7 +192,7 @@ export class RoomStore {
         if (msg.accepted) {
           this.set({
             entries: this.state.entries.map((e) =>
-              e.seq === msg.seq ? { text: e.text, at: e.at } : e,
+              e.seq === msg.seq ? { text: e.text, at: e.at, by: e.by } : e,
             ),
           });
         } else {

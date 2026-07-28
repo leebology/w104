@@ -1,4 +1,5 @@
-import { MAX_TEAM_COUNT, MIN_TEAM_COUNT } from "./gamemodes";
+import { MAX_TEAM_COUNT, MIN_TEAM_COUNT, modeSpec } from "./gamemodes";
+import type { MatchSettings, Player, PlayerId, Room } from "./state";
 
 export type TeamId = string;
 
@@ -49,4 +50,32 @@ export function makeTeams(count: number): Team[] {
     colorIndex: i,
     name: TEAM_COLORS[i].name,
   }));
+}
+
+/** The fields the team derivations read. A subset, so they work on a
+ *  server-side `Room` and a client-side `RoomState` alike. */
+export type TeamView = Pick<Room, "players" | "teams">;
+
+/**
+ * Whether this match is played in teams.
+ *
+ * The descriptor check is not belt-and-braces: settings are validated against
+ * the *active mode's* descriptors and never against a field's mere existence,
+ * so a `teamCount` left over from a mode that exposed it must not switch teams
+ * on under a mode that does not.
+ */
+export function teamsEnabled(settings: MatchSettings): boolean {
+  if (settings.teamCount < MIN_TEAM_COUNT) return false;
+  return modeSpec(settings.mode).settings.some((s) => s.key === "teamCount");
+}
+
+export function teamOf(view: TeamView, playerId: PlayerId): Team | undefined {
+  const player = view.players.find((p) => p.id === playerId);
+  if (!player || player.teamId === null) return undefined;
+  return view.teams.find((t) => t.id === player.teamId);
+}
+
+/** Derived, never stored. Preserves `players` order. */
+export function membersOf(view: TeamView, teamId: TeamId): Player[] {
+  return view.players.filter((p) => p.teamId === teamId);
 }

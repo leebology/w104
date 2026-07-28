@@ -214,7 +214,7 @@ function apply(room: Room, ev: RoomEvent): Room {
         ...room,
         players: [...room.players, {
           id: ev.playerId, name: ev.name, emoji: ev.emoji,
-          ready: false, connected: true,
+          ready: false, connected: true, teamId: null,
         }],
       };
     }
@@ -513,7 +513,7 @@ export function submitEntry(
     return { room, accepted: false, reason: "duplicate" };
   }
 
-  const entry: Entry = { text: trimmed, at: now };
+  const entry: Entry = { text: trimmed, at: now, by: playerId };
   return {
     room: {
       ...room,

@@ -71,20 +71,20 @@ describe("isMatch", () => {
 });
 
 const players = [
-  { id: "a", name: "Akshay", emoji: "🐙", ready: true, connected: true },
-  { id: "b", name: "Aidan", emoji: "🦊", ready: true, connected: true },
-  { id: "c", name: "Liam", emoji: "🐸", ready: true, connected: true },
+  { id: "a", name: "Akshay", emoji: "🐙", ready: true, connected: true, teamId: null },
+  { id: "b", name: "Aidan", emoji: "🦊", ready: true, connected: true, teamId: null },
+  { id: "c", name: "Liam", emoji: "🐸", ready: true, connected: true, teamId: null },
 ];
 
-const at = (n: number) => ({ at: n });
+const at = (by: string, n: number) => ({ at: n, by });
 
 describe("scoreRound", () => {
   test("a word only one player wrote is unique", () => {
     const results = scoreRound({
       players,
       entries: {
-        a: [{ text: "Zendaya", ...at(1) }],
-        b: [{ text: "Adele", ...at(2) }],
+        a: [{ text: "Zendaya", ...at("a", 1) }],
+        b: [{ text: "Adele", ...at("b", 2) }],
         c: [],
       },
     });
@@ -98,8 +98,8 @@ describe("scoreRound", () => {
     const results = scoreRound({
       players,
       entries: {
-        a: [{ text: "Adele", ...at(1) }],
-        b: [{ text: "adele", ...at(2) }],
+        a: [{ text: "Adele", ...at("a", 1) }],
+        b: [{ text: "adele", ...at("b", 2) }],
         c: [],
       },
     });
@@ -113,8 +113,8 @@ describe("scoreRound", () => {
     const results = scoreRound({
       players,
       entries: {
-        a: [{ text: "Zendaya", ...at(1) }],
-        b: [{ text: "Zendya", ...at(2) }],
+        a: [{ text: "Zendaya", ...at("a", 1) }],
+        b: [{ text: "Zendya", ...at("b", 2) }],
         c: [],
       },
     });
@@ -125,9 +125,9 @@ describe("scoreRound", () => {
     const results = scoreRound({
       players,
       entries: {
-        a: [{ text: "Adele", ...at(1) }],
-        b: [{ text: "adele", ...at(2) }],
-        c: [{ text: "ADELE", ...at(3) }],
+        a: [{ text: "Adele", ...at("a", 1) }],
+        b: [{ text: "adele", ...at("b", 2) }],
+        c: [{ text: "ADELE", ...at("c", 3) }],
       },
     });
     expect(results.players.find((p) => p.id === "a")!.entries[0].alsoBy.sort())
@@ -138,7 +138,7 @@ describe("scoreRound", () => {
     const results = scoreRound({
       players,
       entries: {
-        a: [{ text: "Adele", ...at(1) }, { text: "adele", ...at(2) }],
+        a: [{ text: "Adele", ...at("a", 1) }, { text: "adele", ...at("a", 2) }],
         b: [],
         c: [],
       },
@@ -151,7 +151,7 @@ describe("scoreRound", () => {
   test("blank entries are discarded", () => {
     const results = scoreRound({
       players,
-      entries: { a: [{ text: "   ", ...at(1) }], b: [], c: [] },
+      entries: { a: [{ text: "   ", ...at("a", 1) }], b: [], c: [] },
     });
     expect(results.players.find((p) => p.id === "a")!.total).toBe(0);
   });
@@ -160,8 +160,8 @@ describe("scoreRound", () => {
     const results = scoreRound({
       players,
       entries: {
-        a: [{ text: "Anne", ...at(1) }],
-        b: [{ text: "Anna", ...at(2) }],
+        a: [{ text: "Anne", ...at("a", 1) }],
+        b: [{ text: "Anna", ...at("b", 2) }],
         c: [],
       },
     });
@@ -172,7 +172,7 @@ describe("scoreRound", () => {
   test("a player with no entries scores zero", () => {
     const results = scoreRound({
       players,
-      entries: { a: [{ text: "Adele", ...at(1) }], b: [], c: [] },
+      entries: { a: [{ text: "Adele", ...at("a", 1) }], b: [], c: [] },
     });
     const c = results.players.find((p) => p.id === "c")!;
     expect(c.total).toBe(0);
@@ -184,7 +184,7 @@ describe("scoreRound", () => {
     const results = scoreRound({
       players,
       entries: {
-        a: [{ text: "Cher", ...at(3) }, { text: "Adele", ...at(1) }],
+        a: [{ text: "Cher", ...at("a", 3) }, { text: "Adele", ...at("a", 1) }],
         b: [],
         c: [],
       },

@@ -8,13 +8,16 @@ function fullRoom(): Room {
   return {
     ...createRoom("PLUM", 1000),
     hostId: "host",
-    players: [{ id: "p0", name: "P0", emoji: "🐙", ready: true, connected: true }],
+    players: [{
+      id: "p0", name: "P0", emoji: "🐙",
+      ready: true, connected: true, teamId: null,
+    }],
     phase: { name: "playing", endsAt: 31_000 },
     category: "Bands",
     settings: { mode: DEFAULT_MODE, roundCount: 3, durationSec: 45, teamCount: 0 },
     history: [],
     lastActivityAt: 2000,
-    entries: { p0: [{ text: "Adele", at: 1500 }] },
+    entries: { p0: [{ text: "Adele", at: 1500, by: "p0" }] },
     kicked: ["p1"],
   };
 }
@@ -37,6 +40,7 @@ describe("toRoomState", () => {
       "players",
       "serverTime",
       "settings",
+      "teams",
       "votes",
     ]);
   });
@@ -60,6 +64,7 @@ describe("toRoomState", () => {
       settings: { mode: DEFAULT_MODE, roundCount: 3, durationSec: 45, teamCount: 0 },
       history: [],
       votes: {},
+      teams: [],
       configuring: false,
       serverTime: 9000,
     });

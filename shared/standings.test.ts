@@ -4,7 +4,10 @@ import type { Results } from "./scoring";
 import type { Player, RoundSummary } from "./state";
 
 function player(id: string): Player {
-  return { id, name: id.toUpperCase(), emoji: "🐙", ready: false, connected: true };
+  return {
+    id, name: id.toUpperCase(), emoji: "🐙",
+    ready: false, connected: true, teamId: null,
+  };
 }
 
 /** Results carrying only the fields placeRound reads. */
