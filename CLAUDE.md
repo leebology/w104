@@ -246,17 +246,24 @@ Off every game path, and deletable without the game noticing.
   counts, never tokens or room state. `handleUsage` in `party/server.ts` is
   where a gate goes if that changes; the client's `debugEnabled()` is a button,
   not a boundary.
-- **`ENVIRONMENT` gates nothing.** It is the label in the panel footer.
-  `WORKER_NAME` is load-bearing though — it is what the Workers request count
-  filters on, so `env.staging` repeats it or staging reports production's
-  traffic.
-- **Workers requests is the only per-environment figure.** Every other
-  Cloudflare number is account-wide and reads identically in local, staging and
-  production — a match played on staging moves production's Durable Object
-  bars. Locally the Workers bar shows *production's* traffic, because
-  `wrangler dev` never reaches Cloudflare's edge and `WORKER_NAME` falls through
-  to `"w104"`; `workersDetail()` says so on the section rather than leaving it
-  to be discovered.
+- **`ENVIRONMENT` gates nothing** and is the only `var` left. It is the label in
+  the panel footer, so a tab open against the wrong Worker is obvious.
+- **Every figure in the panel reads the same from every environment.** Nothing
+  is scoped to the Worker serving it: the Workers query is unfiltered and
+  grouped by `scriptName`, so both deployed scripts are always listed and
+  staging usage is checkable from production and vice versa. Durable Object and
+  D1 counters are account-wide outright — a match played on staging moves
+  production's bars.
+- **The Workers allowance is per *account*, not per script.** 100,000/day
+  across everything deployed, which is why that section leads with the account
+  total and the per-script rows are a breakdown of it. Two independent bars at
+  60% each would look survivable while being 120% of one allowance.
+- `WORKER_SCRIPTS` in `party/usage.ts` mirrors the `name` fields in
+  `wrangler.jsonc`. Renaming a Worker without updating it shows that script as
+  permanently idle rather than as an error.
+- **Local dev generates no Cloudflare analytics at all.** `wrangler dev` never
+  reaches the edge, so nothing you do locally moves any bar. The Workers
+  section says so rather than leaving it to be discovered.
 - **One GraphQL request per metric, each with its own try/catch.** Cloudflare's
   analytics schema is discovered by introspection rather than published field
   by field, so a field name in `party/usage.ts` may be wrong. Batched, one bad

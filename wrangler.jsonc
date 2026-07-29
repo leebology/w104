@@ -7,19 +7,19 @@
   "observability": {
     "enabled": true
   },
-  // Read by the /debug/usage endpoint only, and neither value gates it — the
-  // panel is live in every environment. ENVIRONMENT is the label in the
-  // panel's footer; WORKER_NAME is what the Workers request count filters on,
-  // so getting it wrong reports the other Worker's traffic.
+  // Read by the /debug/usage endpoint only, and it gates nothing — the panel
+  // is live in every environment. This is purely the label in the panel's
+  // footer, so a tab left open against the wrong Worker is obvious.
   //
   // `wrangler dev` reads THIS block rather than an empty one, which is why
   // `npm run dev:party` passes `--var ENVIRONMENT:local` over the top.
   //
   // The two secrets the endpoint also wants (CF_API_TOKEN, CF_ACCOUNT_ID) are
-  // NOT here — see HOSTING.md.
+  // NOT here — see HOSTING.md. The Worker *names* the usage panel breaks
+  // requests down by are the `name` fields below, mirrored in WORKER_SCRIPTS
+  // in party/usage.ts.
   "vars": {
-    "ENVIRONMENT": "production",
-    "WORKER_NAME": "w104"
+    "ENVIRONMENT": "production"
   },
   // The realtime room server. Each room is one Durable Object instance.
   "durable_objects": {
@@ -36,11 +36,10 @@
       "name": "w104-staging",
       "workers_dev": true,
       "observability": { "enabled": true },
-      // `vars` is not inherited either, and leaving WORKER_NAME behind would
-      // silently count the production Worker's requests on the staging panel.
+      // `vars` is not inherited either, so an omitted ENVIRONMENT here would
+      // label the staging panel "production".
       "vars": {
-        "ENVIRONMENT": "staging",
-        "WORKER_NAME": "w104-staging"
+        "ENVIRONMENT": "staging"
       },
       "durable_objects": {
         "bindings": [{ "name": "W104", "class_name": "W104" }]

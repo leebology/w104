@@ -49,8 +49,6 @@ let cache: { at: number; report: UsageReport } | null = null;
 export type UsageEnv = {
   /** "production" | "staging" | "local". Set as a var in wrangler.jsonc. */
   ENVIRONMENT?: string;
-  /** The deployed script name, so Workers metrics count this Worker only. */
-  WORKER_NAME?: string;
   /** Secret. Needs Account Analytics: Read. */
   CF_API_TOKEN?: string;
   /** Secret. The account the Worker is deployed to. */
@@ -168,20 +166,49 @@ function maxOver<K extends string>(
   return (nodes ?? []).reduce((peak, node) => Math.max(peak, node.max?.[field] ?? 0), 0);
 }
 
-async function workersRequests(env: UsageEnv, now: number): Promise<number> {
-  const account = await queryAccount<SumNodes<"requests">>(
+/**
+ * Every Worker's request count for today, broken down by script, plus the
+ * account total.
+ *
+ * Deliberately **unfiltered** by `scriptName` and grouped by it instead. One
+ * request then answers "how much of the allowance is left" and "which Worker
+ * spent it" at once, and the total is the true account figure rather than the
+ * sum of the two scripts this repo happens to know about.
+ *
+ * A script with no traffic today simply does not appear in the response, which
+ * is why the caller defaults a missing entry to 0 rather than to unknown.
+ */
+async function workersByScript(
+  env: UsageEnv,
+  now: number,
+): Promise<{ total: number; byScript: Map<string, number> }> {
+  const account = await queryAccount<{
+    workersInvocationsAdaptive?: {
+      sum: { requests: number };
+      dimensions: { scriptName: string };
+    }[];
+  }>(
     env,
-    `query($accountTag: string!, $start: string!, $scriptName: string!) {
+    `query($accountTag: string!, $start: string!) {
        viewer { accounts(filter: { accountTag: $accountTag }) {
          workersInvocationsAdaptive(
            limit: 10000
-           filter: { scriptName: $scriptName, datetime_geq: $start }
-         ) { sum { requests } }
+           filter: { datetime_geq: $start }
+         ) { sum { requests } dimensions { scriptName } }
        } }
      }`,
-    { start: utcDayStart(now), scriptName: env.WORKER_NAME ?? "w104" },
+    { start: utcDayStart(now) },
   );
-  return sumOver(account.workersInvocationsAdaptive, "requests");
+
+  const byScript = new Map<string, number>();
+  let total = 0;
+  for (const node of account.workersInvocationsAdaptive ?? []) {
+    const requests = node.sum?.requests ?? 0;
+    total += requests;
+    const name = node.dimensions?.scriptName;
+    if (name) byScript.set(name, (byScript.get(name) ?? 0) + requests);
+  }
+  return { total, byScript };
 }
 
 async function doRequests(env: UsageEnv, now: number): Promise<number> {
@@ -285,30 +312,36 @@ async function d1StoredBytes(env: UsageEnv, now: number): Promise<number> {
 const WORKERS_DASHBOARD = "https://dash.cloudflare.com/?to=/:account/workers/overview";
 
 /**
- * Which numbers move when you switch environments, said out loud on the
- * sections themselves — because the answer is not uniform and guessing wrong
- * is easy.
+ * The deployed scripts, in the order they should read. These names are the
+ * `name` fields in `wrangler.jsonc` — top level and `env.staging`. A rename
+ * there without one here shows that Worker as permanently idle rather than as
+ * an error, which is the failure mode to watch for.
  *
- * **Workers requests is the only per-environment figure.** It filters on
- * `scriptName`, so staging counts `w104-staging` and production counts `w104`.
- * Everything else Cloudflare reports here is account-wide and therefore
- * identical in all three.
- *
- * The local case is the one that misleads. `wrangler dev` runs on your
- * machine and never reaches Cloudflare's edge, so it generates no analytics at
- * all — and because `WORKER_NAME` falls through to the top-level `"w104"`, the
- * bar you see locally is *production's* traffic. Useful, but only if you know
- * that is what you are looking at, hence saying so.
+ * Both are listed regardless of which environment the panel is opened from, so
+ * staging and production usage are checkable from anywhere.
  */
-function workersDetail(env: UsageEnv): string {
-  const name = env.WORKER_NAME ?? "w104";
-  return env.ENVIRONMENT === "local"
-    ? `The deployed ${name} Worker. Local dev never reaches Cloudflare, so playing here moves nothing.`
-    : `This Worker only (${name}). Other scripts share the same daily allowance.`;
-}
+const WORKER_SCRIPTS = [
+  { name: "w104", label: "· w104 (production)" },
+  { name: "w104-staging", label: "· w104-staging" },
+] as const;
 
-/** Account-wide figures read the same in local, staging and production. */
-const ACCOUNT_WIDE = "Account-wide — every room and every environment, so this reads the same everywhere.";
+/**
+ * The Workers daily allowance is **per account, not per script** — 100,000
+ * requests across everything deployed. So the section leads with the account
+ * total, which is the figure the limit actually applies to, and the per-script
+ * rows under it are a breakdown rather than independent budgets. Two bars at
+ * 60% each would otherwise look survivable while being 120% of one allowance.
+ *
+ * The local caveat is stated unconditionally because it is unconditionally
+ * true: `wrangler dev` runs on your machine and never reaches Cloudflare's
+ * edge, so local play generates no analytics no matter where the panel is
+ * opened from.
+ */
+const WORKERS_DETAIL =
+  "One 100,000/day allowance for the whole account; the rows below break it down. Local dev never reaches Cloudflare, so it adds nothing here.";
+
+/** Durable Object and D1 counters are neither per-script nor per-environment. */
+const ACCOUNT_WIDE = "Account-wide — shared between every environment.";
 const D1_DASHBOARD = "https://dash.cloudflare.com/?to=/:account/workers/d1";
 /**
  * The project's own usage page, not the account-wide one. Both are behind a
@@ -337,19 +370,60 @@ function vercelService(): Service {
     // render as two permanently empty tracks, which reads as a panel that is
     // failing rather than one reporting a limitation. A link is the honest
     // shape for a number nothing can fetch.
-    detail: "No usage API on Hobby. Bandwidth and edge requests are dashboard-only.",
+    detail: "Hobby tier doesn't include usage API. Check analytics on Vercel site.",
     dashboard: VERCEL_DASHBOARD,
     dashboardLabel: "Open Vercel usage →",
     metrics: [],
   };
 }
 
-async function cloudflareServices(env: UsageEnv, now: number): Promise<Service[]> {
-  const [requests, doReq, doDur, doBytes] = await Promise.all([
-    readMetric(
-      { label: "Requests", limit: LIMITS.workersRequestsPerDay, unit: "count", reset: "daily" },
-      () => workersRequests(env, now),
-    ),
+/**
+ * One query feeds every bar here, so this builds the whole section rather than
+ * going through `readMetric` per bar — a failure blanks all three rows with
+ * the same note, which the panel hoists to the section heading.
+ */
+async function workersService(env: UsageEnv, now: number): Promise<Service> {
+  const row = (label: string, used: number | null, note?: string): Metric => ({
+    label,
+    used,
+    limit: LIMITS.workersRequestsPerDay,
+    unit: "count",
+    reset: "daily",
+    note,
+  });
+  const base: Omit<Service, "metrics" | "status"> = {
+    id: "workers",
+    name: "Workers",
+    detail: WORKERS_DETAIL,
+    dashboard: WORKERS_DASHBOARD,
+  };
+
+  try {
+    const { total, byScript } = await workersByScript(env, now);
+    return {
+      ...base,
+      status: "ok",
+      metrics: [
+        row("All Workers", total),
+        // Absent from the response means no traffic today, not no data.
+        ...WORKER_SCRIPTS.map((s) => row(s.label, byScript.get(s.name) ?? 0)),
+      ],
+    };
+  } catch (err) {
+    const note = err instanceof Error ? err.message : String(err);
+    return {
+      ...base,
+      status: "error",
+      metrics: [
+        row("All Workers", null, note),
+        ...WORKER_SCRIPTS.map((s) => row(s.label, null, note)),
+      ],
+    };
+  }
+}
+
+async function durableObjectsService(env: UsageEnv, now: number): Promise<Service> {
+  const [doReq, doDur, doBytes] = await Promise.all([
     readMetric(
       { label: "Requests", limit: LIMITS.doRequestsPerDay, unit: "count", reset: "daily" },
       () => doRequests(env, now),
@@ -364,24 +438,14 @@ async function cloudflareServices(env: UsageEnv, now: number): Promise<Service[]
     ),
   ]);
 
-  return [
-    {
-      id: "workers",
-      name: `Workers — ${env.WORKER_NAME ?? "w104"}`,
-      status: requests.used === null ? "error" : "ok",
-      detail: workersDetail(env),
-      dashboard: WORKERS_DASHBOARD,
-      metrics: [requests],
-    },
-    {
-      id: "durable-objects",
-      name: "Durable Objects",
-      status: doReq.used === null && doDur.used === null ? "error" : "ok",
-      detail: ACCOUNT_WIDE,
-      dashboard: WORKERS_DASHBOARD,
-      metrics: [doReq, doDur, doBytes],
-    },
-  ];
+  return {
+    id: "durable-objects",
+    name: "Durable Objects",
+    status: doReq.used === null && doDur.used === null ? "error" : "ok",
+    detail: ACCOUNT_WIDE,
+    dashboard: WORKERS_DASHBOARD,
+    metrics: [doReq, doDur, doBytes],
+  };
 }
 
 async function d1Service(env: UsageEnv, now: number): Promise<Service> {
@@ -436,18 +500,25 @@ async function d1Service(env: UsageEnv, now: number): Promise<Service> {
  * the same way as a live report so the panel is worth opening before the token
  * is set up — the limits are useful on their own.
  */
-function unconfiguredServices(env: UsageEnv): Service[] {
+function unconfiguredServices(): Service[] {
   const blank = (label: string, limit: number, unit: Metric["unit"], reset: Metric["reset"]): Metric =>
     ({ label, used: null, limit, unit, reset });
   const detail = "Set CF_API_TOKEN and CF_ACCOUNT_ID to read live figures.";
   return [
     {
       id: "workers",
-      name: `Workers — ${env.WORKER_NAME ?? "w104"}`,
+      name: "Workers",
       status: "unconfigured",
       detail,
       dashboard: WORKERS_DASHBOARD,
-      metrics: [blank("Requests", LIMITS.workersRequestsPerDay, "count", "daily")],
+      // Same three rows the live section has, so the shape does not change
+      // when credentials arrive.
+      metrics: [
+        blank("All Workers", LIMITS.workersRequestsPerDay, "count", "daily"),
+        ...WORKER_SCRIPTS.map((s) =>
+          blank(s.label, LIMITS.workersRequestsPerDay, "count", "daily"),
+        ),
+      ],
     },
     {
       id: "durable-objects",
@@ -496,8 +567,15 @@ export async function collectUsage(
   const credentialled = Boolean(env.CF_API_TOKEN && env.CF_ACCOUNT_ID);
 
   const services = credentialled
-    ? [...(await cloudflareServices(env, now)), await d1Service(env, now), vercelService()]
-    : [...unconfiguredServices(env), vercelService()];
+    ? [
+        ...(await Promise.all([
+          workersService(env, now),
+          durableObjectsService(env, now),
+          d1Service(env, now),
+        ])),
+        vercelService(),
+      ]
+    : [...unconfiguredServices(), vercelService()];
 
   const report: UsageReport = { environment, fetchedAt: now, cached: false, services };
   cache = { at: now, report };

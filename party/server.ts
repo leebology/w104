@@ -21,8 +21,6 @@ export interface Env {
    * against the wrong Worker is obvious rather than merely confusing.
    */
   ENVIRONMENT?: string;
-  /** This Worker's deployed name, so usage metrics can filter to it. */
-  WORKER_NAME?: string;
   /** Debug-panel secrets. Absent everywhere until `wrangler secret put`. */
   CF_API_TOKEN?: string;
   CF_ACCOUNT_ID?: string;

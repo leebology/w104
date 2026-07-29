@@ -331,28 +331,38 @@ than discovering:
 
 #### Which numbers change between environments
 
-Only one of them. This is worth knowing before reading anything into a
-difference between two tabs.
+**None of them.** The panel reads identically from local, staging and
+production, by design — you can check production's usage from your dev machine
+and staging's from production.
 
-| Section | Scope | local | staging | production |
-| --- | --- | --- | --- | --- |
-| Workers · Requests | filtered by `scriptName` | shows **`w104`** — see below | `w104-staging` | `w104` |
-| Durable Objects · all three | account-wide | identical | identical | identical |
-| D1 · all three | account-wide | identical | identical | identical |
-| Vercel | dashboard link only | identical | identical | identical |
+| Section | Rows | Scope |
+| --- | --- | --- |
+| Workers | All Workers · w104 · w104-staging | account total, then per-script |
+| Durable Objects | Requests · Duration · Stored data | account-wide |
+| D1 | Rows read · Rows written · Stored data | account-wide |
+| Vercel | — | dashboard link only |
 
-**Workers requests is the only per-environment figure**, because it is the only
-one filtered by `WORKER_NAME`. Everything else Cloudflare reports here is
-account-wide, so staging's rooms and production's rooms land in the same
-Durable Object counters and the panel shows the same totals wherever you open
-it. Playing a match on staging moves production's bars.
+The Workers query is deliberately **unfiltered and grouped by `scriptName`**,
+so both deployed Workers are always listed no matter which one is answering.
+Durable Object and D1 counters are not per-script at all, so staging's rooms
+and production's rooms land in the same numbers — **playing a match on staging
+moves production's bars.**
 
-The local row is the one that misleads, so the panel says so on the section
-itself. `wrangler dev` runs on your machine and never touches Cloudflare's
-edge, so it generates **no analytics at all** — and `WORKER_NAME` falls through
-to the top-level `"w104"`, so what you see locally is *production's* traffic.
-That is useful (it is a way to check production from your dev machine) as long
-as you know that is what you are looking at.
+Two things about the Workers section specifically:
+
+- **The 100,000/day allowance is per account, not per Worker.** That is why the
+  section leads with "All Workers" — the figure the limit actually applies to —
+  and the two script rows underneath are a breakdown of it, not separate
+  budgets. Two independent bars at 60% each would look survivable while being
+  120% of one allowance.
+- The script names come from `WORKER_SCRIPTS` in `party/usage.ts`, which
+  mirrors the `name` fields in `wrangler.jsonc`. Rename a Worker without
+  updating that list and it shows as permanently idle rather than as an error.
+
+**Local dev generates no Cloudflare analytics whatsoever.** `wrangler dev` runs
+on your machine and never touches Cloudflare's edge, so playing locally moves
+nothing on any bar. The panel says so on the Workers section rather than
+leaving it to be worked out from a number that will not budge.
 
 #### Two sections that do not report live numbers
 
