@@ -113,10 +113,10 @@ export const LIMITS = {
   d1RowsWrittenPerDay: 100_000,
   /** D1 Free: 5 GB total. */
   d1StoredBytes: 5 * 1024 ** 3,
-  /** Vercel Hobby: 100 GB fast data transfer/month. */
-  vercelBandwidthBytesPerMonth: 100 * 1024 ** 3,
-  /** Vercel Hobby: 1M edge requests/month. */
-  vercelEdgeRequestsPerMonth: 1_000_000,
+  // Vercel's Hobby allowances are deliberately absent. Nothing can read the
+  // used half of them, and a bar with a limit and a permanent "—" is a widget
+  // that looks broken rather than one that says "look elsewhere". The numbers
+  // themselves live in HOSTING.md's table; the panel just links out.
 } as const;
 
 /**

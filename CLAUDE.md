@@ -250,6 +250,13 @@ Off every game path, and deletable without the game noticing.
   `WORKER_NAME` is load-bearing though — it is what the Workers request count
   filters on, so `env.staging` repeats it or staging reports production's
   traffic.
+- **Workers requests is the only per-environment figure.** Every other
+  Cloudflare number is account-wide and reads identically in local, staging and
+  production — a match played on staging moves production's Durable Object
+  bars. Locally the Workers bar shows *production's* traffic, because
+  `wrangler dev` never reaches Cloudflare's edge and `WORKER_NAME` falls through
+  to `"w104"`; `workersDetail()` says so on the section rather than leaving it
+  to be discovered.
 - **One GraphQL request per metric, each with its own try/catch.** Cloudflare's
   analytics schema is discovered by introspection rather than published field
   by field, so a field name in `party/usage.ts` may be wrong. Batched, one bad

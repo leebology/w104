@@ -329,16 +329,48 @@ than discovering:
   Worker. If that trade stops holding, gate `handleUsage` in `party/server.ts`;
   hiding the client button would not close the endpoint.
 
-**Vercel's two rows are always blank, and that is the honest answer.** Hobby
-has no usage API. `GET /v1/billing/charges` exists but reports *charges*, and a
-Hobby account has none; the dashboard's own numbers come from an internal
-endpoint with no compatibility promise. So the panel prints the ceilings, links
-to <https://vercel.com/dashboard/usage>, and declines to invent a figure. If
-Vercel ever ships a real endpoint, `vercelService()` in `party/usage.ts` is the
-only thing that has to change.
+#### Which numbers change between environments
 
-D1's rows stay blank for a different reason: nothing is bound yet. The panel
-starts reporting it the moment the score archive's `DB` binding lands.
+Only one of them. This is worth knowing before reading anything into a
+difference between two tabs.
+
+| Section | Scope | local | staging | production |
+| --- | --- | --- | --- | --- |
+| Workers · Requests | filtered by `scriptName` | shows **`w104`** — see below | `w104-staging` | `w104` |
+| Durable Objects · all three | account-wide | identical | identical | identical |
+| D1 · all three | account-wide | identical | identical | identical |
+| Vercel | dashboard link only | identical | identical | identical |
+
+**Workers requests is the only per-environment figure**, because it is the only
+one filtered by `WORKER_NAME`. Everything else Cloudflare reports here is
+account-wide, so staging's rooms and production's rooms land in the same
+Durable Object counters and the panel shows the same totals wherever you open
+it. Playing a match on staging moves production's bars.
+
+The local row is the one that misleads, so the panel says so on the section
+itself. `wrangler dev` runs on your machine and never touches Cloudflare's
+edge, so it generates **no analytics at all** — and `WORKER_NAME` falls through
+to the top-level `"w104"`, so what you see locally is *production's* traffic.
+That is useful (it is a way to check production from your dev machine) as long
+as you know that is what you are looking at.
+
+#### Two sections that do not report live numbers
+
+**Vercel has no bars at all, and that is the honest answer.** Hobby has no usage
+API. `GET /v1/billing/charges` exists but reports *charges*, and a Hobby account
+has none; the dashboard's own numbers come from an internal endpoint with no
+compatibility promise. The section used to render bandwidth and edge requests as
+two permanently empty tracks, which reads as a broken panel rather than a
+limitation — so it is now a heading and a link to the project's usage page. The
+allowances themselves stay in the table above. If Vercel ever ships a real
+endpoint, `vercelService()` in `party/usage.ts` is the only thing that changes.
+
+**D1 says "not in use" because nothing writes to it yet.** The score archive is
+specced in `docs/superpowers/specs/2026-07-28-score-persistence-design.md` and
+approved, but not built: there is no `d1_databases` block in `wrangler.jsonc`
+and no `DB` binding. The collector checks for that binding, so the three D1 bars
+start reporting on their own the moment the archive lands — no change to the
+panel needed.
 
 #### Giving the panel real numbers
 

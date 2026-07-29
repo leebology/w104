@@ -283,6 +283,32 @@ async function d1StoredBytes(env: UsageEnv, now: number): Promise<number> {
 // ---------------------------------------------------------------- services
 
 const WORKERS_DASHBOARD = "https://dash.cloudflare.com/?to=/:account/workers/overview";
+
+/**
+ * Which numbers move when you switch environments, said out loud on the
+ * sections themselves — because the answer is not uniform and guessing wrong
+ * is easy.
+ *
+ * **Workers requests is the only per-environment figure.** It filters on
+ * `scriptName`, so staging counts `w104-staging` and production counts `w104`.
+ * Everything else Cloudflare reports here is account-wide and therefore
+ * identical in all three.
+ *
+ * The local case is the one that misleads. `wrangler dev` runs on your
+ * machine and never reaches Cloudflare's edge, so it generates no analytics at
+ * all — and because `WORKER_NAME` falls through to the top-level `"w104"`, the
+ * bar you see locally is *production's* traffic. Useful, but only if you know
+ * that is what you are looking at, hence saying so.
+ */
+function workersDetail(env: UsageEnv): string {
+  const name = env.WORKER_NAME ?? "w104";
+  return env.ENVIRONMENT === "local"
+    ? `The deployed ${name} Worker. Local dev never reaches Cloudflare, so playing here moves nothing.`
+    : `This Worker only (${name}). Other scripts share the same daily allowance.`;
+}
+
+/** Account-wide figures read the same in local, staging and production. */
+const ACCOUNT_WIDE = "Account-wide — every room and every environment, so this reads the same everywhere.";
 const D1_DASHBOARD = "https://dash.cloudflare.com/?to=/:account/workers/d1";
 /**
  * The project's own usage page, not the account-wide one. Both are behind a
@@ -303,24 +329,18 @@ const VERCEL_DASHBOARD = "https://vercel.com/leebotomy/w104/usage";
  * reminded what the allowance *is*.
  */
 function vercelService(): Service {
-  const manual = (label: string, limit: number, unit: Metric["unit"]): Metric => ({
-    label,
-    used: null,
-    limit,
-    unit,
-    reset: "monthly",
-  });
   return {
     id: "vercel",
     name: "Vercel (Hobby)",
     status: "manual",
-    detail: "No usage API on Hobby — these two can only be read off the dashboard.",
+    // No bars at all, on purpose. Fast data transfer and edge requests used to
+    // render as two permanently empty tracks, which reads as a panel that is
+    // failing rather than one reporting a limitation. A link is the honest
+    // shape for a number nothing can fetch.
+    detail: "No usage API on Hobby. Bandwidth and edge requests are dashboard-only.",
     dashboard: VERCEL_DASHBOARD,
     dashboardLabel: "Open Vercel usage →",
-    metrics: [
-      manual("Fast data transfer", LIMITS.vercelBandwidthBytesPerMonth, "bytes"),
-      manual("Edge requests", LIMITS.vercelEdgeRequestsPerMonth, "count"),
-    ],
+    metrics: [],
   };
 }
 
@@ -349,7 +369,7 @@ async function cloudflareServices(env: UsageEnv, now: number): Promise<Service[]
       id: "workers",
       name: `Workers — ${env.WORKER_NAME ?? "w104"}`,
       status: requests.used === null ? "error" : "ok",
-      detail: "This Worker only. Other scripts on the account share the allowance.",
+      detail: workersDetail(env),
       dashboard: WORKERS_DASHBOARD,
       metrics: [requests],
     },
@@ -357,7 +377,7 @@ async function cloudflareServices(env: UsageEnv, now: number): Promise<Service[]
       id: "durable-objects",
       name: "Durable Objects",
       status: doReq.used === null && doDur.used === null ? "error" : "ok",
-      detail: "Account-wide — every room, every environment.",
+      detail: ACCOUNT_WIDE,
       dashboard: WORKERS_DASHBOARD,
       metrics: [doReq, doDur, doBytes],
     },
@@ -378,7 +398,8 @@ async function d1Service(env: UsageEnv, now: number): Promise<Service> {
     return {
       ...base,
       status: "unused",
-      detail: "No database bound yet — the score archive is designed but not built.",
+      detail:
+        "Nothing writes to D1 yet. The score archive is specced but unbuilt; these fill in on their own once its DB binding lands.",
       metrics: [
         { label: "Rows read", used: null, limit: LIMITS.d1RowsReadPerDay, unit: "count", reset: "daily" },
         { label: "Rows written", used: null, limit: LIMITS.d1RowsWrittenPerDay, unit: "count", reset: "daily" },
@@ -405,7 +426,7 @@ async function d1Service(env: UsageEnv, now: number): Promise<Service> {
   return {
     ...base,
     status: read.used === null && written.used === null ? "error" : "ok",
-    detail: "Account-wide, across every database.",
+    detail: ACCOUNT_WIDE,
     metrics: [read, written, bytes],
   };
 }
