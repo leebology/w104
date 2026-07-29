@@ -90,9 +90,7 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
             ))}
           </ul>
         </section>
-      ) : (
-        <p className="player-teams__hint">Tap a colour to join it.</p>
-      )}
+      ) : null}
 
       {mine && (
         <div className="divider player-teams__divider">

@@ -48,10 +48,6 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
   return (
     <main className="screen screen--mobile screen--locked player-voting">
       {/* No round marker: voting only ever happens before round one. */}
-      <p className="player-voting__meta">
-        ROOM {room.code} · {budget} {budget === 1 ? "VOTE" : "VOTES"} EACH
-      </p>
-
       <section className="card player-voting__head">
         {left > 0 ? (
           <span className="player-voting__count" key={bump}>{left}</span>

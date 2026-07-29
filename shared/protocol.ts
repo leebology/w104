@@ -20,6 +20,7 @@ export type ClientMessage =
   | { type: "joinTeam"; teamId: TeamId }
   | { type: "leaveTeam" }
   | { type: "setTeamName"; teamId: TeamId; name: string }
+  | { type: "balanceTeams" }
   | { type: "endGame" };
 
 export type ServerMessage =

@@ -6,7 +6,7 @@ import { pulseInterval } from "../../components/Roster";
 import { roomStore } from "../../net/room";
 import { TEAM_COLORS, membersOf } from "../../../shared/teams";
 import type { RoomState } from "../../../shared/state";
-import { HostExit, HostHeader, HostHeaderRight, PlayerCount } from "./HostHeader";
+import { HostExit, HostHeader } from "./HostHeader";
 
 type Props = {
   room: RoomState;
@@ -36,13 +36,10 @@ export function HostTeams({ room, countdown }: Props) {
       <HostHeader
         left={<RoomChip code={room.code} />}
         right={
-          <HostHeaderRight>
-            <PlayerCount n={room.players.length} />
-            <HostExit
-              label="Back to room"
-              onClick={() => roomStore.send({ type: "backToLobby" })}
-            />
-          </HostHeaderRight>
+          <HostExit
+            label="Back to room"
+            onClick={() => roomStore.send({ type: "backToLobby" })}
+          />
         }
       />
 
@@ -63,8 +60,9 @@ export function HostTeams({ room, countdown }: Props) {
           >
             {/* The tab rides over the panel's corner rather than being a top
                 border, so the ink outline stays unbroken on all four sides.
-                Same badge on every screen that names a team — see TeamBadge. */}
-            <TeamBadge name={team.name} colorIndex={team.colorIndex} />
+                Same badge on every screen that names a team — see TeamBadge.
+                `--lg`: the panel is wide enough now to read at TV distance. */}
+            <TeamBadge name={team.name} colorIndex={team.colorIndex} className="team-badge--lg" />
             <ul className="team-panel__members">
               {membersOf(room, team.id).map((p) => (
                 <li key={p.id} className={p.connected ? "" : "team-member--gone"}>
@@ -97,6 +95,17 @@ export function HostTeams({ room, countdown }: Props) {
       )}
 
       <div className="host-teams__footer">
+        {/* Bottom-left rather than beside Continue: it rearranges the room
+            rather than advancing it, so it does not share the gold forward
+            action's spot. Left up through the countdown too — joinTeam and
+            leaveTeam both stay legal there, and this is no different. */}
+        <button
+          type="button"
+          className="btn btn--secondary host-teams__sort"
+          onClick={() => roomStore.send({ type: "balanceTeams" })}
+        >
+          Auto sort
+        </button>
         {countdown ? (
           <>
             <p className="get-ready get-ready--tv">Get ready… {remaining}</p>

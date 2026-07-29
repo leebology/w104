@@ -6,7 +6,7 @@ import { CATEGORIES } from "./categories";
 import { isGameModeId, modeSpec, normalizeSetting } from "./gamemodes";
 import type { NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
-import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, makeTeams, rosterOf, teamsEnabled } from "./teams";
+import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, balanceTeams, makeTeams, rosterOf, teamsEnabled } from "./teams";
 import type { TeamId } from "./teams";
 
 export const COUNTDOWN_MS = 5_000;
@@ -64,6 +64,7 @@ export type RoomEvent =
   | { t: "joinTeam"; playerId: PlayerId; teamId: TeamId; now: number }
   | { t: "leaveTeam"; playerId: PlayerId; now: number }
   | { t: "setTeamName"; playerId: PlayerId; teamId: TeamId; name: string; now: number }
+  | { t: "balanceTeams"; playerId: PlayerId; now: number }
   /**
    * `roll` is a uniform [0,1) supplied by the caller. Randomness is injected
    * at the edge so `reduce` stays a pure function and the draw is testable
@@ -532,6 +533,19 @@ function apply(room: Room, ev: RoomEvent): Room {
       return {
         ...room,
         teams: room.teams.map((t) => (t.id === ev.teamId ? { ...t, name } : t)),
+      };
+    }
+
+    case "balanceTeams": {
+      if (ev.playerId !== room.hostId) return room;
+      if (!inTeamSelect(room)) return room;
+      const players = balanceTeams(room.players, room.teams);
+      if (players === room.players) return room;
+      // A player moved onto a team the same way joinTeam would ready them;
+      // a player already on a team just changes colour and stays ready.
+      return {
+        ...room,
+        players: players.map((p) => (p.teamId !== null ? { ...p, ready: true } : p)),
       };
     }
 

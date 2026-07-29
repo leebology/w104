@@ -341,6 +341,9 @@ export class W104 extends Server<Env> {
       case "leaveTeam":
         this.room = reduce(this.room, { t: "leaveTeam", playerId, now });
         break;
+      case "balanceTeams":
+        this.room = reduce(this.room, { t: "balanceTeams", playerId, now });
+        break;
       case "setTeamName":
         this.room = reduce(this.room, {
           t: "setTeamName",

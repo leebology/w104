@@ -398,7 +398,7 @@ ul, ol { list-style: none; }
 }
 
 .create-card__copy {
-  font-family: var(--body);
+  font-family: var(--display);
   font-size: 14px;
   line-height: 1.45;
   color: var(--ink-dim);
@@ -1181,9 +1181,12 @@ ul, ol { list-style: none; }
 
 /* -------------------------------------------------------- player screens */
 
-.player-lobby { gap: 16px; }
-
-.player-lobby__room { font-size: 20px; letter-spacing: 0.12em; padding: 8px 20px; }
+/* `.back-pill` is `position: absolute`, so it takes no space in this flex
+   column — the gap above the name card is `.screen--mobile`'s own top
+   padding minus the pill's height, not the 16px row gap below. Since the
+   Room plaque above the name card was removed, that padding alone left a
+   noticeably tighter gap than the one between cards; bumped to match. */
+.player-lobby { padding-top: 62px; gap: 16px; }
 
 .field__label {
   font-family: var(--display);
@@ -1219,8 +1222,11 @@ ul, ol { list-style: none; }
   gap: 10px;
   overflow-x: auto;
   overflow-y: hidden;
-  /* Room for the scrollbar so it never sits on top of the bottom row. */
-  padding-bottom: 6px;
+  /* Room for the scrollbar so it never sits on top of the bottom row, and for
+     the selected avatar's 4px 4px shadow — without it, a selection in the
+     rightmost column or bottom row gets its shadow clipped by this same
+     scroll container. */
+  padding: 0 6px 6px 0;
   scrollbar-width: thin;
   scrollbar-color: var(--scroll-thumb) transparent;
   overscroll-behavior-x: contain;
@@ -1273,7 +1279,10 @@ ul, ol { list-style: none; }
 .playing__head {
   flex: 0 0 auto;
   position: relative;
-  padding: 18px 0 10px;
+  /* Top padding sized so the timer wheel pinned in the corner above gets the
+     same margin below it, to the banner, as it has above it and to its
+     side — 8px in all three directions, matching `.playing__timer`. */
+  padding: 28px 0 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1303,6 +1312,31 @@ ul, ol { list-style: none; }
   margin-top: 0;
 }
 
+/* A filled pie rather than a ring or a numeral — the same teal the "OK,"
+   plaque and the host timer bar use, so it reads as this app's one timer
+   colour rather than a new one. `--frac` is set inline per tick; the slice
+   itself is drawn by the gradient, so there is no ring geometry to keep in
+   step with a radius anywhere else. */
+.playing__timer {
+  position: absolute;
+  top: 13px;
+  /* `.entry-overlay` is `position: fixed` to the *viewport*, not to this
+     screen's own box, so its padding doesn't reliably land on the same x as
+     anything drawn inside `.screen` once the two containers' centring can
+     diverge. Matching `.playing`'s own 20px side padding plus
+     `.playing__card`'s 16px left padding instead — the same box this wheel
+     is actually positioned against — is what stays flush with the list's
+     text edge. */
+  left: 21px;
+  width: 40px;
+  height: 40px;
+  z-index: 6;
+  border-radius: 50%;
+  border: var(--border);
+  background: conic-gradient(var(--teal) calc(var(--frac, 0) * 360deg), var(--cream-dim) 0);
+  transition: background 0.2s linear;
+}
+
 .playing__card { position: relative; flex: 1; min-height: 0; padding: 14px 14px 14px 16px; }
 
 /* Clearance for the team's name tab, which a free-for-all card has not got. */
@@ -1319,13 +1353,6 @@ ul, ol { list-style: none; }
 .playing__list { justify-content: flex-end; gap: 4px; padding-bottom: 42px; }
 
 .playing__list .word { font-size: 17px; }
-
-.playing__empty {
-  margin: auto 0 0;
-  font-size: 15px;
-  color: var(--ink-dim);
-  text-align: center;
-}
 
 /* Mounted for the player's whole time in the room (see PlayerView) so a tap
    during the lobby can open the keyboard and have it survive into the round
@@ -1375,6 +1402,9 @@ ul, ol { list-style: none; }
   color: var(--ink);
   caret-color: var(--ink);
   box-shadow: none;
+  /* Empty, this input shows only its placeholder — a drag across it should
+     not highlight that placeholder as if it were real, selectable text. */
+  user-select: none;
 }
 
 /* The caret is the focus indicator here. A focus ring would draw a box around
@@ -1564,11 +1594,11 @@ ul, ol { list-style: none; }
   .host-lobby__code { margin: 0 -50px; }
   .host-exit { font-size: 11px; padding: 9px 13px; }
   .host-header__right { gap: 10px; }
-  /* Five fixed 182px panels plus gaps need ~1000px. On a laptop-sized "TV"
+  /* Five fixed 228px panels plus gaps need ~1250px. On a laptop-sized "TV"
      the panel gets narrower — but it is still *fixed*, so the invariant that
      matters holds: a panel's width never changes with how many teams there
      are, only with how big the screen is. */
-  .team-grid { grid-template-columns: repeat(var(--cols, 5), 148px); padding: 18px 16px 8px; }
+  .team-grid { grid-template-columns: repeat(var(--cols, 5), 185px); padding: 18px 16px 8px; }
   .drawer { padding: 16px; }
   .drawer__panel { width: min(340px, 66vw); }
 }
@@ -1854,10 +1884,13 @@ ul, ol { list-style: none; }
 
 .stepper__unit { font-size: 75%; }
 
-.player-lobby__settings {
-  color: var(--cream-dim);
-  font-size: 12px;
-  letter-spacing: 0.08em;
+/* Mirrors `.back-pill`'s corner: absolute so it takes no space in the
+   column, and top-left where `.back-pill` sits top-right. */
+.player-lobby__code-chip {
+  position: absolute;
+  top: 16px;
+  left: 18px;
+  z-index: 5;
 }
 
 /* --------------------------------------------------------- player voting */
@@ -1897,7 +1930,19 @@ ul, ol { list-style: none; }
 
 .player-voting__avatar { font-size: 34px; line-height: 1; }
 
-.player-voting__head-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+/* `min-height` matches `.player-voting__count`'s 48px box — the pips (while
+   voting) and the "waiting on" line (once locked) stack to different heights,
+   and without a floor this row is only as tall as whichever text happens to
+   be showing, so the whole card visibly grows or shrinks the moment voting
+   locks. */
+.player-voting__head-text {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 48px;
+}
 .player-voting__head-title { font-family: var(--display); font-size: 15px; color: var(--ink); }
 .player-voting__head-sub { font-size: 13px; color: var(--ink-dim); }
 
@@ -1960,11 +2005,11 @@ ul, ol { list-style: none; }
   box-shadow: 2px 2px 0 var(--ink);
 }
 
-/* Locked reuses that press: the card sits down into where its own shadow was,
-   so "you can't tap this" needs no new colour and no icon. */
+/* Not a press: translating into the shadow (like `.btn:active` does) shrinks
+   the tile's own painted footprint by the shadow's offset, which reads as
+   every panel shrinking the instant voting locks. Same size, whole time —
+   "you can't tap this" is said by colour alone below, not by the shape. */
 .vote-tile--locked {
-  transform: translate(4px, 4px);
-  box-shadow: none;
   cursor: default;
 }
 
@@ -2027,6 +2072,11 @@ ul, ol { list-style: none; }
    edges of the TV. */
 .player-voting__bar {
   height: 76px;
+  /* Matches `.player-voting`'s own 20px side and bottom padding (it overrides
+     `.screen--mobile`'s, since it is the later, equally-specific rule), so the
+     bar's edges land exactly on the frame edges rather than leaving a sliver
+     of pink — a mismatched offset here is invisible in isolation and only
+     shows up against the frame. */
   margin: 0 -20px -20px;
   padding: 0 18px;
   gap: 14px;
@@ -2366,6 +2416,16 @@ ul, ol { list-style: none; }
   max-width: calc(100% - 25px);
 }
 
+/* Default, up 50% — host team select's panels are wide enough now that a
+   TV-distance read wants the biggest badge in the app. */
+.team-badge--lg {
+  top: -21px;
+  left: 18px;
+  font-size: 24px;
+  padding: 7px 18px;
+  max-width: calc(100% - 36px);
+}
+
 /* Fixed-width panels that wrap, five to a row — not tracks that divide the
    width up. Adding a team must add a panel rather than shrink the nine
    others: players are aiming at a colour on a TV while someone shouts at
@@ -2378,15 +2438,15 @@ ul, ol { list-style: none; }
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: repeat(var(--cols, 5), 182px);
+  grid-template-columns: repeat(var(--cols, 5), 228px);
   /* Capped rather than `1fr`, which stretched a panel to whatever height the
      screen had left over — five members' worth of content in a column tall
      enough for twenty. A cap keeps the panel roughly as tall as it is wide at
      one row and still lets two rows fit. */
-  grid-auto-rows: minmax(0, 34vh);
+  grid-auto-rows: minmax(0, 24vh);
   justify-content: center;
   align-content: center;
-  gap: 22px 12px;
+  gap: 56px 12px;
   width: 100%;
   padding: 18px 34px 8px;
 }
@@ -2401,7 +2461,8 @@ ul, ol { list-style: none; }
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-card);
-  padding: 26px 14px 14px;
+  /* Extra top clearance for `--lg`'s taller badge. */
+  padding: 36px 14px 14px;
 }
 
 /* `overflow-x: visible` is not a legal pairing with a scrolling y-axis — it
@@ -2451,11 +2512,21 @@ ul, ol { list-style: none; }
 
 .host-teams__footer {
   flex: 0 0 auto;
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 10px;
   padding: 0 28px 26px;
+}
+
+/* Absolute rather than a flex sibling: Continue has to stay dead-centre
+   whether or not this button is there, and a flex row would shift it over
+   to make room. */
+.host-teams__sort {
+  position: absolute;
+  left: 28px;
+  bottom: 26px;
 }
 
 .host-teams__hint {
@@ -2490,7 +2561,7 @@ ul, ol { list-style: none; }
 
 .team-member__name {
   font-family: var(--display);
-  font-size: 14px;
+  font-size: 21px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2549,12 +2620,6 @@ ul, ol { list-style: none; }
   text-align: center;
 }
 
-.player-teams__hint {
-  color: var(--cream-dim);
-  text-align: center;
-  font-size: 14px;
-}
-
 .player-teams__plaque { font-size: 16px; letter-spacing: 0.1em; padding: 8px 18px; }
 
 /* Heavier than the tiles below it in every dimension — 4px rule where they
@@ -2567,6 +2632,9 @@ ul, ol { list-style: none; }
   flex-direction: column;
   gap: 8px;
   flex: 0 0 auto;
+  /* On top of `.player-teams`' own gap, so this card sits further from the
+     plaque above it than every other pair of siblings on the screen does. */
+  margin-top: 14px;
   background: var(--cream);
   color: var(--ink);
   border: var(--border-heavy);
@@ -2606,6 +2674,13 @@ ul, ol { list-style: none; }
    JOINED! badge pinned to this card's top-right corner. */
 .player-teams__title {
   position: static;
+  /* `.player-teams__mine` is a column flex container, so its default
+     `align-items: stretch` stretches every child to the column's full width —
+     this is a flex item too, and without an override it filled the whole
+     card regardless of how short the name inside it was. `flex-start` lets it
+     size to its own content (the `size` attribute on the input below), so the
+     tab scales with the name instead of the card. */
+  align-self: flex-start;
   display: flex;
   align-items: center;
   gap: 8px;
