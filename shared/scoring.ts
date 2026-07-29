@@ -64,11 +64,33 @@ export function isMatch(a: string, b: string): boolean {
   return editDistance(a, b) <= allowed;
 }
 
+/**
+ * Bumped by hand whenever `normalize`, `allowedEdits` or `isMatch` changes.
+ * The score archive stamps it on each game so a later replay can tell which
+ * games were scored by which algorithm — otherwise retuning the typo
+ * thresholds would silently rewrite what happened on past nights.
+ */
+export const SCORING_VERSION = 1;
+
 export type ScoredEntry = {
   text: string;      // as the player typed it
   /** Which member wrote it. The scorer's own id when teams are off. */
   by: PlayerId;
   unique: boolean;
+  /**
+   * Which cluster of matching answers this entry landed in. Stable and unique
+   * within one round, but not contiguous — treat it as an opaque label, never
+   * as an index. Every entry sharing a `group` matched every other, so a
+   * self-join on it recovers who cancelled whom, including three-way and
+   * larger collisions.
+   *
+   * Exposed rather than derived downstream because `alsoBy` cannot rebuild it:
+   * one scorer can write two different words that were each cancelled by
+   * exactly the same rival, which is one `alsoBy` value and two clusters.
+   * The archive needs the real thing, and a second union-find pass somewhere
+   * else could drift from this one.
+   */
+  group: number;
   /**
    * The other scorers who also had this word. Ids rather than display
    * strings: a team is identified by a colour, which a pre-baked emoji string
@@ -158,6 +180,11 @@ export function scoreRound(input: ScoreInput): Results {
         text: f.text,
         by: f.by,
         unique: others.length === 0,
+        // The union-find root itself. Renumbering these 0..n would be tidier
+        // to read in a database dump and would cost a second pass over every
+        // entry — measurably, on a ten-player room at the entry cap. Nothing
+        // needs them contiguous, only equal within a cluster.
+        group: roots[i],
         alsoBy: others,
       });
     });

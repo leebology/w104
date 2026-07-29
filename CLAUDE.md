@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (325 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (347 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -71,16 +71,27 @@ party/    server.ts — thin DO shell: persist, broadcast, schedule alarms
 src/      React client — net/room.ts socket store + screens/{host,player}
 ```
 
-`shared/usage.ts` is the one file in `shared/` that is **not** game logic: it
-holds the debug panel's payload types and the free-tier limit table. It lives
-there only because `party/` and `src/` are separate tsconfig projects and a
-type the client imported from `party/` would drag the Worker into
-`tsconfig.json`. It is pure data, it is tested like everything else there, and
-nothing in the game imports it.
-
 The layering is the point: **all game rules live in `shared/`** so they test in
 milliseconds. `party/server.ts` is plumbing only. If you find yourself writing a
 rule inside the Durable Object, it belongs in `shared/reduce.ts` instead.
+
+Two subsystems hang off the Worker and are on **no** game path — delete either
+and the game behaves identically:
+
+- **The D1 score archive.** `shared/archive.ts` maps `Room`/`Results` to row
+  shapes (pure, so the `shared/**/*.test.ts` glob covers it); `party/archive.ts`
+  is the only file that touches the `DB` binding; `migrations/` holds the
+  schema. Every call goes through `ctx.waitUntil()` in try/catch that logs and
+  swallows — **the archive is allowed to lose data, the game is not allowed to
+  notice.** The game never reads it back.
+- **The free-tier usage panel.** `party/usage.ts` behind `/debug/usage`,
+  rendered by `src/components/DebugPanel.tsx`.
+
+Each keeps one file in `shared/` that is **not** game logic — `shared/archive.ts`
+and `shared/usage.ts` — and for the same two reasons: purity makes them testable
+under the existing vitest glob, and `party/` and `src/` are separate tsconfig
+projects, so a type the client imported from `party/` would drag the whole
+Worker into `tsconfig.json`. Nothing in the game imports either.
 
 ### State flow
 
@@ -341,7 +352,8 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
   which is the brief it answers.
 - `docs/superpowers/specs/2026-07-28-score-persistence-design.md` — the D1
   archive: schema, where the writes happen, and the rule that the game never
-  reads it back. Approved, not yet implemented.
+  reads it back. Implemented (§14 steps 1–4); the write path has not yet been
+  exercised by a real match, which is step 5.
 - `docs/superpowers/specs/2026-07-29-freetier-debug-panel-design.md` — the
   free-tier usage panel: the `/debug/usage` route, why one GraphQL request per
   metric, the per-account Workers allowance, and why Vercel is a link rather

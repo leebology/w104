@@ -25,12 +25,26 @@
   "durable_objects": {
     "bindings": [{ "name": "W104", "class_name": "W104" }]
   },
+  // The score archive. Written after each round and at match end; NEVER read
+  // by the game — see docs/superpowers/specs/2026-07-28-score-persistence-design.md.
+  // The binding is `DB` in every environment so no code branches on which one
+  // it is; only the database behind it differs.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "w104-archive",
+      "database_id": "a2188b6c-4a44-4505-940a-45bc554352b6",
+      "migrations_dir": "migrations"
+    }
+  ],
   // `new_sqlite_classes` (not `new_classes`) is required for Durable Objects on
   // the Cloudflare free plan. Do not change to new_classes — it needs a paid plan.
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["W104"] }],
-  // Named environments do NOT inherit durable_objects bindings from the
-  // top level, so it must be repeated here. Migrations are top-level and
-  // apply to every environment already, so they are not repeated.
+  // Named environments do NOT inherit durable_objects or d1_databases bindings
+  // from the top level, so both must be repeated here. Migrations are
+  // top-level and apply to every environment already, so they are not
+  // repeated. Omitting the D1 block would not fail the deploy — it would fail
+  // at the first archive write, in production-shaped traffic.
   "env": {
     "staging": {
       "name": "w104-staging",
@@ -43,7 +57,15 @@
       },
       "durable_objects": {
         "bindings": [{ "name": "W104", "class_name": "W104" }]
-      }
+      },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "w104-staging-archive",
+          "database_id": "a7d51d00-5226-4c12-99d9-ccecb6d6ddc3",
+          "migrations_dir": "migrations"
+        }
+      ]
     }
   }
 }

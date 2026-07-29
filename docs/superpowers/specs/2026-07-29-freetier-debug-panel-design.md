@@ -206,14 +206,15 @@ explanation that is not "the panel is broken".
   has asked for yet.
 - No spend/trend history, per §Non-goals.
 
-## 13. What the D1 archive changes here
+## 13. What the D1 archive changed here
 
-Nothing, deliberately. `d1Service()` checks for the `DB` binding on the Worker
-env: absent, it reports `unused` with the three allowances shown and no figures;
-present, it runs the queries. So landing
-`2026-07-28-score-persistence-design.md` turns the D1 section on by itself, with
-no change to this panel.
+Nothing, as designed — and this has now actually happened rather than being a
+prediction. `d1Service()` checks for the `DB` binding on the Worker env: absent,
+it reports `unused` with the three allowances and no figures; present, it runs
+the queries. `2026-07-28-score-persistence-design.md` landed its binding on
+2026-07-29 and the D1 section switched itself on, with no edit to this panel.
 
-Worth knowing while building it: the free allowance is **100,000 rows written
-per day and index updates count**, which is the number that spec's §5 budgets
-against — and this panel is how to watch it during the first real match.
+The allowance that matters there is **100,000 rows written per day, index
+updates counted** — the number that spec's §5 budgets against. This panel is
+how to watch it during that spec's first real match, which is its outstanding
+step.

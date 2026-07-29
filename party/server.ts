@@ -4,16 +4,30 @@ import {
   alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry, MAX_PLAYERS,
 } from "../shared/reduce";
 import type { ClientMessage, ErrorCode, ServerMessage } from "../shared/protocol";
-import { createRoom, toRoomState } from "../shared/state";
+import { createRoom, matchComplete, toRoomState } from "../shared/state";
 import type { Entry, MatchSettings, PlayerId, Room } from "../shared/state";
 import { DEFAULT_DURATION_SEC } from "../shared/categories";
 import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes";
 import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
+import { SCORING_VERSION, scoreRound } from "../shared/scoring";
+import { placeRound } from "../shared/standings";
+import {
+  gameId as makeGameId, gameResultRows, gameStartRows, playedCategories,
+  roundRows, voteRows,
+} from "../shared/archive";
+import {
+  archiveGameStart, archiveMatchEnd, archiveRound, archiveVotes,
+} from "./archive";
 import { collectUsage } from "./usage";
 
-// Durable Object binding declared in wrangler.jsonc.
+// Bindings declared in wrangler.jsonc.
 export interface Env {
   W104: DurableObjectNamespace;
+  /**
+   * The score archive. Write-only: nothing in this class reads from it, and
+   * the game must play identically when it is unavailable.
+   */
+  DB: D1Database;
   /**
    * Which deployment this is — "production" or "staging" from `vars` in
    * wrangler.jsonc, or "local", which `npm run dev:party` passes. Gates
@@ -25,6 +39,29 @@ export interface Env {
   CF_API_TOKEN?: string;
   CF_ACCOUNT_ID?: string;
 }
+
+/**
+ * Everything the archive needs that the game itself has no reason to keep.
+ * Persisted under its own storage key rather than added to `Room`, so no
+ * archive concern can reach `shared/`, ride in a broadcast, or need a
+ * defaulting fallback in `load()`.
+ */
+type ArchiveState = {
+  /** When this room was first created — earlier than the match's start. */
+  lobbyCreatedAt: number;
+  /** Set at the first `startGame`; null while no match has begun. */
+  gameId: string | null;
+  /** Whether the match-end row has already been written. */
+  finalized: boolean;
+  /** Whether the category pool and votes have been written for this match. */
+  votesWritten: boolean;
+  /**
+   * The current round's wall-clock window, captured when `playing` opens.
+   * `showStandings` is too late to derive it: by then the phase is `scoring`
+   * and the deadline it carried is gone.
+   */
+  round: { startedAt: number; endedAt: number } | null;
+};
 
 type ConnState = { playerId: PlayerId; role: "player" | "host"; session: string };
 
@@ -56,8 +93,30 @@ export class W104 extends Server<Env> {
    */
   private kickedSessions = new Map<PlayerId, Set<string>>();
 
+  /**
+   * Archive bookkeeping. Loaded alongside the room and written back whenever
+   * it changes; absent for any room created before the archive existed, which
+   * is why every read guards on it.
+   */
+  private archive: ArchiveState | null = null;
+
   async onStart(): Promise<void> {
     this.room = await this.load();
+    this.archive = (await this.ctx.storage.get<ArchiveState>("archive")) ?? null;
+  }
+
+  private async saveArchiveState(next: ArchiveState): Promise<void> {
+    this.archive = next;
+    await this.ctx.storage.put("archive", next);
+  }
+
+  /**
+   * Fire-and-forget: the archive is never awaited on a path the game is
+   * waiting for. `waitUntil` keeps the Durable Object alive long enough for
+   * the write to land without the round's transition queueing behind it.
+   */
+  private archiveInBackground(work: Promise<void>): void {
+    this.ctx.waitUntil(work);
   }
 
   /**
@@ -156,6 +215,15 @@ export class W104 extends Server<Env> {
         return this.reject(conn, "room-exists", "That code is already in use.");
       }
       this.room = createRoom(this.name, now);
+      // The lobby's birth time. Nothing is archived yet — a lobby that never
+      // starts a match is deliberately not a row.
+      await this.saveArchiveState({
+        lobbyCreatedAt: now,
+        gameId: null,
+        finalized: false,
+        votesWritten: false,
+        round: null,
+      });
     } else if (!this.room) {
       return this.reject(conn, "no-such-room", "No game with that code.");
     }
@@ -281,9 +349,15 @@ export class W104 extends Server<Env> {
       case "ready":
         this.room = reduce(this.room, { t: "ready", playerId, ready: msg.ready, now });
         break;
-      case "startGame":
+      case "startGame": {
+        const before = this.room;
         this.room = reduce(this.room, { t: "startGame", playerId, now });
+        // Only the first accepted start of a match writes the game row.
+        // `startGame` is legal from the lobby, team select, voting and
+        // standings, so it fires several times across one match.
+        if (this.room !== before) await this.beginArchivedGame(now);
         break;
+      }
       case "cancelStart":
         this.room = reduce(this.room, { t: "cancelStart", playerId, now });
         break;
@@ -330,9 +404,14 @@ export class W104 extends Server<Env> {
           t: "setConfiguring", playerId, open: msg.open === true, now,
         });
         break;
-      case "showStandings":
+      case "showStandings": {
+        // Captured BEFORE the reduce: `showStandings` is the single place
+        // `entries` is emptied, so a room read afterwards has no words left.
+        const banked = this.room;
         this.room = reduce(this.room, { t: "showStandings", playerId, now });
+        if (this.room !== banked) this.archiveBankedRound(banked, this.room, now);
         break;
+      }
       case "backToLobby":
         this.room = reduce(this.room, { t: "backToLobby", playerId, now });
         break;
@@ -402,11 +481,25 @@ export class W104 extends Server<Env> {
     // The only randomness in the game, and it enters here — shared/ stays pure.
     const outcome = alarmOutcome(this.room, Date.now(), this.hasAnyConnection(), Math.random());
     switch (outcome.action) {
-      case "advance":
-        this.room = outcome.room;
+      case "advance": {
+        const previous = this.room.phase.name;
+        // A local, not `this.room`: narrowing a mutable class property does
+        // not survive the assignment, and tsc collapses the phase to `never`.
+        const advanced = outcome.room;
+        this.room = advanced;
+        // The whistle. This is the only moment the round's start and deadline
+        // are both known — `scoring` carries neither, and it is `scoring` that
+        // the round is archived from.
+        if (advanced.phase.name === "playing" && previous !== "playing" && this.archive) {
+          await this.saveArchiveState({
+            ...this.archive,
+            round: { startedAt: Date.now(), endedAt: advanced.phase.endsAt },
+          });
+        }
         await this.persist();
         this.broadcastState();
         return;
+      }
       case "touch":
         this.room = outcome.room;
         await this.persist();
@@ -424,6 +517,96 @@ export class W104 extends Server<Env> {
           : this.endRoom("no-such-room", "This game expired."));
         return;
     }
+  }
+
+  // ---- score archive ----
+  //
+  // Everything below is a side effect of play. None of it feeds back into the
+  // room, none of it is awaited on a path a player is waiting on, and all of
+  // it is safe to lose. See docs/superpowers/specs/2026-07-28-score-persistence-design.md.
+
+  /** Writes the game row on the first accepted `startGame` of a match. */
+  private async beginArchivedGame(now: number): Promise<void> {
+    if (!this.room || !this.archive || this.archive.gameId !== null) return;
+    const id = makeGameId(this.room.code, now);
+    await this.saveArchiveState({ ...this.archive, gameId: id });
+    this.archiveInBackground(
+      archiveGameStart(
+        this.env.DB,
+        gameStartRows(this.room, {
+          gameId: id,
+          lobbyCreatedAt: this.archive.lobbyCreatedAt,
+          startedAt: now,
+          scoringVersion: SCORING_VERSION,
+        }),
+      ),
+    );
+  }
+
+  /**
+   * Writes one banked round, and the match's final rows when that round was
+   * the last. `banked` is the room as it stood before `showStandings`, which
+   * is the only copy that still has the words; `after` is the room with the
+   * round pushed onto history, which is what says whether the match is over.
+   *
+   * Per round rather than per match on purpose: rooms are abandoned far more
+   * often than they are finished, and the reap takes everything with it.
+   */
+  private archiveBankedRound(banked: Room, after: Room, now: number): void {
+    const state = this.archive;
+    if (!state?.gameId || banked.phase.name !== "scoring") return;
+    const window = state.round ?? { startedAt: now, endedAt: now };
+    const results = banked.phase.results;
+
+    this.archiveInBackground((async () => {
+      await archiveRound(
+        this.env.DB,
+        roundRows(banked, results, placeRound(results), {
+          gameId: state.gameId!,
+          // `after.history` already includes this round, so its index is the
+          // length before the push — which is what the round was playing as.
+          roundIndex: after.history.length - 1,
+          startedAt: window.startedAt,
+          endedAt: window.endedAt,
+        }),
+      );
+      // Voting has definitely closed by the first bank, so the tally is final.
+      // It could not have been written at `startGame`: voting happens after.
+      if (!state.votesWritten) {
+        await archiveVotes(this.env.DB, voteRows(banked, state.gameId!));
+      }
+      if (matchComplete(after)) {
+        await archiveMatchEnd(
+          this.env.DB, state.gameId!, gameResultRows(after, state.gameId!),
+          playedCategories(after), now, true, null,
+        );
+      }
+    })());
+
+    void this.saveArchiveState({
+      ...state,
+      votesWritten: true,
+      finalized: state.finalized || matchComplete(after),
+      round: null,
+    });
+  }
+
+  /**
+   * Marks a match that never reached its final standings. Called from the one
+   * place a room dies, so a host walking out mid-round still leaves a record
+   * of how far the match got.
+   */
+  private finalizeAbandoned(): void {
+    const state = this.archive;
+    const room = this.room;
+    if (!state?.gameId || state.finalized || !room) return;
+    const phase = room.phase.name;
+    this.archiveInBackground(
+      archiveMatchEnd(
+        this.env.DB, state.gameId, gameResultRows(room, state.gameId),
+        playedCategories(room), Date.now(), false, phase,
+      ),
+    );
   }
 
   // ---- plumbing ----
@@ -525,8 +708,13 @@ export class W104 extends Server<Env> {
     /** The connection that asked for this, if any; closed without the error. */
     except?: Connection<ConnState>,
   ): Promise<void> {
+    // Before the delete: this reads `this.room` and the archive state, and
+    // `deleteAll` takes both. The write itself outlives this call via
+    // `waitUntil`, which is why it does not need the storage to still be here.
+    this.finalizeAbandoned();
     await this.ctx.storage.deleteAll();
     this.room = null;
+    this.archive = null;
     for (const conn of this.getConnections<ConnState>()) {
       if (conn === except) conn.close();
       else this.reject(conn, code, message);
