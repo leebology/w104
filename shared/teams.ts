@@ -168,3 +168,36 @@ export function assignStragglers(players: Player[], teams: Team[]): Player[] {
     return { ...p, teamId: best.id };
   });
 }
+
+/**
+ * The host's "Auto sort" button. Two different jobs behind one action,
+ * chosen by what the room looks like when it is pressed:
+ *
+ * - Anyone still picking: delegate to `assignStragglers` — only the
+ *   unassigned move, exactly as if they had each tapped the smallest team.
+ * - Everyone already on a team: reshuffle the whole roster round-robin
+ *   across teams in colour order, which is the only way to *shrink* an
+ *   uneven split rather than just stop it from growing.
+ *
+ * Returns the identical array when nothing changes, per the no-op rule.
+ */
+export function balanceTeams(players: Player[], teams: Team[]): Player[] {
+  if (teams.length === 0) return players;
+  const live = new Set(teams.map((t) => t.id));
+  const assigned = (p: Player) => p.teamId !== null && live.has(p.teamId);
+  if (!players.every(assigned)) return assignStragglers(players, teams);
+
+  const counts = new Map<TeamId, number>(teams.map((t) => [t.id, 0]));
+  let changed = false;
+  const next = players.map((p) => {
+    let best = teams[0];
+    for (const t of teams) {
+      if (counts.get(t.id)! < counts.get(best.id)!) best = t;
+    }
+    counts.set(best.id, counts.get(best.id)! + 1);
+    if (p.teamId === best.id) return p;
+    changed = true;
+    return { ...p, teamId: best.id };
+  });
+  return changed ? next : players;
+}

@@ -1,12 +1,9 @@
 import { useState } from "react";
 import { useRemaining } from "../../net/clock";
 import { AVATARS, AvatarPicker } from "../../components/AvatarPicker";
-import { formatDuration } from "../../components/Stepper";
 import { saveProfile } from "../../net/identity";
 import { roomStore } from "../../net/room";
-import { modeSpec } from "../../../shared/gamemodes";
 import type { PlayerId, RoomState } from "../../../shared/state";
-import { teamsEnabled } from "../../../shared/teams";
 
 type Props = {
   room: RoomState;
@@ -36,24 +33,12 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
         Back
       </button>
 
-      <p className="plaque player-lobby__room">Room {room.code}</p>
-      <p className="player-lobby__settings">
-        {modeSpec(room.settings.mode).name}
-        {" · "}
-        {room.settings.roundCount} {room.settings.roundCount === 1 ? "ROUND" : "ROUNDS"}
-        {" · "}
-        {formatDuration(room.settings.durationSec)}
-        {teamsEnabled(room.settings) && (
-          <>
-            {" · "}
-            {room.settings.teamCount} TEAMS
-          </>
-        )}
-      </p>
-      {/* Without this the countdown just vanishes and the room looks broken. */}
-      {room.configuring && (
-        <p className="player-lobby__settings">Host is adjusting settings…</p>
-      )}
+      {/* Same pill the host wears in team select, just labelled for a player
+          who already knows they're in the room — no join address needed. */}
+      <div className="pill room-chip player-lobby__code-chip">
+        <span className="room-chip__label">ROOM CODE:</span>
+        <span className="room-chip__code">{room.code}</span>
+      </div>
 
       <section className="card">
         <label className="field__label" htmlFor="player-name">Your name</label>
