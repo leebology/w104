@@ -1,0 +1,19 @@
+# Copy to `.dev.vars` (gitignored) to make the local debug panel show REAL
+# Cloudflare usage figures instead of "no credentials". Entirely optional —
+# without it the panel still opens and still shows every free-tier limit, it
+# just cannot fill in the "used" half of each bar.
+#
+# `wrangler dev` reads `.dev.vars` automatically. Nothing else in the app
+# looks at either value, and neither leaves the Worker.
+#
+# Mint the token at https://dash.cloudflare.com/profile/api-tokens
+#   Create Token -> Create Custom Token
+#   Permissions:  Account | Account Analytics | Read
+# That single permission is all /debug/usage needs. Do NOT reuse the deploy
+# token from HOSTING.md — that one can edit Workers, and this one only has to
+# read numbers.
+CF_API_TOKEN=your-account-analytics-read-token
+
+# Workers & Pages overview, right-hand sidebar. Same value as the
+# CLOUDFLARE_ACCOUNT_ID used for deploys.
+CF_ACCOUNT_ID=your-account-id

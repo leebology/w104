@@ -2541,3 +2541,267 @@ ul, ol { list-style: none; }
   align-items: center;
   gap: 14px;
 }
+
+/* ------------------------------------------------------------ debug panel */
+
+/* Staging and local only — `debugEnabled()` in src/net/usage.ts decides, and
+   the Worker route it reads 404s in production regardless.
+
+   Everything below deliberately ignores the design system's tokens for colour
+   and shape. The rest of the app is cream-on-pink with gold for "go"; this is
+   ink-on-ink with a teal rule, because the panel overlays screens a room of
+   people may be looking at and anything wearing the game's buttons reads as a
+   game control. It is meant to look like it does not belong. The one thing it
+   does honour is the flat-graphic rule: no gradients, no blur, no soft
+   shadows. */
+
+.debug-tab {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 900;
+  width: 34px;
+  height: 34px;
+  padding: 0 8px 0 0;
+  border: 0;
+  margin: 0;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--body);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-align: right;
+  line-height: 30px;
+  cursor: pointer;
+  /* Four points, not three, so the collapsed triangle and the expanded tab
+     interpolate: clip-path only animates between polygons with a matching
+     point count, and the collapsed shape simply doubles up its third point. */
+  clip-path: polygon(100% 0, 100% 100%, 100% 100%, 0 0);
+  transition: width 160ms ease, clip-path 160ms ease, opacity 120ms ease;
+}
+
+.debug-tab:hover,
+.debug-tab:focus-visible {
+  width: 132px;
+  clip-path: polygon(100% 0, 100% 100%, 26px 100%, 0 0);
+  outline: none;
+}
+
+.debug-tab__label {
+  opacity: 0;
+  transition: opacity 120ms ease 40ms;
+}
+
+.debug-tab:hover .debug-tab__label,
+.debug-tab:focus-visible .debug-tab__label {
+  opacity: 1;
+}
+
+/* Hidden rather than unmounted while the panel is open: it is the thing focus
+   returns to, and unmounting it would make the panel's own exit animation the
+   only motion on screen. */
+.debug-tab--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.debug-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 901;
+  display: flex;
+  flex-direction: column;
+  width: min(380px, 100vw);
+  height: 100dvh;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--body);
+  border-left: 3px solid var(--teal);
+  /* Off-screen rather than display:none so it slides. `visibility` is what
+     stops a closed panel from being hit-tested over the game underneath;
+     transform alone would leave nothing there, but the delay keeps it
+     paintable for the duration of the exit. */
+  transform: translateX(100%);
+  visibility: hidden;
+  transition: transform 200ms ease, visibility 0s linear 200ms;
+}
+
+.debug-panel--open {
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform 200ms ease, visibility 0s;
+}
+
+.debug-panel__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid rgba(255, 247, 232, 0.18);
+}
+
+.debug-panel__title {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.debug-panel__sub {
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.debug-panel__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.debug-btn {
+  border: 1px solid rgba(255, 247, 232, 0.35);
+  background: transparent;
+  color: var(--cream);
+  font-family: var(--body);
+  font-size: 11px;
+  padding: 5px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.debug-btn:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); }
+.debug-btn:disabled { opacity: 0.4; cursor: default; }
+.debug-btn--close { padding: 5px 8px; }
+
+/* The panel is the one place in this app allowed to scroll a container this
+   large: it is an overlay with unbounded content, not a game screen whose
+   controls have to stay reachable without one. */
+.debug-panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 14px 14px;
+}
+
+.debug-panel__foot {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(255, 247, 232, 0.18);
+  font-size: 10px;
+  opacity: 0.5;
+}
+
+.debug-service { padding: 14px 0 4px; }
+.debug-service + .debug-service { border-top: 1px solid rgba(255, 247, 232, 0.12); }
+
+.debug-service__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.debug-service__name a { color: inherit; text-decoration: none; border-bottom: 1px dotted; }
+.debug-service__name a:hover { color: var(--teal); }
+
+.debug-service__detail {
+  margin-top: 3px;
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+.debug-chip {
+  font-family: var(--body);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  opacity: 0.8;
+}
+
+.debug-chip--unconfigured,
+.debug-chip--manual,
+.debug-chip--unused { color: var(--team-yellow); }
+.debug-chip--error { color: var(--team-red); }
+
+.debug-bar { margin-top: 11px; }
+
+.debug-bar__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.debug-bar__label { opacity: 0.85; }
+.debug-bar__value { font-variant-numeric: tabular-nums; }
+.debug-bar__limit { opacity: 0.45; }
+
+.debug-track {
+  margin-top: 4px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 247, 232, 0.14);
+  overflow: hidden;
+}
+
+/* A figure we could not read must not look like a figure of zero. Hatching
+   says "unknown" where an empty track says "none used". */
+.debug-track--unknown {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 247, 232, 0.14) 0 4px,
+    transparent 4px 8px
+  );
+}
+
+.debug-fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 300ms ease;
+}
+
+.debug-fill--ok { background: var(--teal); }
+.debug-fill--warn { background: var(--team-yellow); }
+.debug-fill--danger { background: var(--team-red); }
+
+.debug-bar__reset {
+  margin-top: 3px;
+  font-size: 10px;
+  opacity: 0.45;
+}
+
+/* The failure text from party/usage.ts, printed verbatim. A renamed analytics
+   field is the likeliest reason a bar is blank, and the message names it. */
+.debug-bar__note {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--team-yellow);
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.debug-note { padding: 16px 0; font-size: 11px; opacity: 0.7; }
+.debug-note--bad { color: var(--team-yellow); opacity: 1; }
+
+/* A phone in landscape running the player screen has no room for a 380px
+   panel beside anything, so it takes the lot. */
+@media (max-width: 420px) {
+  .debug-panel { width: 100vw; border-left: 0; border-top: 3px solid var(--teal); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .debug-tab,
+  .debug-tab__label,
+  .debug-panel,
+  .debug-fill { transition: none; }
+}

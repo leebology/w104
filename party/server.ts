@@ -9,10 +9,23 @@ import type { Entry, MatchSettings, PlayerId, Room } from "../shared/state";
 import { DEFAULT_DURATION_SEC } from "../shared/categories";
 import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes";
 import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
+import { collectUsage } from "./usage";
 
 // Durable Object binding declared in wrangler.jsonc.
 export interface Env {
   W104: DurableObjectNamespace;
+  /**
+   * Which deployment this is — "production" or "staging" from `vars` in
+   * wrangler.jsonc, or "local", which `npm run dev:party` passes explicitly
+   * because `wrangler dev` would otherwise read the production value. The only
+   * thing it gates is the debug usage endpoint below.
+   */
+  ENVIRONMENT?: string;
+  /** This Worker's deployed name, so usage metrics can filter to it. */
+  WORKER_NAME?: string;
+  /** Debug-panel secrets. Absent everywhere until `wrangler secret put`. */
+  CF_API_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
 }
 
 type ConnState = { playerId: PlayerId; role: "player" | "host"; session: string };
@@ -520,9 +533,48 @@ export class W104 extends Server<Env> {
   }
 }
 
+/**
+ * Free-tier usage for the debug panel, as JSON.
+ *
+ * **404 in production, deliberately.** The panel is a development tool, and
+ * the endpoint is unauthenticated — on staging it hands its account-level
+ * usage counts to anyone who finds the URL. That is an acceptable trade for a
+ * soak environment (no tokens leave the Worker, no room state is involved) and
+ * not one worth making on the production host.
+ *
+ * CORS is wide open because the caller is always a different origin — the app
+ * is on Vercel, this is on workers.dev — and because a same-origin policy
+ * protects nothing here that the endpoint's own gate does not already.
+ *
+ * `?fresh=1` skips the 60-second cache, for when you have just played a round
+ * and want to watch the number move.
+ */
+async function handleUsage(request: Request, env: Env): Promise<Response> {
+  if (env.ENVIRONMENT === "production") {
+    return new Response("Not Found", { status: 404 });
+  }
+  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
+  const report = await collectUsage(env, Date.now(), { fresh });
+  return new Response(JSON.stringify(report), {
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      // The figures are already a minute stale by design; letting a browser
+      // cache them on top of that would make the refresh button a no-op.
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 // Worker entrypoint: route /parties/:party/:room to the right room instance.
 export default {
   async fetch(request, env) {
+    // Checked before `routePartykitRequest`, which would otherwise 404 it
+    // itself — this path is not a party route and never reaches a room.
+    if (new URL(request.url).pathname === "/debug/usage") {
+      return handleUsage(request, env);
+    }
+
     // PartyServer takes the connection id from `_pk`, and partysocket mints one
     // `_pk` per socket instance and reuses it on every auto-reconnect. Two
     // sockets would then share an id in a Map keyed by it, and the stale one's

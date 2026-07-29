@@ -199,10 +199,41 @@ done once:
    Production-and-Preview variable would silently point staging at the
    production Worker, and the symptom — staging players landing in production
    rooms — looks like a game bug, not a config one.
+5. **Settings → Deployment Protection → Vercel Authentication → off → Save.**
+   Without this, staging is not public — see below.
 
-Staging is publicly reachable. It's a party game with no accounts and no
-personal data, so that's acceptable; if you'd rather it not be indexed, add a
-`X-Robots-Tag: noindex` header for the staging domain in `vercel.json`.
+### Deployment protection must be off
+
+A branch domain still serves *preview* deployments, and Vercel Authentication
+protects previews by default. Left on, `staging.oknameone.com` bounces every
+visitor to a Vercel login, and granting access one person at a time does not
+rescue it: **Hobby allows exactly one external user per account.** The second
+friend you hand the URL to cannot get in at all. This is the setting to check
+first when staging "works for me" and for nobody else.
+
+The toggle is not plan-gated — Hobby teams can disable it on their own
+projects. Equivalently, via the API:
+
+```bash
+curl -X PATCH "https://api.vercel.com/v9/projects/w104" -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" -d '{"ssoProtection":null}'
+```
+
+Protection is **per-project, not per-domain**, so turning it off also makes
+every PR preview URL public. That is fine here and is the accepted trade:
+the frontend is a static bundle with nothing secret in it (`VITE_PARTYKIT_HOST`
+is a public hostname by definition — the browser has to dial it), there are no
+accounts and no personal data, and the real access control on a game is the
+room code. The paid alternatives (Password Protection, Sharable Links) are
+Pro-only and this project stays on free tiers.
+
+> If PR previews ever *do* need to stay locked, the free way is a second Vercel
+> project on the same repo whose production branch is `staging`, with
+> `staging.oknameone.com` as that project's **production** domain — Standard
+> Protection leaves custom production domains public. It costs a duplicated
+> project and a duplicated `VITE_PARTYKIT_HOST`. Not worth it today.
+
+Staging is therefore publicly reachable. If you'd rather it not be indexed, add
+an `X-Robots-Tag: noindex` header for the staging domain in `vercel.json`.
 
 ---
 
@@ -258,3 +289,81 @@ All free tier:
 - **Cloudflare Workers + SQLite Durable Objects free tier** — fine for
   party-sized rooms. Review current Workers/DO free-tier limits before any public
   launch.
+
+Current allowances, verified 2026-07-29. Cloudflare's compute limits reset at
+**00:00 UTC daily**; storage is a total ceiling that never resets. Vercel's
+reset on the account's billing anniversary.
+
+| Service | Metric | Free allowance | Resets |
+| --- | --- | --- | --- |
+| Workers | Requests | 100,000 / day | daily, 00:00 UTC |
+| Durable Objects | Requests | 100,000 / day | daily, 00:00 UTC |
+| Durable Objects | Duration | 13,000 GB-s / day | daily, 00:00 UTC |
+| Durable Objects | Stored data | 5 GB | never |
+| D1 | Rows read | 5,000,000 / day | daily, 00:00 UTC |
+| D1 | Rows written | 100,000 / day | daily, 00:00 UTC |
+| D1 | Stored data | 5 GB | never |
+| Vercel Hobby | Fast data transfer | 100 GB / month | billing date |
+| Vercel Hobby | Edge requests | 1,000,000 / month | billing date |
+
+These numbers also live in `LIMITS` in `shared/usage.ts`, which is what the
+debug panel draws its bars against. **Change them in both places** — a stale
+constant there makes every bar quietly lie, which is worse than no panel.
+
+### The debug usage panel
+
+Staging and local builds render a small triangle in the top-right corner;
+hovering expands it to read "debug menu" and clicking slides out a panel with a
+progress bar per metric above, plus how long until each one resets. It is
+absent from production twice over — the client refuses to render it off an
+allowlisted hostname, and the Worker route it reads returns 404 when
+`ENVIRONMENT` is `production`.
+
+**Vercel's two rows are always blank, and that is the honest answer.** Hobby
+has no usage API. `GET /v1/billing/charges` exists but reports *charges*, and a
+Hobby account has none; the dashboard's own numbers come from an internal
+endpoint with no compatibility promise. So the panel prints the ceilings, links
+to <https://vercel.com/dashboard/usage>, and declines to invent a figure. If
+Vercel ever ships a real endpoint, `vercelService()` in `party/usage.ts` is the
+only thing that has to change.
+
+D1's rows stay blank for a different reason: nothing is bound yet. The panel
+starts reporting it the moment the score archive's `DB` binding lands.
+
+#### Giving the panel real numbers
+
+Without credentials the panel still opens and still shows every limit — it just
+cannot fill in the "used" half. To read live figures it needs a Cloudflare API
+token with exactly one permission.
+
+1. <https://dash.cloudflare.com/profile/api-tokens> → **Create Token** →
+   **Create Custom Token** → Permissions: **Account | Account Analytics |
+   Read**. Nothing else. Do **not** reuse the "Edit Cloudflare Workers" deploy
+   token — that one can rewrite the Worker, and this one only reads numbers.
+2. Locally, copy `.dev.vars.example` to `.dev.vars` (gitignored) and fill in
+   `CF_API_TOKEN` and `CF_ACCOUNT_ID`. `wrangler dev` picks it up.
+3. For staging, set them as Worker secrets:
+
+```bash
+npx wrangler secret put CF_API_TOKEN --env staging
+```
+
+```bash
+npx wrangler secret put CF_ACCOUNT_ID --env staging
+```
+
+Do not set them on the production Worker. The route is 404 there, so they would
+be a credential sitting in an environment with nothing to read it.
+
+> **The staging endpoint is unauthenticated.** `https://w104-staging.liam-donaher.workers.dev/debug/usage`
+> hands its JSON to anyone who finds it. What leaks is a handful of
+> account-level usage counts — no tokens, no room state, no player data — which
+> is an acceptable
+> trade on a soak environment that is already deliberately public, and is why
+> the same route is closed on production rather than merely hidden.
+
+Figures are cached in the Worker for 60 seconds, because Cloudflare's GraphQL
+API allows 300 queries per 5 minutes per user and a collection spends six. The
+panel's **Refresh** button sends `?fresh=1` and skips the cache. The analytics
+pipeline itself runs a few minutes behind, so a round you just played will not
+appear instantly no matter which button you press.

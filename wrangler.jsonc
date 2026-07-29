@@ -7,6 +7,21 @@
   "observability": {
     "enabled": true
   },
+  // Read by the /debug/usage endpoint only. ENVIRONMENT === "production" is
+  // what 404s that endpoint on the live Worker.
+  //
+  // `wrangler dev` reads THIS block, not an empty one — so local dev would
+  // call itself production and 404 its own debug panel. `npm run dev:party`
+  // therefore passes `--var ENVIRONMENT:local`. Keeping "production" as the
+  // value here is what makes the gate fail closed: a deploy that somehow
+  // loses its vars serves no debug endpoint rather than an open one.
+  //
+  // The two secrets the endpoint also wants (CF_API_TOKEN, CF_ACCOUNT_ID) are
+  // NOT here — see HOSTING.md.
+  "vars": {
+    "ENVIRONMENT": "production",
+    "WORKER_NAME": "w104"
+  },
   // The realtime room server. Each room is one Durable Object instance.
   "durable_objects": {
     "bindings": [{ "name": "W104", "class_name": "W104" }]
@@ -22,6 +37,14 @@
       "name": "w104-staging",
       "workers_dev": true,
       "observability": { "enabled": true },
+      // `vars` is not inherited either, and an omitted ENVIRONMENT here would
+      // read as "local" rather than "production" — which happens to be the
+      // safe direction, but leaving WORKER_NAME behind would silently count
+      // the production Worker's requests on the staging panel.
+      "vars": {
+        "ENVIRONMENT": "staging",
+        "WORKER_NAME": "w104-staging"
+      },
       "durable_objects": {
         "bindings": [{ "name": "W104", "class_name": "W104" }]
       }
