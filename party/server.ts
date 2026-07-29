@@ -18,6 +18,7 @@ import {
 import {
   archiveGameStart, archiveMatchEnd, archiveRound, archiveVotes,
 } from "./archive";
+import { DEFAULT_FILL_COUNT, fillWordsFor } from "../shared/debug";
 import { collectUsage } from "./usage";
 
 // Bindings declared in wrangler.jsonc.
@@ -144,6 +145,10 @@ export class W104 extends Server<Env> {
       votes: rest.votes ?? {},
       history: rest.history ?? [],
       configuring: rest.configuring ?? false,
+      // A room stored before the debug pause existed has no such key, and an
+      // undefined `paused` would read as "held" to every `!== null` check —
+      // freezing the round and stopping its alarm from ever advancing it.
+      paused: rest.paused ?? null,
       teams: rest.teams ?? [],
       // Two backfills in one pass. `teamId` gives players stored before teams
       // existed a null slot, and `by` gives their words an author — redundant
@@ -324,6 +329,51 @@ export class W104 extends Server<Env> {
       return; // Still no broadcast: entry counts are not published.
     }
 
+    /**
+     * Debug: put a plausible list in front of every scorer so a round can be
+     * driven to the scoring screen without eight people typing.
+     *
+     * Handled here rather than as a `reduce` event for the same reason
+     * `submitEntry` is: it touches the server-only entries map, and that is
+     * the one mutation `reduce` deliberately does not own. Going through
+     * `submitEntry` per word is what keeps every existing rule — phase,
+     * duplicates within a scorer, `MAX_ENTRIES`, the team-merged list — in
+     * force for free, instead of a second write path free to drift from the
+     * one real players use.
+     *
+     * Host-only, checked here *and* in `shared/reduce.ts` for the two sibling
+     * events. Hiding the button in the panel is not the boundary.
+     */
+    if (msg.type === "debugFill") {
+      if (playerId !== this.room.hostId) return;
+      if (this.room.phase.name !== "playing") return;
+
+      const scorers = rosterOf(this.room);
+      const lists = fillWordsFor(scorers.length, DEFAULT_FILL_COUNT, Math.random);
+      scorers.forEach((scorer, i) => {
+        (lists[i] ?? []).forEach((word, w) => {
+          // Round-robin the authorship across a team's members, so a shared
+          // list ends up looking like several people typed it rather than one.
+          // With teams off every scorer has exactly one member and this is a
+          // no-op.
+          const author = scorer.members[w % scorer.members.length]!;
+          // Timestamps ascend so the merged team list sorts sensibly and the
+          // archive's `ms_into_round` is not a flat line.
+          this.room = submitEntry(this.room!, author, word, now + w).room;
+        });
+      });
+
+      await this.persist();
+      // One push per scorer, not per player: `sendEntriesToTeam` already fans
+      // out to every connected member of the scorer it is given.
+      for (const scorer of scorers) {
+        if (scorer.members[0]) this.sendEntriesToTeam(scorer.members[0]);
+      }
+      // Deliberately no `broadcastState`: entry counts are not published, and
+      // nothing in `RoomState` changed.
+      return;
+    }
+
     // Ends the room outright rather than producing a new state, so it cannot
     // go through `reduce` and the shared persist/broadcast tail below — there
     // is nothing left to persist or broadcast.
@@ -433,6 +483,14 @@ export class W104 extends Server<Env> {
         break;
       case "balanceTeams":
         this.room = reduce(this.room, { t: "balanceTeams", playerId, now });
+        break;
+      case "debugPause":
+        this.room = reduce(this.room, {
+          t: "debugPause", playerId, paused: msg.paused === true, now,
+        });
+        break;
+      case "debugSkip":
+        this.room = reduce(this.room, { t: "debugSkip", playerId, now });
         break;
       case "setTeamName":
         this.room = reduce(this.room, {

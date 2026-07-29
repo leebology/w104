@@ -313,8 +313,24 @@ constant there makes every bar quietly lie, which is worse than no panel.
 ### The debug usage panel
 
 Every build renders a small triangle in the top-right corner; hovering expands
-it to read "debug menu" and clicking slides out a panel with a progress bar per
-metric above, plus how long until each one resets.
+it to read "debug menu" and clicking slides out a drawer with three sections.
+
+**Debug** acts on a live round: hold the timer, cut it short, or fill every
+player's list with random test words so a round can be driven to the scoring
+screen without eight people typing. All three are **host-device only and only
+while a round is running**, and the Worker rejects them from anyone else —
+disabling the buttons is a courtesy, not the boundary.
+
+**Experimental features** holds on/off switches for things being tried mid-
+round. They are local to the device and stored in `localStorage`; toggling one
+changes nothing for anyone else in the room. `Sound effects` is a live example
+wired to nothing — copy it to add another, and read it anywhere with
+`useExperiment(id)`.
+
+**Usage** sits pinned to the bottom and collapsed, showing one thin bar per
+metric. That is the glanceable form: noticing a bar has gone red is not a task,
+whereas reading the numbers is, so expanding it gives the full figures, the
+reset countdowns and a Refresh button.
 
 **Production included, deliberately.** It was staging-only at first, which meant
 the numbers worth watching were the only ones you could not see without

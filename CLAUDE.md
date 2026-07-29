@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (347 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (378 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -75,17 +75,19 @@ The layering is the point: **all game rules live in `shared/`** so they test in
 milliseconds. `party/server.ts` is plumbing only. If you find yourself writing a
 rule inside the Durable Object, it belongs in `shared/reduce.ts` instead.
 
-Two subsystems hang off the Worker and are on **no** game path — delete either
-and the game behaves identically:
+Two subsystems hang off the Worker:
 
-- **The D1 score archive.** `shared/archive.ts` maps `Room`/`Results` to row
-  shapes (pure, so the `shared/**/*.test.ts` glob covers it); `party/archive.ts`
-  is the only file that touches the `DB` binding; `migrations/` holds the
-  schema. Every call goes through `ctx.waitUntil()` in try/catch that logs and
-  swallows — **the archive is allowed to lose data, the game is not allowed to
-  notice.** The game never reads it back.
-- **The free-tier usage panel.** `party/usage.ts` behind `/debug/usage`,
-  rendered by `src/components/DebugPanel.tsx`.
+- **The D1 score archive** — on no game path at all. `shared/archive.ts` maps
+  `Room`/`Results` to row shapes (pure, so the `shared/**/*.test.ts` glob covers
+  it); `party/archive.ts` is the only file that touches the `DB` binding;
+  `migrations/` holds the schema. Every call goes through `ctx.waitUntil()` in
+  try/catch that logs and swallows — **the archive is allowed to lose data, the
+  game is not allowed to notice.** The game never reads it back.
+- **The debug menu** (`src/components/DebugPanel.tsx`) — three sections. Two of
+  them, experiment flags and free-tier usage (`party/usage.ts` behind
+  `/debug/usage`), touch nothing. The third **deliberately mutates a live
+  round** — pause, skip, auto-fill — and is therefore host-only and enforced
+  server-side. See "Debug menu" below.
 
 Each keeps one file in `shared/` that is **not** game logic — `shared/archive.ts`
 and `shared/usage.ts` — and for the same two reasons: purity makes them testable
@@ -255,9 +257,37 @@ is enforced at the connect gate, before `join` can seat anyone.
   untouched — and sends it *before* the `entryAck`, so the authoritative copy
   lands ahead of the message that retires the client's optimistic one.
 
-### Free-tier debug panel
+### Debug menu
 
-Off every game path, and deletable without the game noticing.
+Mostly off every game path — the Usage and Experimental sections are deletable
+without the game noticing. The Debug section is the exception: it is the one
+place outside normal play that mutates a live round.
+
+- **Its three controls are host-only and `playing`-only, enforced on the
+  server.** `debugPause` and `debugSkip` are rejected in `shared/reduce.ts`;
+  `debugFill` is rejected in `party/server.ts`. The panel also disables the
+  buttons for non-hosts, but **that is a courtesy, not the boundary** — the
+  panel renders in production, so the server assumes the buttons are missing.
+- **`Room.paused` holds the milliseconds remaining, not the moment of
+  pausing.** `phase.endsAt` is absolute and a pause must survive an arbitrary
+  wait; resuming is `endsAt = now + paused`. While it is non-null `phase.endsAt`
+  is stale by design, so `tick` returns early and every client timer reads the
+  banked figure through `useRemaining`'s third argument instead of counting to
+  a dead deadline.
+- **A held round falls back to the ordinary idle horizon**, not a longer
+  paused-specific one. `alarmOutcome` answers a stale room with `touch` while
+  anyone is connected, so the people in the room keep it alive and an abandoned
+  paused room reaps like any other.
+- **`debugSkip` moves the deadline to now rather than transitioning itself**,
+  so the round ends down the exact path a natural expiry takes — scoring, the
+  archive write and the standings hand-off cannot drift from the real one.
+- **Auto-fill loops `submitEntry`** rather than writing `entries` directly, so
+  phase, duplicates-within-a-scorer, `MAX_ENTRIES` and the team-merged list all
+  still apply. `fillWordsFor` in `shared/debug.ts` deals from a shared sub-pool
+  so the lists *deliberately overlap* — independent draws would leave nothing
+  for the Boggle rule to strike through.
+
+The rest is off every game path, and deletable without the game noticing.
 
 - **`GET /debug/usage` on the Worker, live in every environment including
   production.** It was staging-only at first; that hid the only numbers worth
@@ -355,9 +385,10 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
   reads it back. Implemented (§14 steps 1–4); the write path has not yet been
   exercised by a real match, which is step 5.
 - `docs/superpowers/specs/2026-07-29-freetier-debug-panel-design.md` — the
-  free-tier usage panel: the `/debug/usage` route, why one GraphQL request per
-  metric, the per-account Workers allowance, and why Vercel is a link rather
-  than a bar. Implemented.
+  debug menu. §§1–11 are the usage half: the `/debug/usage` route, why one
+  GraphQL request per metric, the per-account Workers allowance, why Vercel is
+  a link rather than a bar. **§12 is the round controls** — pause, skip,
+  auto-fill, experiment flags, and why each is host-only. Implemented.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.

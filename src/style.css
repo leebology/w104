@@ -1337,6 +1337,15 @@ ul, ol { list-style: none; }
   transition: background 0.2s linear;
 }
 
+/* A round the host has held from the debug menu. The slice stops draining on
+   its own, which is invisible — a wheel that is not moving looks the same as
+   one that is moving slowly — so it also changes colour. Gold rather than a
+   new token: on this surface it is the only warm colour that is not the
+   pink field, and the wheel is a status light, not a control. */
+.playing__timer--paused {
+  background: conic-gradient(var(--gold) calc(var(--frac, 0) * 360deg), var(--cream-dim) 0);
+}
+
 .playing__card { position: relative; flex: 1; min-height: 0; padding: 14px 14px 14px 16px; }
 
 /* Clearance for the team's name tab, which a free-for-all card has not got. */
@@ -3020,4 +3029,184 @@ ul, ol { list-style: none; }
   .debug-tab__label,
   .debug-panel,
   .debug-fill { transition: none; }
+}
+
+/* ---------------------------------------------------- debug panel sections */
+
+/* The body is a flex column so the Usage section can be pushed to the bottom
+   with `margin-top: auto` — it is the section you glance at, not the one you
+   came in for, so it sits out of the way of the controls above it. */
+.debug-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debug-section {
+  flex: 0 0 auto;
+  padding: 14px 0 10px;
+}
+
+.debug-section + .debug-section {
+  border-top: 1px solid rgba(255, 247, 232, 0.12);
+}
+
+/* Pinned to the bottom of the drawer. `margin-top: auto` in a flex column
+   eats the free space above it; when the section is expanded and the content
+   overflows there is no free space left and it simply sits after the others,
+   which is the behaviour we want at both extremes. */
+.debug-section--usage {
+  margin-top: auto;
+}
+
+.debug-section__title {
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.debug-section__detail {
+  margin-top: 4px;
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+.debug-section__detail--live { color: var(--teal); opacity: 0.9; }
+
+/* The whole header is the hit target, not just the chevron — a 12px glyph is
+   not a control on a phone. */
+.debug-section__toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cream);
+  text-align: left;
+  cursor: pointer;
+}
+
+.debug-section__meta {
+  margin-left: auto;
+  font-family: var(--body);
+  font-size: 10px;
+  opacity: 0.5;
+}
+
+.debug-section__chev { font-size: 10px; opacity: 0.6; }
+
+.debug-usage__full { margin-top: 4px; }
+
+.debug-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.debug-btn--wide { width: 100%; text-align: left; padding: 7px 10px; }
+
+/* ---- the collapsed usage strip ---- */
+
+.debug-mini {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debug-mini__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.debug-mini__label {
+  flex: 0 0 96px;
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.debug-track--mini {
+  flex: 1 1 auto;
+  display: block;
+  height: 5px;
+  margin-top: 0;
+}
+
+/* ---- experiment switches ---- */
+
+.debug-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 9px;
+  cursor: pointer;
+}
+
+/* The native checkbox stays in the DOM and keeps the label association, the
+   focus ring and the keyboard behaviour; only its painting is replaced. */
+.debug-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.debug-toggle__track {
+  flex: 0 0 auto;
+  position: relative;
+  width: 30px;
+  height: 17px;
+  margin-top: 1px;
+  border: 1px solid rgba(255, 247, 232, 0.35);
+  border-radius: 999px;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.debug-toggle__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--cream);
+  opacity: 0.55;
+  transition: transform 140ms ease, opacity 140ms ease;
+}
+
+.debug-toggle input:checked + .debug-toggle__track {
+  background: var(--teal);
+  border-color: var(--teal);
+}
+
+.debug-toggle input:checked + .debug-toggle__track .debug-toggle__knob {
+  transform: translateX(13px);
+  background: var(--ink);
+  opacity: 1;
+}
+
+.debug-toggle input:focus-visible + .debug-toggle__track {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.debug-toggle__text { font-size: 11px; }
+
+.debug-toggle__note {
+  display: block;
+  font-size: 9px;
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .debug-toggle__track,
+  .debug-toggle__knob { transition: none; }
 }

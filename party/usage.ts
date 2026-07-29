@@ -287,24 +287,45 @@ async function d1Rows(env: UsageEnv, now: number, field: "rowsRead" | "rowsWritt
 }
 
 /**
- * Summed, not maxed, and deliberately: each node is one database's size on one
- * day, and the 5 GB ceiling is per account. Pinning the date to today keeps it
- * one node per database rather than one per database per day.
+ * Storage lives in its own dataset — `d1StorageAdaptiveGroups`, not the
+ * `d1AnalyticsAdaptiveGroups` the row counts come from. Cloudflare's own
+ * documented example lists `databaseSizeBytes` under the latter's `sum`, and
+ * the live schema rejects it there: "unknown field". The panel surfaced that
+ * as one blank bar with the message on it, which is the entire argument for
+ * one request per metric.
+ *
+ * **Max per database, then summed across them.** Size is a level, not a flow,
+ * so summing raw nodes would multiply a database by however many samples the
+ * day happens to hold. Grouping by `databaseId` and taking each one's peak
+ * gives one honest figure each; adding those gives the account total, which is
+ * what the 5 GB ceiling actually applies to.
  */
 async function d1StoredBytes(env: UsageEnv, now: number): Promise<number> {
-  const account = await queryAccount<SumNodes<"databaseSizeBytes">>(
+  const account = await queryAccount<{
+    d1StorageAdaptiveGroups?: {
+      max: { databaseSizeBytes: number };
+      dimensions: { databaseId: string };
+    }[];
+  }>(
     env,
     `query($accountTag: string!, $date: string!) {
        viewer { accounts(filter: { accountTag: $accountTag }) {
-         d1AnalyticsAdaptiveGroups(
+         d1StorageAdaptiveGroups(
            limit: 10000
            filter: { date_geq: $date }
-         ) { sum { databaseSizeBytes } }
+         ) { max { databaseSizeBytes } dimensions { databaseId } }
        } }
      }`,
     { date: utcDate(now) },
   );
-  return sumOver(account.d1AnalyticsAdaptiveGroups, "databaseSizeBytes");
+
+  const peak = new Map<string, number>();
+  for (const node of account.d1StorageAdaptiveGroups ?? []) {
+    const id = node.dimensions?.databaseId ?? "";
+    const bytes = node.max?.databaseSizeBytes ?? 0;
+    peak.set(id, Math.max(peak.get(id) ?? 0, bytes));
+  }
+  return [...peak.values()].reduce((total, bytes) => total + bytes, 0);
 }
 
 // ---------------------------------------------------------------- services

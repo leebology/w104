@@ -10,9 +10,18 @@ import {
 } from "../../shared/usage";
 import { debugEnabled, fetchUsage } from "../net/usage";
 import type { UsageResult } from "../net/usage";
+import { getPlayerId } from "../net/identity";
+import { roomStore, useRoom } from "../net/room";
 
 /**
- * Free-tier usage, on staging and local builds only.
+ * The debug menu: a corner triangle that opens a drawer of development tools.
+ *
+ * Three sections, top to bottom. **Debug** holds the controls that act on a
+ * live round — hold the timer, cut it short, fill every list with test data.
+ * **Experimental features** holds on/off switches for things being tried mid-
+ * round. **Usage** sits pinned to the bottom, collapsed, because it is the
+ * section you want to glance at rather than read: free-tier headroom is a
+ * background fact, not a task.
  *
  * **Deliberately not in the game's visual language.** Every other surface in
  * this app is cream-on-pink with gold for "go"; this one is ink with a teal
@@ -22,19 +31,63 @@ import type { UsageResult } from "../net/usage";
  * does not.
  *
  * Mounted once at the root, outside `App`, so it survives every screen
- * transition and holds no game state.
+ * transition and holds no game state of its own.
  */
 
 /** Long enough to stay inside Cloudflare's GraphQL rate limit; see party/usage.ts. */
 const POLL_MS = 60_000;
 
+const EXPERIMENTS_KEY = "w104:debug:experiments";
+
+/**
+ * The on/off switches in the Experimental section.
+ *
+ * `sound-effects` does nothing at all yet and is here as the shape the next
+ * one copies: a flag the panel owns, readable anywhere via
+ * `useExperiment(id)`, with no server involvement. Experiments are local to a
+ * device on purpose — the point is to try something on your own phone mid-
+ * round without pushing it at everyone else in the room.
+ */
+const EXPERIMENTS = [
+  { id: "sound-effects", label: "Sound effects", note: "Not wired up yet." },
+] as const;
+
+type ExperimentId = (typeof EXPERIMENTS)[number]["id"];
+
+function readExperiments(): Record<string, boolean> {
+  try {
+    const raw = localStorage.getItem(EXPERIMENTS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+  } catch {
+    // A malformed value is not worth crashing the app the panel sits on top of.
+    return {};
+  }
+}
+
+/**
+ * Read one experiment flag from anywhere in the app. Exported so a feature
+ * behind a flag does not have to reach into the panel's internals — and so
+ * that deleting the panel leaves one obvious thing to grep for.
+ */
+export function useExperiment(id: ExperimentId): boolean {
+  const [on, setOn] = useState(() => readExperiments()[id] === true);
+  useEffect(() => {
+    const sync = () => setOn(readExperiments()[id] === true);
+    window.addEventListener("w104:experiments", sync);
+    return () => window.removeEventListener("w104:experiments", sync);
+  }, [id]);
+  return on;
+}
+
 export function DebugPanel() {
   // Evaluated once: `location` cannot change without a reload, and calling it
-  // per render would run the regex on every keystroke of a round.
+  // per render would run the check on every keystroke of a round.
   const [enabled] = useState(debugEnabled);
   const [open, setOpen] = useState(false);
+  const [usageOpen, setUsageOpen] = useState(false);
   const [result, setResult] = useState<UsageResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const state = useRoom();
 
   const load = useCallback(async (fresh: boolean) => {
     setLoading(true);
@@ -42,8 +95,9 @@ export function DebugPanel() {
     setLoading(false);
   }, []);
 
-  // Nothing is fetched until the panel is opened — a closed triangle must not
-  // cost the free tier it is measuring.
+  // Fetched whenever the panel is open, not only when the Usage section is
+  // expanded — the collapsed view still draws bars, and a closed triangle
+  // must not cost the free tier it is measuring.
   useEffect(() => {
     if (!open) return;
     void load(false);
@@ -80,44 +134,34 @@ export function DebugPanel() {
       <aside
         className={`debug-panel${open ? " debug-panel--open" : ""}`}
         role="dialog"
-        aria-label="Free tier usage"
+        aria-label="Debug menu"
         // Kept in the tree when closed so it can slide rather than pop, but
         // taken out of the accessibility tree and the tab order with it.
         aria-hidden={!open}
         inert={!open}
       >
         <header className="debug-panel__head">
-          <div>
-            <h2 className="debug-panel__title">Free tier usage</h2>
-            <p className="debug-panel__sub">{summarise(result, loading)}</p>
-          </div>
-          <div className="debug-panel__actions">
-            <button
-              type="button"
-              className="debug-btn"
-              onClick={() => void load(true)}
-              disabled={loading}
-            >
-              {loading ? "…" : "Refresh"}
-            </button>
-            <button
-              type="button"
-              className="debug-btn debug-btn--close"
-              onClick={() => setOpen(false)}
-              aria-label="Close debug menu"
-            >
-              ✕
-            </button>
-          </div>
+          <h2 className="debug-panel__title">Debug Menu</h2>
+          <button
+            type="button"
+            className="debug-btn debug-btn--close"
+            onClick={() => setOpen(false)}
+            aria-label="Close debug menu"
+          >
+            ✕
+          </button>
         </header>
 
         <div className="debug-panel__body">
-          {result === null && <p className="debug-note">Loading…</p>}
-          {result?.ok === false && <p className="debug-note debug-note--bad">{result.message}</p>}
-          {result?.ok &&
-            result.report.services.map((service) => (
-              <ServiceBlock key={service.id} service={service} now={result.report.fetchedAt} />
-            ))}
+          <DebugControls state={state} />
+          <Experiments />
+          <UsageSection
+            result={result}
+            loading={loading}
+            expanded={usageOpen}
+            onToggle={() => setUsageOpen((v) => !v)}
+            onRefresh={() => void load(true)}
+          />
         </div>
 
         <footer className="debug-panel__foot">
@@ -129,17 +173,238 @@ export function DebugPanel() {
   );
 }
 
+// ------------------------------------------------------------------- debug
+
 /**
- * The one line under the title. Says which of the three things is true —
- * loading, stale-from-cache, or freshly read — because "I played a round and
- * nothing moved" has three different explanations and only one is a bug.
+ * The controls that touch a live round.
+ *
+ * Every one of them is **host-only and `playing`-only**, and this component
+ * only decides what to *show*: `shared/reduce.ts` rejects the events from a
+ * non-host and outside a round, and `party/server.ts` rejects the fill the
+ * same way. A greyed-out button is a courtesy, not the boundary — the panel
+ * renders in production, so the server has to assume the buttons are missing.
+ */
+function DebugControls({ state }: { state: ReturnType<typeof useRoom> }) {
+  const room = state.room;
+  const isHost = room !== null && room.hostId === getPlayerId();
+  const playing = room?.phase.name === "playing";
+  const paused = room?.paused ?? null;
+  const canAct = isHost && playing;
+
+  const reason = !room
+    ? "Not in a room."
+    : !isHost
+      ? "Host device only."
+      : !playing
+        ? "Only while a round is running."
+        : null;
+
+  return (
+    <section className="debug-section">
+      <h3 className="debug-section__title">Debug</h3>
+      {reason && <p className="debug-section__detail">{reason}</p>}
+      <div className="debug-actions">
+        <button
+          type="button"
+          className="debug-btn debug-btn--wide"
+          disabled={!canAct}
+          onClick={() =>
+            roomStore.send({ type: "debugPause", paused: paused === null })
+          }
+        >
+          {paused === null ? "Pause timer" : "Resume timer"}
+        </button>
+        <button
+          type="button"
+          className="debug-btn debug-btn--wide"
+          disabled={!canAct}
+          onClick={() => roomStore.send({ type: "debugSkip" })}
+        >
+          Skip timer
+        </button>
+        <button
+          type="button"
+          className="debug-btn debug-btn--wide"
+          disabled={!canAct}
+          onClick={() => roomStore.send({ type: "debugFill" })}
+        >
+          Auto-fill test data
+        </button>
+      </div>
+      {paused !== null && (
+        <p className="debug-section__detail debug-section__detail--live">
+          Round held with {Math.ceil(paused / 1000)}s left.
+        </p>
+      )}
+    </section>
+  );
+}
+
+// ------------------------------------------------------------- experiments
+
+function Experiments() {
+  const [flags, setFlags] = useState(readExperiments);
+
+  function toggle(id: string) {
+    const next = { ...flags, [id]: !flags[id] };
+    setFlags(next);
+    try {
+      localStorage.setItem(EXPERIMENTS_KEY, JSON.stringify(next));
+    } catch {
+      // Private mode, quota, a locked-down browser — the switch still works
+      // for this session, it just will not survive a reload.
+    }
+    // Tells every `useExperiment` in the tree to re-read. `storage` only fires
+    // in *other* tabs, so same-tab listeners need their own event.
+    window.dispatchEvent(new Event("w104:experiments"));
+  }
+
+  return (
+    <section className="debug-section">
+      <h3 className="debug-section__title">Experimental features</h3>
+      <p className="debug-section__detail">
+        Local to this device — toggling does not change anyone else's game.
+      </p>
+      {EXPERIMENTS.map((exp) => (
+        <label key={exp.id} className="debug-toggle">
+          <input
+            type="checkbox"
+            checked={flags[exp.id] === true}
+            onChange={() => toggle(exp.id)}
+          />
+          <span className="debug-toggle__track" aria-hidden="true">
+            <span className="debug-toggle__knob" />
+          </span>
+          <span className="debug-toggle__text">
+            {exp.label}
+            {exp.note && <span className="debug-toggle__note">{exp.note}</span>}
+          </span>
+        </label>
+      ))}
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------- usage
+
+function UsageSection({
+  result,
+  loading,
+  expanded,
+  onToggle,
+  onRefresh,
+}: {
+  result: UsageResult | null;
+  loading: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  onRefresh: () => void;
+}) {
+  const report = result?.ok ? result.report : null;
+  return (
+    <section className="debug-section debug-section--usage">
+      <button
+        type="button"
+        className="debug-section__toggle"
+        onClick={onToggle}
+        aria-expanded={expanded}
+      >
+        <span className="debug-section__title">Usage</span>
+        <span className="debug-section__meta">{summarise(result, loading)}</span>
+        <span className="debug-section__chev" aria-hidden="true">
+          {expanded ? "▾" : "▸"}
+        </span>
+      </button>
+
+      {!expanded && report && <MiniBars report={report} />}
+      {!expanded && result?.ok === false && (
+        <p className="debug-note debug-note--bad">{result.message}</p>
+      )}
+
+      {expanded && (
+        <div className="debug-usage__full">
+          <button type="button" className="debug-btn" onClick={onRefresh} disabled={loading}>
+            {loading ? "…" : "Refresh"}
+          </button>
+          {result === null && <p className="debug-note">Loading…</p>}
+          {result?.ok === false && (
+            <p className="debug-note debug-note--bad">{result.message}</p>
+          )}
+          {report?.services.map((service) => (
+            <ServiceBlock key={service.id} service={service} now={report.fetchedAt} />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The collapsed view: every metric as one thin bar, no numbers.
+ *
+ * The whole reason the section can default to closed. Reading "how much of the
+ * free tier is left" is a task; noticing that a bar has gone red is not, and
+ * the second one is what you actually want from a panel you opened to do
+ * something else. Metrics with nothing to report are skipped rather than drawn
+ * hatched — an unreadable figure is worth explaining in the expanded view and
+ * is only noise here.
+ */
+function MiniBars({ report }: { report: UsageReport }) {
+  const rows = report.services.flatMap((s) =>
+    s.metrics
+      .filter((m) => m.used !== null)
+      .map((m) => ({ key: `${s.id}:${m.label}`, service: s, metric: m })),
+  );
+  if (rows.length === 0) {
+    return <p className="debug-note">No live figures — expand for why.</p>;
+  }
+  return (
+    <ul className="debug-mini">
+      {rows.map(({ key, service, metric }) => (
+        <li className="debug-mini__row" key={key}>
+          <span className="debug-mini__label">
+            {shortLabel(service, metric)}
+          </span>
+          <span className="debug-track debug-track--mini">
+            <span
+              className={`debug-fill debug-fill--${severity(metric.used, metric.limit)}`}
+              style={{ width: `${fraction(metric.used, metric.limit) * 100}%` }}
+            />
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * "DO · Duration". The service name alone is ambiguous once a section has
+ * three bars, and the full name does not fit beside one.
+ */
+const SHORT_SERVICE: Record<string, string> = {
+  workers: "WK",
+  "durable-objects": "DO",
+  d1: "D1",
+};
+
+function shortLabel(service: Service, metric: Metric): string {
+  const prefix = SHORT_SERVICE[service.id] ?? service.name;
+  // The Workers breakdown rows already carry a "· " marker of their own.
+  return `${prefix} · ${metric.label.replace(/^· /, "")}`;
+}
+
+/**
+ * The one line beside the section title. Says which of the three things is
+ * true — loading, stale-from-cache, or freshly read — because "I played a
+ * round and nothing moved" has three different explanations and only one is a
+ * bug.
  */
 function summarise(result: UsageResult | null, loading: boolean): string {
-  if (loading) return "Reading…";
-  if (result === null) return "Not loaded";
-  if (!result.ok) return "Unavailable";
+  if (loading) return "reading…";
+  if (result === null) return "not loaded";
+  if (!result.ok) return "unavailable";
   const at = new Date(result.report.fetchedAt).toLocaleTimeString();
-  return result.report.cached ? `Cached, as of ${at}` : `Read at ${at}`;
+  return result.report.cached ? `cached ${at}` : `read ${at}`;
 }
 
 const STATUS_TEXT: Record<Service["status"], string | null> = {
@@ -169,7 +434,7 @@ function ServiceBlock({ service, now }: { service: Service; now: number }) {
   const shared = commonNote(service);
   return (
     <section className="debug-service">
-      <h3 className="debug-service__name">
+      <h4 className="debug-service__name">
         {service.dashboard ? (
           <a href={service.dashboard} target="_blank" rel="noreferrer">
             {service.name}
@@ -178,7 +443,7 @@ function ServiceBlock({ service, now }: { service: Service; now: number }) {
           service.name
         )}
         {tag && <span className={`debug-chip debug-chip--${service.status}`}>{tag}</span>}
-      </h3>
+      </h4>
       {service.detail && <p className="debug-service__detail">{service.detail}</p>}
       {/* Only for services whose dashboard is the sole source of the numbers.
           Everywhere else the heading link is enough, and a second link per

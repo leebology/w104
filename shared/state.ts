@@ -153,6 +153,21 @@ export type Room = {
    * that is already starting. See `setConfiguring` in shared/reduce.ts.
    */
   configuring: boolean;
+  /**
+   * Debug only. Milliseconds left on the running round when the host paused
+   * it, or null when nothing is held.
+   *
+   * The *remaining* time, not the moment of pausing, because `phase.endsAt` is
+   * absolute and a pause has to survive an arbitrary wait: storing when it
+   * started would mean recomputing against a deadline that has long since
+   * passed. Resuming is then `endsAt = now + paused`, and `phase.endsAt` is
+   * simply stale — and unread — for as long as this is non-null.
+   *
+   * Rides in `RoomState` like `configuring` and `votes`: every screen showing
+   * the timer has to know it is held, or it counts down to a dead deadline and
+   * sits on 0:00.
+   */
+  paused: number | null;
 };
 
 /** Broadcast to every connection. Safe for all eyes. */
@@ -179,6 +194,7 @@ export function createRoom(code: string, now: number): Room {
     kicked: [],
     hostGoneAt: null,
     configuring: false,
+    paused: null,
   };
 }
 

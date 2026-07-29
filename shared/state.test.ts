@@ -36,6 +36,11 @@ describe("toRoomState", () => {
       "configuring",
       "history",
       "hostId",
+      // Public on purpose: every screen showing the round timer has to know it
+      // is held, or it counts down to a deadline the server stopped
+      // maintaining and sits on 0:00. It leaks nothing — the pause is already
+      // visible as a timer that is not moving.
+      "paused",
       "phase",
       "players",
       "serverTime",
@@ -66,6 +71,7 @@ describe("toRoomState", () => {
       votes: {},
       teams: [],
       configuring: false,
+      paused: null,
       serverTime: 9000,
     });
   });

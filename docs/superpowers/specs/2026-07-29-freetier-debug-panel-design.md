@@ -1,10 +1,14 @@
-# Free-tier usage debug panel — design
+# Debug menu — design
 
 **Date:** 2026-07-29
-**Status:** implemented (v0.4.6)
-**Relates to:** `2026-07-28-score-persistence-design.md` (the D1 section of this
-panel stays dark until that ships), `HOSTING.md` (token setup, per-environment
-behaviour, the free-tier allowance table).
+**Status:** implemented (v0.4.7)
+**Relates to:** `2026-07-28-score-persistence-design.md` (its `DB` binding is
+what switched this panel's D1 section on — see §14), `HOSTING.md` (token setup,
+per-environment behaviour, the free-tier allowance table).
+
+Sections 1–11 cover the usage reporting this started as. **§12 covers the round
+controls and experiment flags added in v0.4.7**, which turned it from a usage
+panel into a debug menu.
 
 ## Problem
 
@@ -24,6 +28,8 @@ out with a progress bar per metric, and says how long until each one resets.
   stored data.
 - A Vercel section that links out instead of reporting.
 - The published free-tier allowances as a table in code, drawn against.
+- **v0.4.7:** host-only controls to hold, skip, or auto-fill a live round, and
+  local on/off flags for mid-round experiments. See §12.
 
 ## Non-goals
 
@@ -32,9 +38,12 @@ out with a progress bar per metric, and says how long until each one resets.
 - **No alerting.** Cloudflare already emails on approach.
 - **No writes of any kind.** The panel reads; nothing it does can change a
   deployment.
-- **Nothing on a game path.** Deleting `party/usage.ts`,
-  `src/components/DebugPanel.tsx`, `src/net/usage.ts` and `shared/usage.ts`
-  leaves the game byte-for-byte the same.
+- **No usage reporting on a game path.** Deleting `party/usage.ts`,
+  `src/net/usage.ts` and `shared/usage.ts` leaves the game byte-for-byte the
+  same. §12's round controls are the deliberate exception — they exist to
+  mutate a round — and are host-only and server-enforced because of it.
+- **No changing the game rules mid-match.** Considered alongside §12's controls
+  and dropped: settings stay lobby-only.
 
 ---
 
@@ -198,15 +207,86 @@ explanation that is not "the panel is broken".
 - **The used figure is printed unclamped** even when the bar is pinned full, so
   being over the limit is visible as a number.
 
-## 12. Follow-ups, not built
+## 12. Round controls (v0.4.7)
 
-- D1's three bars are live code waiting on a binding — see §13.
+The panel grew from one section to three. **Debug** at the top acts on a live
+round; **Experimental features** holds local on/off flags; **Usage** — sections
+1–11 above — moved to the bottom, collapsed, as one thin bar per metric.
+Collapsing it is the point: noticing a bar has gone red is a glance, reading the
+numbers is a task, and the panel is now usually opened to do something else.
+
+### 12.1 Host-only, enforced twice
+
+The three controls mutate a live round, and the panel renders in production, so
+a player finding the triangle must not be able to derail a party. The server is
+the boundary: `shared/reduce.ts` rejects `debugPause`/`debugSkip` from a
+non-host, `party/server.ts` rejects `debugFill` the same way. The panel disables
+the buttons and prints "Host device only", which is a courtesy — it was verified
+by sending all three past the UI from a player tab and watching the server
+refuse each one.
+
+Changing the game rules mid-match was considered alongside these and
+deliberately **not built**. Settings stay lobby-only.
+
+### 12.2 Pause banks time, not a timestamp
+
+`Room.paused` holds the milliseconds left, not the moment of pausing, because
+`phase.endsAt` is absolute and a hold has to survive an arbitrary wait; resuming
+is `endsAt = now + paused`. While it is non-null `phase.endsAt` is stale by
+design, which forces three things:
+
+- `tick` returns the identical room, or the first alarm would read the stale
+  deadline as long overdue and end the round.
+- `nextAlarmAt` falls back to the **ordinary** idle horizon, not a longer
+  paused-specific one. `alarmOutcome` answers a stale room with `touch` while
+  anyone is connected, so the people in the room keep a held game alive and an
+  abandoned one reaps like any other. A room paused and walked away from should
+  not outlive a room merely walked away from.
+- Every client timer reads the banked figure via `useRemaining`'s third
+  argument. The host's bar says "paused" and the player's wheel turns gold —
+  a frozen wheel and a slow one look identical otherwise.
+
+### 12.3 Skip does not transition
+
+`debugSkip` moves the deadline to `now` and lets the alarm fire. The round then
+ends down the exact path a natural expiry takes, so scoring, the archive write
+and the standings hand-off cannot drift from the real one. It also clears
+`paused`, or skipping a held round would resume it instead of ending it.
+
+### 12.4 Auto-fill goes through `submitEntry`
+
+Per word, per player, rather than writing `entries` directly — which keeps
+phase, duplicates-within-a-scorer, `MAX_ENTRIES` and the team-merged list in
+force for free instead of a second write path free to drift from the one real
+players use. Authorship round-robins across a team's members so a shared list
+looks like several people typed it.
+
+`fillWordsFor` deals every scorer a subset of one **shared sub-pool** rather
+than letting each draw independently. This is the whole design: scoring is
+Boggle rules, and independent draws from a 140-word pool collide about half a
+word per pair, so every player would score nearly full marks and the scoring
+screen would never strike anything through. The sub-pool is
+`perScorer * (scorerCount + 1)` — common collisions, still a tail of uniques.
+Verified live: two players got 8 words each, 4 shared.
+
+### 12.5 Experiments are local
+
+`localStorage`, read anywhere through `useExperiment(id)`, broadcast in-tab by a
+custom event because `storage` only fires in *other* tabs. Local on purpose —
+the point is trying something on your own phone mid-round without pushing it at
+the room. `sound-effects` is wired to nothing and exists as the shape the next
+one copies.
+
+## 13. Follow-ups, not built
+
+- The reset line repeats on all three Workers rows; hoisting it to the section
+  the way notes are hoisted is a small polish nobody has asked for yet.
 - The reset line repeats on all three Workers rows, since they share a reset.
   Hoisting it to the section the way notes are hoisted is a small polish nobody
   has asked for yet.
 - No spend/trend history, per §Non-goals.
 
-## 13. What the D1 archive changed here
+## 14. What the D1 archive changed here
 
 Nothing, as designed — and this has now actually happened rather than being a
 prediction. `d1Service()` checks for the `DB` binding on the Worker env: absent,

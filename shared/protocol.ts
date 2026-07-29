@@ -21,6 +21,15 @@ export type ClientMessage =
   | { type: "leaveTeam" }
   | { type: "setTeamName"; teamId: TeamId; name: string }
   | { type: "balanceTeams" }
+  /**
+   * Debug-panel controls. Host-only and enforced as such in `shared/reduce.ts`
+   * and `party/server.ts` — the panel hides them from non-hosts, but a hidden
+   * button is not an authorization boundary and these mutate a live round.
+   */
+  | { type: "debugPause"; paused: boolean }
+  | { type: "debugSkip" }
+  /** Fills every scorer's list with random words. `playing` only. */
+  | { type: "debugFill" }
   | { type: "endGame" };
 
 export type ServerMessage =
