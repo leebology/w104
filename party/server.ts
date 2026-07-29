@@ -9,10 +9,21 @@ import type { Entry, MatchSettings, PlayerId, Room } from "../shared/state";
 import { DEFAULT_DURATION_SEC } from "../shared/categories";
 import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes";
 import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
+import { collectUsage } from "./usage";
 
 // Durable Object binding declared in wrangler.jsonc.
 export interface Env {
   W104: DurableObjectNamespace;
+  /**
+   * Which deployment this is — "production" or "staging" from `vars` in
+   * wrangler.jsonc, or "local", which `npm run dev:party` passes. Gates
+   * nothing; the debug panel prints it in its footer so that a tab left open
+   * against the wrong Worker is obvious rather than merely confusing.
+   */
+  ENVIRONMENT?: string;
+  /** Debug-panel secrets. Absent everywhere until `wrangler secret put`. */
+  CF_API_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
 }
 
 type ConnState = { playerId: PlayerId; role: "player" | "host"; session: string };
@@ -523,9 +534,48 @@ export class W104 extends Server<Env> {
   }
 }
 
+/**
+ * Free-tier usage for the debug panel, as JSON.
+ *
+ * **Live in every environment, production included.** It used to 404 on
+ * production, which meant the only numbers worth watching were the only ones
+ * you could not see without deploying a branch first.
+ *
+ * The endpoint is therefore unauthenticated on a public host. What it serves
+ * is a handful of account-level usage counts — no tokens, no room state, no
+ * player data — and the API token itself never leaves the Worker. This is the
+ * place to add a gate if that trade ever stops holding; hiding the client
+ * button would not close it.
+ *
+ * CORS is wide open because the caller is always a different origin — the app
+ * is on Vercel, this is on workers.dev.
+ *
+ * `?fresh=1` skips the 60-second cache, for when you have just played a round
+ * and want to watch the number move.
+ */
+async function handleUsage(request: Request, env: Env): Promise<Response> {
+  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
+  const report = await collectUsage(env, Date.now(), { fresh });
+  return new Response(JSON.stringify(report), {
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      // The figures are already a minute stale by design; letting a browser
+      // cache them on top of that would make the refresh button a no-op.
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 // Worker entrypoint: route /parties/:party/:room to the right room instance.
 export default {
   async fetch(request, env) {
+    // Checked before `routePartykitRequest`, which would otherwise 404 it
+    // itself — this path is not a party route and never reaches a room.
+    if (new URL(request.url).pathname === "/debug/usage") {
+      return handleUsage(request, env);
+    }
+
     // PartyServer takes the connection id from `_pk`, and partysocket mints one
     // `_pk` per socket instance and reuses it on every auto-reconnect. Two
     // sockets would then share an id in a Map keyed by it, and the stale one's

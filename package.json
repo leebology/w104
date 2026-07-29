@@ -1,11 +1,11 @@
 {
   "name": "w104",
-  "version": "0.4.3",
+  "version": "0.4.6",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:party": "wrangler dev --ip 0.0.0.0",
+    "dev:party": "wrangler dev --ip 0.0.0.0 --var ENVIRONMENT:local",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
     "test": "vitest run",

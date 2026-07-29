@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (293 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (325 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -70,6 +70,13 @@ shared/   pure game logic — no DOM, no Cloudflare runtime, fully unit-tested
 party/    server.ts — thin DO shell: persist, broadcast, schedule alarms
 src/      React client — net/room.ts socket store + screens/{host,player}
 ```
+
+`shared/usage.ts` is the one file in `shared/` that is **not** game logic: it
+holds the debug panel's payload types and the free-tier limit table. It lives
+there only because `party/` and `src/` are separate tsconfig projects and a
+type the client imported from `party/` would drag the Worker into
+`tsconfig.json`. It is pure data, it is tested like everything else there, and
+nothing in the game imports it.
 
 The layering is the point: **all game rules live in `shared/`** so they test in
 milliseconds. `party/server.ts` is plumbing only. If you find yourself writing a
@@ -237,6 +244,49 @@ is enforced at the connect gate, before `join` can seat anyone.
   untouched — and sends it *before* the `entryAck`, so the authoritative copy
   lands ahead of the message that retires the client's optimistic one.
 
+### Free-tier debug panel
+
+Off every game path, and deletable without the game noticing.
+
+- **`GET /debug/usage` on the Worker, live in every environment including
+  production.** It was staging-only at first; that hid the only numbers worth
+  watching behind a branch deploy. The endpoint is consequently public and
+  unauthenticated, which is an accepted trade — it serves account-level usage
+  counts, never tokens or room state. `handleUsage` in `party/server.ts` is
+  where a gate goes if that changes; the client's `debugEnabled()` is a button,
+  not a boundary.
+- **`ENVIRONMENT` gates nothing** and is the only `var` left. It is the label in
+  the panel footer, so a tab open against the wrong Worker is obvious.
+- **Every figure in the panel reads the same from every environment.** Nothing
+  is scoped to the Worker serving it: the Workers query is unfiltered and
+  grouped by `scriptName`, so both deployed scripts are always listed and
+  staging usage is checkable from production and vice versa. Durable Object and
+  D1 counters are account-wide outright — a match played on staging moves
+  production's bars.
+- **The Workers allowance is per *account*, not per script.** 100,000/day
+  across everything deployed, which is why that section leads with the account
+  total and the per-script rows are a breakdown of it. Two independent bars at
+  60% each would look survivable while being 120% of one allowance.
+- `WORKER_SCRIPTS` in `party/usage.ts` mirrors the `name` fields in
+  `wrangler.jsonc`. Renaming a Worker without updating it shows that script as
+  permanently idle rather than as an error.
+- **Local dev generates no Cloudflare analytics at all.** `wrangler dev` never
+  reaches the edge, so nothing you do locally moves any bar. The Workers
+  section says so rather than leaving it to be discovered.
+- **One GraphQL request per metric, each with its own try/catch.** Cloudflare's
+  analytics schema is discovered by introspection rather than published field
+  by field, so a field name in `party/usage.ts` may be wrong. Batched, one bad
+  name returns no data at all and the panel goes blank with no clue why; split,
+  it nulls one bar and prints the error on it.
+- **Vercel has no usage API on Hobby.** The panel shows the ceilings and links
+  to the dashboard rather than inventing a number. `vercelService()` is the
+  only place that changes if Vercel ever ships one.
+- The panel deliberately ignores the design tokens for colour and shape: it is
+  ink-on-ink with a teal rule because anything wearing the game's gold-and-cream
+  buttons reads as a game control.
+
+See "The debug usage panel" in `HOSTING.md` for the API token setup.
+
 ### Client
 
 `src/net/room.ts` is a single `RoomStore` singleton exposed via
@@ -292,6 +342,10 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
 - `docs/superpowers/specs/2026-07-28-score-persistence-design.md` — the D1
   archive: schema, where the writes happen, and the rule that the game never
   reads it back. Approved, not yet implemented.
+- `docs/superpowers/specs/2026-07-29-freetier-debug-panel-design.md` — the
+  free-tier usage panel: the `/debug/usage` route, why one GraphQL request per
+  metric, the per-account Workers allowance, and why Vercel is a link rather
+  than a bar. Implemented.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.
@@ -303,7 +357,14 @@ Branch off `main`, open a PR. CI (`.github/workflows/ci.yml`) runs typecheck,
 tests, build. Merges to `main` deploy production (Vercel for the app, GitHub
 Actions → `wrangler deploy` for the Worker).
 
-Two long-lived branches: `main` (production, `w104.leebo.io`) and `staging`
+**Every PR bumps the version.** Vite's `define` substitutes `package.json`'s
+`version` as `__APP_VERSION__`, which renders in Landing's corner and in the
+debug panel's footer — so on a deployed URL it is the only way to tell a fresh
+page from a cached one. Bump it in **three** places, all kept in sync:
+`package.json`, `package-lock.json`'s top-level `version`, and the matching one
+under `packages: { "": ... }`.
+
+Two long-lived branches: `main` (production, `www.oknameone.com`) and `staging`
 (`staging.oknameone.com` + the `w104-staging` Worker). **PRs no longer deploy
 the Worker** — they used to, which meant any open PR overwrote the shared
 staging Worker and changed what people testing on phones were talking to. Merge
@@ -315,8 +376,3 @@ Named Wrangler environments do not inherit `durable_objects` bindings, so
 
 Commits here stage explicit paths — never `git add -A`, so the untracked
 working note `Project W-104.md` stays untracked.
-
-Every PR bumps the version — `package.json`'s `version` and both spots in
-`package-lock.json` (the top-level `version` and the matching one under
-`packages: { "": ... }`), kept in sync per the existing "sync the lockfile
-version to package.json" precedent.

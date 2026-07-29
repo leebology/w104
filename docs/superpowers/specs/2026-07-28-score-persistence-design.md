@@ -7,6 +7,14 @@
 `2026-07-27-teams-design.md` (the scorer, not the player, is the unit of
 scoring — this spec's schema is keyed the same way).
 
+> **Since this was written (2026-07-29):** the free-tier debug panel shipped
+> (`2026-07-29-freetier-debug-panel-design.md`). Its D1 section already contains
+> live bars for rows read, rows written and stored data — it just reports
+> `unused` because there is no `DB` binding to find. **Adding the binding in
+> step 1 of §14 turns those bars on with no change to the panel**, which makes
+> it the tool for watching the §5 write budget during the first real match.
+> Nothing else in that spec interacts with this one.
+
 ## Problem
 
 Nothing survives the room. A Durable Object holds the whole match, then
