@@ -7,7 +7,7 @@ screen runs the show.
 
 ## Stack
 
-- **Web app** — Vite + TypeScript, deployed to Vercel at https://w104.leebo.io
+- **Web app** — Vite + TypeScript, deployed to Vercel at https://www.oknameone.com
 - **Realtime server** — PartyServer on a Cloudflare Worker; one SQLite Durable
   Object per room (authoritative room state)
 

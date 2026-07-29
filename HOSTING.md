@@ -10,23 +10,25 @@ Two independent pieces, deployed to two hosts, both on free tiers:
 
 | Piece           | What it is                              | Host              | URL                              |
 | --------------- | --------------------------------------- | ----------------- | -------------------------------- |
-| Web app         | Vite + TypeScript static frontend       | Vercel            | `https://w104.leebo.io`          |
+| Web app         | Vite + TypeScript static frontend       | Vercel            | `https://www.oknameone.com`      |
 | Realtime server | PartyServer on a Cloudflare Worker;     | Cloudflare        | `wss://w104.liam-donaher.workers.dev` |
 |                 | one SQLite Durable Object per room       |                   |                                  |
 
 The browser loads the web app from Vercel, then opens a WebSocket to the
-Cloudflare Worker. They are separate origins — that is intentional. Your main
-site at `leebo.io` is never touched.
+Cloudflare Worker. They are separate origins — that is intentional.
 
 ```
 Player phones ─┐
                ├─► wss://w104.liam-donaher.workers.dev  (Cloudflare Worker, PartyServer)
 Big screen ────┘
        │  loads UI from
-       └─► https://w104.leebo.io  (Vercel)
-
-leebo.io (your portfolio) — untouched
+       └─► https://www.oknameone.com  (Vercel)
 ```
+
+> The game used to live at `w104.leebo.io`, a subdomain of a personal site.
+> It now has its own domain. `w104` survives as the repo name, the Worker
+> name and the Durable Object class — those are deployment identifiers and
+> renaming them would mean a new Worker and a migration for no gain.
 
 > Why PartyServer and not PartyKit? PartyKit's shared hosting is full, and its
 > CLI can only create key-value Durable Objects, which Cloudflare's free plan no
@@ -43,7 +45,7 @@ production room state.
 
 | Branch    | Web app (Vercel)             | Worker (Cloudflare)                     |
 | --------- | ---------------------------- | --------------------------------------- |
-| `main`    | `https://w104.leebo.io`      | `wss://w104.liam-donaher.workers.dev`         |
+| `main`    | `https://www.oknameone.com`  | `wss://w104.liam-donaher.workers.dev`         |
 | `staging` | `https://staging.oknameone.com` | `wss://w104-staging.liam-donaher.workers.dev` |
 
 `wrangler.jsonc` defines the `env.staging` that produces the second Worker
@@ -105,7 +107,7 @@ around.
 
 ## One-time setup
 
-### 1. Web app on Vercel (subdomain `w104.leebo.io`)
+### 1. Web app on Vercel (`www.oknameone.com`)
 
 1. In Vercel, **Add New → Project** and import `leebology/w104`.
 2. Framework preset **Vite** (auto-detected). Leave build command / output dir at
@@ -114,8 +116,10 @@ around.
    - **Key:** `VITE_PARTYKIT_HOST`
    - **Value:** `w104.liam-donaher.workers.dev` (your Worker's URL — the
      `<worker-name>.<your-workers.dev-subdomain>` from step 2 below)
-4. **Settings → Domains → Add** `w104.leebo.io`; accept the DNS record Vercel
-   offers (or add the shown `CNAME` at your registrar).
+4. **Settings → Domains → Add** `www.oknameone.com` and assign it to
+   **Production**; accept the DNS record Vercel offers (or add the shown
+   `CNAME` at your registrar). Add the apex `oknameone.com` too and let Vercel
+   redirect it to `www` — people will type it without the prefix.
 
 ### 2. Realtime server on Cloudflare (Wrangler)
 
@@ -138,7 +142,7 @@ npm run deploy:party        # = wrangler deploy
 
 The output prints the Worker URL, e.g. `https://w104.liam-donaher.workers.dev`.
 That host (without `https://`) must equal the `VITE_PARTYKIT_HOST` you set in
-Vercel. Reload `w104.leebo.io`, create a lobby, then join it with the room
+Vercel. Reload `www.oknameone.com`, create a lobby, then join it with the room
 code from a second tab and confirm that player appears on the host's roster.
 
 > Do **not** use Cloudflare's dashboard "Create application / Connect to Git"
@@ -211,7 +215,7 @@ personal data, so that's acceptable; if you'd rather it not be indexed, add a
 3. **CI** runs `typecheck` + `test` + `build`; **Vercel** posts a preview URL
    for the PR, pointed at the staging Worker.
 4. Merge when green. On merge to `main`:
-   - Vercel deploys the web app to `https://w104.leebo.io`.
+   - Vercel deploys the web app to `https://www.oknameone.com`.
    - GitHub Actions runs `wrangler deploy` for the production Worker.
 
 **Testing on real phones:** merge into `staging` instead. Within a minute or so
