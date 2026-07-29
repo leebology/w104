@@ -6,10 +6,17 @@ type Props = {
    * Omitted entirely on the screens that only ever happen *before* round one
    * — team selection and category voting. A marker reading "ROUND 1 / 3"
    * there is not wrong so much as meaningless: there is no round to be in
-   * yet, and the number cannot change while the screen is up.
+   * yet, and the number cannot change while the screen is up. The lobby
+   * omits it on the same grounds until a round has actually been played —
+   * see `HostLobby`.
    */
   round?: number;
-  /** Total rounds in the match. Omitted or 1 renders a bare round number. */
+  /**
+   * Total rounds in the match. A one-round match renders no marker at all:
+   * "ROUND 1" with nothing to count against is a label, not a position. From
+   * two rounds up the marker is always the pair — "ROUND 1 / 3" on the first
+   * round as much as "ROUND 3 / 3" on the last.
+   */
   of?: number;
   right: ReactNode;
 };
@@ -23,10 +30,10 @@ export function HostHeader({ left, round, of, right }: Props) {
   return (
     <header className="host-header">
       {left}
-      {round !== undefined && (
+      {round !== undefined && of !== 1 && (
         <span className="host-header__round">
           ROUND {round}
-          {of !== undefined && of > 1 ? ` / ${of}` : ""}
+          {of !== undefined ? ` / ${of}` : ""}
         </span>
       )}
       {right}
@@ -67,7 +74,13 @@ export function HostExit({
   );
 }
 
+/**
+ * Counts the room, and says nothing at all when there is nobody in it — an
+ * empty lobby already says so in the footer, and "0 PLAYERS" is the room's
+ * emptiest state announced twice.
+ */
 export function PlayerCount({ n }: { n: number }) {
+  if (n === 0) return null;
   return (
     <span className="host-header__count">
       {n} {n === 1 ? "PLAYER" : "PLAYERS"}

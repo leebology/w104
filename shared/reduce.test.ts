@@ -653,10 +653,25 @@ describe("long rounds", () => {
     room = reduce(room, { t: "tick", now: playEnd, roll: 0 });
     room = reduce(room, { t: "tick", now: (room.phase as { endsAt: number }).endsAt, roll: 0 });
     expect(room.phase.name).toBe("scoring");
-    // 10 x 200 entries is ~2M union-find comparisons. Generous ceiling: this
-    // is a regression guard against an accidental O(n^3), not a benchmark.
-    expect(Date.now() - started).toBeLessThan(5_000);
-  });
+    // 10 x 200 entries is the absolute worst case MAX_PLAYERS and MAX_ENTRIES
+    // permit, and it is ~2M union-find comparisons, each running editDistance
+    // over a short string. That legitimately costs a few seconds.
+    //
+    // The ceiling was 5s and sat close enough to the real figure to fail on a
+    // machine with anything else running — measured at 5.0-5.1s here, failing
+    // two runs in three both on this branch and on an unmodified checkout, so
+    // it was flaky rather than newly slow. Raised rather than tuned, because
+    // what this guards is an accidental O(n^3), which would show up as orders
+    // of magnitude and not as 20%.
+    //
+    // A complexity-based guard would be the right tool and this is not it; a
+    // wall-clock assertion in CI can only ever be approximately right.
+    expect(Date.now() - started).toBeLessThan(20_000);
+    // The third argument is vitest's own testTimeout, and it is load-bearing:
+    // it defaults to 5000ms — the same figure the assertion above used to
+    // carry — so this test could fail two different ways for one reason, and
+    // raising only the assertion just converted the failure into a timeout.
+  }, 60_000);
 });
 
 /** A room that has reached the voting phase with `n` players. */
