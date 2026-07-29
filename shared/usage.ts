@@ -63,6 +63,13 @@ export type Service = {
   detail?: string;
   /** Where a human goes to see the real numbers. */
   dashboard?: string;
+  /**
+   * Present when `dashboard` is the *only* way to get these numbers, not just
+   * a nicety — the panel then renders it as its own call-to-action row rather
+   * than leaving the link buried in the section heading. Vercel is the case
+   * this exists for.
+   */
+  dashboardLabel?: string;
   metrics: Metric[];
 };
 

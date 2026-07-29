@@ -284,7 +284,13 @@ async function d1StoredBytes(env: UsageEnv, now: number): Promise<number> {
 
 const WORKERS_DASHBOARD = "https://dash.cloudflare.com/?to=/:account/workers/overview";
 const D1_DASHBOARD = "https://dash.cloudflare.com/?to=/:account/workers/d1";
-const VERCEL_DASHBOARD = "https://vercel.com/dashboard/usage";
+/**
+ * The project's own usage page, not the account-wide one. Both are behind a
+ * Vercel login, so this link is only useful to whoever owns the project — and
+ * it is the only route to these two numbers at all, hence the explicit
+ * call-to-action row rather than a link on the heading.
+ */
+const VERCEL_DASHBOARD = "https://vercel.com/leebotomy/w104/usage";
 
 /**
  * Vercel publishes no usage API on Hobby. `/v1/billing/charges` exists but
@@ -308,8 +314,9 @@ function vercelService(): Service {
     id: "vercel",
     name: "Vercel (Hobby)",
     status: "manual",
-    detail: "No usage API on Hobby — read these off the dashboard.",
+    detail: "No usage API on Hobby — these two can only be read off the dashboard.",
     dashboard: VERCEL_DASHBOARD,
+    dashboardLabel: "Open Vercel usage →",
     metrics: [
       manual("Fast data transfer", LIMITS.vercelBandwidthBytesPerMonth, "bytes"),
       manual("Edge requests", LIMITS.vercelEdgeRequestsPerMonth, "count"),

@@ -330,6 +330,12 @@ Branch off `main`, open a PR. CI (`.github/workflows/ci.yml`) runs typecheck,
 tests, build. Merges to `main` deploy production (Vercel for the app, GitHub
 Actions → `wrangler deploy` for the Worker).
 
+**Every feature PR bumps `version` in `package.json`.** Vite's `define`
+substitutes it as `__APP_VERSION__`, which renders in Landing's corner and in
+the debug panel's footer — so on a deployed URL the version is how you tell a
+fresh page from a cached one. Without the bump there is no way to know whether
+the thing you are looking at is the thing you just shipped.
+
 Two long-lived branches: `main` (production, `www.oknameone.com`) and `staging`
 (`staging.oknameone.com` + the `w104-staging` Worker). **PRs no longer deploy
 the Worker** — they used to, which meant any open PR overwrote the shared

@@ -180,6 +180,14 @@ function ServiceBlock({ service, now }: { service: Service; now: number }) {
         {tag && <span className={`debug-chip debug-chip--${service.status}`}>{tag}</span>}
       </h3>
       {service.detail && <p className="debug-service__detail">{service.detail}</p>}
+      {/* Only for services whose dashboard is the sole source of the numbers.
+          Everywhere else the heading link is enough, and a second link per
+          section would be four rows of chrome for nothing. */}
+      {service.dashboardLabel && service.dashboard && (
+        <a className="debug-service__cta" href={service.dashboard} target="_blank" rel="noreferrer">
+          {service.dashboardLabel}
+        </a>
+      )}
       {shared && <p className="debug-bar__note">{shared}</p>}
       {service.metrics.map((metric) => (
         <Bar key={metric.label} metric={metric} now={now} showNote={shared === null} />

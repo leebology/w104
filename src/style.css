@@ -2716,6 +2716,21 @@ ul, ol { list-style: none; }
   opacity: 0.55;
 }
 
+/* The one link in the panel that is a destination rather than a footnote:
+   Vercel's two rows have no number without it. */
+.debug-service__cta {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--teal);
+  border-radius: 4px;
+  color: var(--teal);
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.debug-service__cta:hover { background: var(--teal); color: var(--ink); }
+
 .debug-chip {
   font-family: var(--body);
   font-size: 9px;

@@ -346,6 +346,25 @@ Without credentials the panel still opens and still shows every limit — it jus
 cannot fill in the "used" half. To read live figures it needs a Cloudflare API
 token with exactly one permission.
 
+> **Nothing goes into Vercel.** The token lives on the Cloudflare Worker and
+> only there. The browser never sees it: the page asks the Worker for
+> `/debug/usage`, and the Worker is what calls Cloudflare's API. A
+> `VITE_`-prefixed variable is compiled into the JS bundle and readable by
+> anyone who opens devtools, so putting an API token in Vercel's environment
+> settings would publish it. There is no Vercel-side step at all.
+>
+> Which mechanism you need depends on which Worker is answering:
+>
+> | Panel is showing… | Worker answering | Set the token via |
+> | --- | --- | --- |
+> | `localhost:5173` or a LAN IP | `wrangler dev` | `.dev.vars` |
+> | `staging.oknameone.com` or a PR preview | `w104-staging` | `wrangler secret put --env staging` |
+> | `www.oknameone.com` | `w104` | `wrangler secret put` |
+>
+> "NO CREDENTIALS" on a local page therefore means `.dev.vars` is missing —
+> `wrangler secret` would not fix it, because that writes to a deployed Worker
+> your local page is not talking to.
+
 1. <https://dash.cloudflare.com/profile/api-tokens> → **Create Token** →
    **Create Custom Token** → Permissions: **Account | Account Analytics |
    Read**. Nothing else. Do **not** reuse the "Edit Cloudflare Workers" deploy
