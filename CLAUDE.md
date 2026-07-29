@@ -239,12 +239,17 @@ is enforced at the connect gate, before `join` can seat anyone.
 
 Off every game path, and deletable without the game noticing.
 
-- **`GET /debug/usage` on the Worker, 404 in production.** The gate is
-  `ENVIRONMENT === "production"` from `vars` in `wrangler.jsonc`. `wrangler dev`
-  reads that same top-level block, so **`npm run dev:party` passes
-  `--var ENVIRONMENT:local`** — without it, local dev calls itself production
-  and 404s its own panel. Keeping `"production"` as the committed value is what
-  makes the gate fail *closed*.
+- **`GET /debug/usage` on the Worker, live in every environment including
+  production.** It was staging-only at first; that hid the only numbers worth
+  watching behind a branch deploy. The endpoint is consequently public and
+  unauthenticated, which is an accepted trade — it serves account-level usage
+  counts, never tokens or room state. `handleUsage` in `party/server.ts` is
+  where a gate goes if that changes; the client's `debugEnabled()` is a button,
+  not a boundary.
+- **`ENVIRONMENT` gates nothing.** It is the label in the panel footer.
+  `WORKER_NAME` is load-bearing though — it is what the Workers request count
+  filters on, so `env.staging` repeats it or staging reports production's
+  traffic.
 - **One GraphQL request per metric, each with its own try/catch.** Cloudflare's
   analytics schema is discovered by introspection rather than published field
   by field, so a field name in `party/usage.ts` may be wrong. Batched, one bad
@@ -253,9 +258,6 @@ Off every game path, and deletable without the game noticing.
 - **Vercel has no usage API on Hobby.** The panel shows the ceilings and links
   to the dashboard rather than inventing a number. `vercelService()` is the
   only place that changes if Vercel ever ships one.
-- The client gate in `src/net/usage.ts` is an **allowlist** of hostnames, not a
-  "hide on production" check — a new production domain then fails closed rather
-  than putting a debug triangle on a TV.
 - The panel deliberately ignores the design tokens for colour and shape: it is
   ink-on-ink with a teal rule because anything wearing the game's gold-and-cream
   buttons reads as a game control.

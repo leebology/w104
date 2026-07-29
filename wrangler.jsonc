@@ -7,14 +7,13 @@
   "observability": {
     "enabled": true
   },
-  // Read by the /debug/usage endpoint only. ENVIRONMENT === "production" is
-  // what 404s that endpoint on the live Worker.
+  // Read by the /debug/usage endpoint only, and neither value gates it — the
+  // panel is live in every environment. ENVIRONMENT is the label in the
+  // panel's footer; WORKER_NAME is what the Workers request count filters on,
+  // so getting it wrong reports the other Worker's traffic.
   //
-  // `wrangler dev` reads THIS block, not an empty one — so local dev would
-  // call itself production and 404 its own debug panel. `npm run dev:party`
-  // therefore passes `--var ENVIRONMENT:local`. Keeping "production" as the
-  // value here is what makes the gate fail closed: a deploy that somehow
-  // loses its vars serves no debug endpoint rather than an open one.
+  // `wrangler dev` reads THIS block rather than an empty one, which is why
+  // `npm run dev:party` passes `--var ENVIRONMENT:local` over the top.
   //
   // The two secrets the endpoint also wants (CF_API_TOKEN, CF_ACCOUNT_ID) are
   // NOT here — see HOSTING.md.
@@ -37,10 +36,8 @@
       "name": "w104-staging",
       "workers_dev": true,
       "observability": { "enabled": true },
-      // `vars` is not inherited either, and an omitted ENVIRONMENT here would
-      // read as "local" rather than "production" — which happens to be the
-      // safe direction, but leaving WORKER_NAME behind would silently count
-      // the production Worker's requests on the staging panel.
+      // `vars` is not inherited either, and leaving WORKER_NAME behind would
+      // silently count the production Worker's requests on the staging panel.
       "vars": {
         "ENVIRONMENT": "staging",
         "WORKER_NAME": "w104-staging"

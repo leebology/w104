@@ -312,12 +312,22 @@ constant there makes every bar quietly lie, which is worse than no panel.
 
 ### The debug usage panel
 
-Staging and local builds render a small triangle in the top-right corner;
-hovering expands it to read "debug menu" and clicking slides out a panel with a
-progress bar per metric above, plus how long until each one resets. It is
-absent from production twice over — the client refuses to render it off an
-allowlisted hostname, and the Worker route it reads returns 404 when
-`ENVIRONMENT` is `production`.
+Every build renders a small triangle in the top-right corner; hovering expands
+it to read "debug menu" and clicking slides out a panel with a progress bar per
+metric above, plus how long until each one resets.
+
+**Production included, deliberately.** It was staging-only at first, which meant
+the numbers worth watching were the only ones you could not see without
+deploying a branch. Two things follow from that and are worth knowing rather
+than discovering:
+
+- The triangle is on the TV during a real party. It is 34px in a corner and
+  nothing opens it by accident, but it is there.
+- `https://w104.liam-donaher.workers.dev/debug/usage` is public and
+  unauthenticated. What it serves is a handful of account-level usage counts —
+  no tokens, no room state, no player data — and the API token never leaves the
+  Worker. If that trade stops holding, gate `handleUsage` in `party/server.ts`;
+  hiding the client button would not close the endpoint.
 
 **Vercel's two rows are always blank, and that is the honest answer.** Hobby
 has no usage API. `GET /v1/billing/charges` exists but reports *charges*, and a
@@ -342,7 +352,8 @@ token with exactly one permission.
    token — that one can rewrite the Worker, and this one only reads numbers.
 2. Locally, copy `.dev.vars.example` to `.dev.vars` (gitignored) and fill in
    `CF_API_TOKEN` and `CF_ACCOUNT_ID`. `wrangler dev` picks it up.
-3. For staging, set them as Worker secrets:
+3. Set them as Worker secrets on **both** deployed environments — each Worker
+   has its own secret store, and the staging pair does not reach production:
 
 ```bash
 npx wrangler secret put CF_API_TOKEN --env staging
@@ -352,15 +363,17 @@ npx wrangler secret put CF_API_TOKEN --env staging
 npx wrangler secret put CF_ACCOUNT_ID --env staging
 ```
 
-Do not set them on the production Worker. The route is 404 there, so they would
-be a credential sitting in an environment with nothing to read it.
+```bash
+npx wrangler secret put CF_API_TOKEN
+```
 
-> **The staging endpoint is unauthenticated.** `https://w104-staging.liam-donaher.workers.dev/debug/usage`
-> hands its JSON to anyone who finds it. What leaks is a handful of
-> account-level usage counts — no tokens, no room state, no player data — which
-> is an acceptable
-> trade on a soak environment that is already deliberately public, and is why
-> the same route is closed on production rather than merely hidden.
+```bash
+npx wrangler secret put CF_ACCOUNT_ID
+```
+
+The last two (no `--env`) target production. Skipping them is a supported
+state, not a broken one: the production panel opens and shows every limit, it
+just says "no credentials" instead of filling in the used half.
 
 Figures are cached in the Worker for 60 seconds, because Cloudflare's GraphQL
 API allows 300 queries per 5 minutes per user and a collection spends six. The

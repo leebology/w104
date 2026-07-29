@@ -2,10 +2,7 @@ import type { UsageReport } from "../../shared/usage";
 
 /**
  * Client half of the debug panel's data path: where to ask, and whether to ask
- * at all. The Worker's `/debug/usage` route is the real gate — it 404s on the
- * production deployment — so everything here is about not bothering it, and
- * about never rendering a developer affordance on a screen a party is looking
- * at.
+ * at all.
  */
 
 // Same fallback as `net/room.ts`: Vercel sets this per environment, and
@@ -24,25 +21,27 @@ function usageUrl(fresh: boolean): string {
 }
 
 /**
- * Loopback and the RFC1918 ranges. The LAN-IP case is the one that matters:
- * phone testing runs the app on e.g. `192.168.1.42:5173`, which is a *preview*
- * build as often as a dev one, so `import.meta.env.DEV` alone would hide the
- * panel exactly where three real devices are hammering the free tier.
- */
-const PRIVATE_HOST =
-  /^(localhost|\[::1\]|127\.\d+\.\d+\.\d+|0\.0\.0\.0|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)$/;
-
-/**
- * Staging and local only. An allowlist rather than "hide on the production
- * domain": a new production hostname added later fails closed this way, and
- * the failure mode of the other arrangement is a debug triangle on a TV.
+ * Every environment, production included — a deliberate choice, not an
+ * oversight, and the reason this function still exists instead of the call
+ * sites simply dropping the check.
+ *
+ * It was originally a hostname allowlist covering local, LAN and staging. The
+ * production numbers are the ones actually worth watching, and checking them
+ * meant deploying a branch to see them, so the gate was doing the opposite of
+ * its job. Two consequences, both accepted on purpose:
+ *
+ * - The triangle is on the TV during a real party. It is 34px in a corner and
+ *   nothing opens it by accident.
+ * - `/debug/usage` is reachable on the production Worker without
+ *   authentication. What it serves is a handful of account-level usage counts
+ *   — no tokens, no room state, no player data. If that ever stops being an
+ *   acceptable trade, gate the Worker route (party/server.ts) rather than this
+ *   function: hiding the button does not close the endpoint.
+ *
+ * Kept as a function so there is one place to put a condition back.
  */
 export function debugEnabled(): boolean {
-  if (import.meta.env.DEV) return true;
-  const host = location.hostname;
-  if (PRIVATE_HOST.test(host)) return true;
-  // The branch domain, and every per-PR Vercel preview.
-  return host === "staging.oknameone.com" || host.endsWith(".vercel.app");
+  return true;
 }
 
 export type UsageResult =
@@ -58,9 +57,12 @@ export async function fetchUsage(fresh = false): Promise<UsageResult> {
   try {
     const res = await fetch(usageUrl(fresh), { cache: "no-store" });
     if (res.status === 404) {
+      // The route is live in every environment now, so a 404 means the Worker
+      // this build is pointed at predates it — a stale production deploy, or
+      // `VITE_PARTYKIT_HOST` aimed at the wrong one.
       return {
         ok: false,
-        message: "The Worker has no /debug/usage route — it is disabled in production.",
+        message: `${HOST} has no /debug/usage route — that Worker needs redeploying.`,
       };
     }
     if (!res.ok) {

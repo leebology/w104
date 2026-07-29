@@ -16,9 +16,9 @@ export interface Env {
   W104: DurableObjectNamespace;
   /**
    * Which deployment this is — "production" or "staging" from `vars` in
-   * wrangler.jsonc, or "local", which `npm run dev:party` passes explicitly
-   * because `wrangler dev` would otherwise read the production value. The only
-   * thing it gates is the debug usage endpoint below.
+   * wrangler.jsonc, or "local", which `npm run dev:party` passes. Gates
+   * nothing; the debug panel prints it in its footer so that a tab left open
+   * against the wrong Worker is obvious rather than merely confusing.
    */
   ENVIRONMENT?: string;
   /** This Worker's deployed name, so usage metrics can filter to it. */
@@ -536,23 +536,23 @@ export class W104 extends Server<Env> {
 /**
  * Free-tier usage for the debug panel, as JSON.
  *
- * **404 in production, deliberately.** The panel is a development tool, and
- * the endpoint is unauthenticated — on staging it hands its account-level
- * usage counts to anyone who finds the URL. That is an acceptable trade for a
- * soak environment (no tokens leave the Worker, no room state is involved) and
- * not one worth making on the production host.
+ * **Live in every environment, production included.** It used to 404 on
+ * production, which meant the only numbers worth watching were the only ones
+ * you could not see without deploying a branch first.
+ *
+ * The endpoint is therefore unauthenticated on a public host. What it serves
+ * is a handful of account-level usage counts — no tokens, no room state, no
+ * player data — and the API token itself never leaves the Worker. This is the
+ * place to add a gate if that trade ever stops holding; hiding the client
+ * button would not close it.
  *
  * CORS is wide open because the caller is always a different origin — the app
- * is on Vercel, this is on workers.dev — and because a same-origin policy
- * protects nothing here that the endpoint's own gate does not already.
+ * is on Vercel, this is on workers.dev.
  *
  * `?fresh=1` skips the 60-second cache, for when you have just played a round
  * and want to watch the number move.
  */
 async function handleUsage(request: Request, env: Env): Promise<Response> {
-  if (env.ENVIRONMENT === "production") {
-    return new Response("Not Found", { status: 404 });
-  }
   const fresh = new URL(request.url).searchParams.get("fresh") === "1";
   const report = await collectUsage(env, Date.now(), { fresh });
   return new Response(JSON.stringify(report), {
