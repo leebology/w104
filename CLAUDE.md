@@ -333,6 +333,10 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
 - `docs/superpowers/specs/2026-07-28-score-persistence-design.md` — the D1
   archive: schema, where the writes happen, and the rule that the game never
   reads it back. Approved, not yet implemented.
+- `docs/superpowers/specs/2026-07-29-freetier-debug-panel-design.md` — the
+  free-tier usage panel: the `/debug/usage` route, why one GraphQL request per
+  metric, the per-account Workers allowance, and why Vercel is a link rather
+  than a bar. Implemented.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.
