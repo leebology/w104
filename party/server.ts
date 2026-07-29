@@ -82,17 +82,43 @@ const DEFAULT_EMOJI = "🙂";
  * and schedule alarms.
  */
 export class W104 extends Server<Env> {
+  /**
+   * **WebSocket Hibernation.** The object is evicted from memory between
+   * messages instead of being pinned there for as long as a socket is open.
+   *
+   * This is the single biggest lever on Durable Object *duration*, which is
+   * billed as wall-clock GB-s while the object is resident. Without it an idle
+   * lobby costs roughly 10,800 GB-s a day — 83% of the free allowance — purely
+   * for existing; with it the only cost is the moments something actually
+   * runs, and an idle room's 15-second reap alarm brings that to a few GB-s.
+   *
+   * The trade is that **no instance field survives between events.** Everything
+   * this class holds must therefore be reloadable in `onStart()`, which
+   * PartyServer calls via `#ensureInitialized()` before every
+   * `webSocketMessage`, `webSocketClose` and alarm. `Connection` state is the
+   * exception and is safe: with hibernation `setState` serializes into the
+   * socket's own attachment, so `ConnState` rides along with the socket.
+   */
+  static options = { hibernate: true };
+
   private room: Room | null = null;
   /**
-   * In-memory only, not persisted: which session ids were live for a kicked
-   * player at the moment of the kick. Lets a deliberate rejoin (a new
-   * `connect()` call mints a new session id) back in while a kicked socket's
-   * own automatic reconnect — which resends the same session id — stays
-   * blocked. If the object hibernates and loses this, a stale reconnect can
-   * slip through; for a casual party game that failure mode (occasionally
-   * early, never permanently stuck) is the acceptable side to fail on.
+   * Which session ids were live for a kicked player at the moment of the kick.
+   * Lets a deliberate rejoin (a new `connect()` call mints a new session id)
+   * back in while a kicked socket's own automatic reconnect — which resends the
+   * same session id — stays blocked.
+   *
+   * **Persisted, not an instance field.** Under hibernation the object is
+   * evicted constantly, so an in-memory copy would be empty on essentially
+   * every connect — and an absent entry is treated as "still banned", which
+   * would leave a kicked player unable to rejoin at all for the room's
+   * lifetime. That was already the behaviour on a cold wake before hibernation;
+   * it was simply rare enough not to notice.
+   *
+   * A `Record` of arrays rather than a `Map` of `Set`s, because Durable Object
+   * storage serializes as JSON and both of those come back empty.
    */
-  private kickedSessions = new Map<PlayerId, Set<string>>();
+  private kickedSessions: Record<PlayerId, string[]> = {};
 
   /**
    * Archive bookkeeping. Loaded alongside the room and written back whenever
@@ -104,6 +130,13 @@ export class W104 extends Server<Env> {
   async onStart(): Promise<void> {
     this.room = await this.load();
     this.archive = (await this.ctx.storage.get<ArchiveState>("archive")) ?? null;
+    this.kickedSessions =
+      (await this.ctx.storage.get<Record<PlayerId, string[]>>("kickedSessions")) ?? {};
+  }
+
+  private async saveKickedSessions(next: Record<PlayerId, string[]>): Promise<void> {
+    this.kickedSessions = next;
+    await this.ctx.storage.put("kickedSessions", next);
   }
 
   private async saveArchiveState(next: ArchiveState): Promise<void> {
@@ -237,8 +270,12 @@ export class W104 extends Server<Env> {
     // reconnects on its own, and in the lobby the join below would otherwise
     // welcome a kicked player straight back in as a newcomer.
     if (this.room.kicked.includes(playerId)) {
-      const banned = this.kickedSessions.get(playerId);
-      if (!banned || banned.has(session)) {
+      const banned = this.kickedSessions[playerId];
+      // No recorded sessions at all means the ban's bookkeeping is missing
+      // rather than that this connection is new, so it stays enforced — the
+      // safe direction, and now a genuine can't-happen since the record is
+      // persisted alongside the kick.
+      if (banned === undefined || banned.includes(session)) {
         return this.reject(conn, "kicked", "The host removed you from this game.");
       }
       // A session id the ban never recorded means this is a deliberate new
@@ -248,7 +285,8 @@ export class W104 extends Server<Env> {
         ...this.room,
         kicked: this.room.kicked.filter((id) => id !== playerId),
       };
-      this.kickedSessions.delete(playerId);
+      const { [playerId]: _lifted, ...rest } = this.kickedSessions;
+      await this.saveKickedSessions(rest);
     }
 
     const existing = this.room.players.find((p) => p.id === playerId);
@@ -425,7 +463,13 @@ export class W104 extends Server<Env> {
           for (const c of this.getConnections<ConnState>()) {
             if (c.state?.playerId === msg.targetId) sessions.add(c.state.session);
           }
-          this.kickedSessions.set(msg.targetId, sessions);
+          // Written to storage, not just to the instance: the target's
+          // reconnect may well arrive after the object has hibernated, and an
+          // unpersisted record would leave them banned for good.
+          await this.saveKickedSessions({
+            ...this.kickedSessions,
+            [msg.targetId]: [...sessions],
+          });
           // Tell them why before the socket goes away, so their device can
           // return to the first screen instead of showing a bare close.
           this.rejectConnectionsFor(

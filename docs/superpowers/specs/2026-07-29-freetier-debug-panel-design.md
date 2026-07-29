@@ -169,17 +169,22 @@ everything else there, and no game code imports it.
 its own cannot answer the question the panel is open for — "which resource are
 we burning fastest" — because the answer is architectural, not arithmetic.
 
-Durable Object **Duration** is the worked example. It runs an order of
-magnitude ahead of Durable Object **Requests** here, and the reason is that
-`partyserver` defaults to `hibernate: false` and this repo does not override
-it: a room bills wall-clock time from first join until it is reaped, whether
-or not anyone is typing. So Duration tracks how long rooms stay *open*, not how
-busy they are, and the lever on it is the WebSocket Hibernation API rather than
-anything about gameplay. None of that is visible in a 14% bar.
+Durable Object **Duration** is the worked example, and writing the blurb is
+what caused the fix. It was running an order of magnitude ahead of Durable
+Object **Requests**, because `partyserver` defaults to `hibernate: false` and
+this repo had not overridden it: a room billed wall-clock time from first join
+until it was reaped, whether or not anyone was typing. An idle lobby cost about
+10,800 GB-s a day — 83% of the allowance — purely for existing.
+
+**Hibernation was turned on in v0.5.0**, so the blurb now says the opposite:
+duration tracks activity rather than how long a lobby has been left open. None
+of that was visible in a 14% bar, which is the argument for the field.
 
 The blurbs are written against how w104 is built rather than restating
-Cloudflare's pricing page. **Re-check the hibernation claim if `partyserver` is
-upgraded** — it is the one that would silently stop being true.
+Cloudflare's pricing page. **Re-check the hibernation sentence if
+`W104.options.hibernate` changes**, or if a `partyserver` upgrade changes what
+that flag does — it is the one line here that would silently stop being true
+while still rendering perfectly.
 
 ## 9. Look
 

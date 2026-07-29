@@ -310,6 +310,35 @@ These numbers also live in `LIMITS` in `shared/usage.ts`, which is what the
 debug panel draws its bars against. **Change them in both places** — a stale
 constant there makes every bar quietly lie, which is worse than no panel.
 
+### Durable Object duration is the one to watch
+
+It is the only limit this app can plausibly exhaust, and it is the least
+intuitive, so it is worth understanding before it bites.
+
+GB-s is memory × wall-clock time. A Durable Object gets a fixed 128 MB, so one
+second of one room being resident costs `128/1024 = 0.125` GB-s. The daily
+allowance therefore converts to:
+
+```
+13,000 GB-s ÷ 0.125  =  104,000 DO-seconds  ≈  29 room-hours per day
+```
+
+One room is one Durable Object, so **player count is irrelevant** — ten players
+in a lobby cost exactly what one does. What spends the allowance is concurrent
+rooms × how long they are resident.
+
+**WebSocket Hibernation (`static options = { hibernate: true }` on `W104`) is
+what keeps that in bounds.** Without it, an open socket pins the object in
+memory and an idle lobby costs ~10,800 GB-s/day — 83% of the allowance — for
+doing nothing at all; a single forgotten browser tab would have been enough to
+exhaust the day. With it, the object is evicted between messages and the only
+residual cost is the 15-second reap alarm, a few GB-s a day.
+
+Note that Duration, both Requests bars and both D1 row counts are **cumulative
+meters**: they only rise, and reset at 00:00 UTC. Closing every lobby stops them
+climbing but gives nothing back. Only the two *stored data* bars are levels that
+fall when data is deleted.
+
 ### The debug usage panel
 
 Every build renders a small triangle in the top-right corner; hovering expands

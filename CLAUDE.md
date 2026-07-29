@@ -151,6 +151,16 @@ replaced wholesale on each `state` push; every client action is a *request*.
   `storage.get<Room>` is an unchecked cast over older stored rooms.
 - **Durable Objects must stay on `new_sqlite_classes`** in `wrangler.jsonc`.
   `new_classes` requires a paid Cloudflare plan and breaks deploys.
+- **WebSocket Hibernation is on (`static options = { hibernate: true }`), so no
+  instance field survives between events.** Anything the `W104` class holds must
+  be reloadable in `onStart()` — that is why `room`, `archive` and
+  `kickedSessions` are all read from storage there. Adding a `private` field
+  with meaningful state and no `onStart()` load is a defect that will look like
+  intermittent amnesia rather than a crash. `Connection` state is the exception:
+  `setState` serializes into the socket's own attachment, so `ConnState` rides
+  with the socket. Hibernation is what keeps Durable Object *duration* off the
+  free-tier ceiling — an idle pinned room costs ~83% of a day's allowance on its
+  own.
 - **Local dev stays plain http.** An https page cannot open a `ws://` socket, so
   no `--local-protocol https`.
 - The host is not a player. A natural start needs 2+ *connected* players all
@@ -194,6 +204,18 @@ Three distinct ids, easy to confuse:
 
 A kick is durable for the room's lifetime (`backToLobby` does not clear it) and
 is enforced at the connect gate, before `join` can seat anyone.
+
+**`kickedSessions` is persisted, not an instance field**, and hibernation is
+why. An absent entry is treated as "still banned" — the safe direction — so an
+in-memory copy lost to eviction would leave a kicked player unable to rejoin at
+all rather than letting a stale socket slip through. That was already true on a
+cold wake before hibernation; it was just rare enough not to notice. Stored as
+a `Record<PlayerId, string[]>` because DO storage is JSON and a `Map` of `Set`s
+comes back empty.
+
+Known gap, pre-existing: kicking a player who is *already disconnected* records
+no sessions, so their next connect finds an empty array, matches nothing, and
+lifts the ban immediately.
 
 ### Teams
 

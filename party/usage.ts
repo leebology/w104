@@ -374,14 +374,15 @@ const ACCOUNT_WIDE = "Account-wide — shared between every environment.";
  * reason is architectural rather than anything to do with how busy a room is.
  *
  * Verified against Cloudflare's pricing docs and this repo on 2026-07-29.
- * Re-check the hibernation claim if `partyserver` is upgraded — it is the one
- * that would silently stop being true.
+ * **Re-check the hibernation claim if `W104.options.hibernate` ever changes**,
+ * or if a `partyserver` upgrade changes what that flag does — it is the one
+ * sentence here that would silently stop being true while still rendering.
  */
 const SOURCES = {
   workers:
     "One request per socket a phone opens, plus this panel's own polling. The page itself loads from Vercel and never touches the Worker.",
   durableObjects:
-    "Requests are incoming socket messages — each word submitted, each ready tap — plus alarms; broadcasts out are free and messages in bill 20:1. Duration is wall-clock time a room is held in memory, and PartyServer runs without the hibernation API here, so a room bills from first join until it is reaped whether or not anyone is typing. That makes Duration the fastest-moving bar, and it tracks how long rooms stay open rather than how busy they are.",
+    "Requests are incoming socket messages — each word submitted, each ready tap — plus alarms; broadcasts out are free and messages in bill 20:1. Duration is wall-clock time a room is held in memory, and WebSocket Hibernation is on, so an open socket sitting idle costs nothing: a room bills only for the moments it actually runs, plus a 15-second reap alarm while anyone is connected. Duration therefore tracks activity, not how long a lobby has been left open.",
   d1:
     "Writes from the score archive: one row per word plus round and scorer rows each time a round banks, and index updates count as writes too. The game never reads D1, so rows read stays near zero.",
 } as const;
