@@ -726,6 +726,33 @@ ul, ol { list-style: none; }
 
 /* ------------------------------------------------------------ host lobby */
 
+/* The wordmark and the join URL as one unit in the header's left slot. */
+.host-lobby__brand {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  flex: 0 0 auto;
+  /* Clears the NAME ONE! plaque's 6px drop shadow, plus the couple of pixels
+     its 2deg tilt drops the near corner by. */
+  gap: 12px;
+}
+
+/* Squared up under the plaque above it, on the same tilt, so the two read as
+   one stamp rather than a caption that drifted in. The offset lands this on
+   the plaque's own left edge: the wordmark hangs 14px into the margin
+   (`.wordmark`'s margin) and reserves 20px of that back as padding for the
+   OK, overhang (`.wordmark--small`), so NAME ONE! starts 6px in. */
+.host-lobby__url {
+  margin-left: 6px;
+  transform: rotate(2deg);
+  transform-origin: left center;
+  font-family: var(--display);
+  font-size: clamp(12px, 1.2vw, 16px);
+  letter-spacing: 0.1em;
+  color: var(--cream);
+  white-space: nowrap;
+}
+
 .host-lobby__stage {
   flex: 1;
   min-height: 0;
@@ -737,9 +764,18 @@ ul, ol { list-style: none; }
   padding: 0 34px;
 }
 
-.host-lobby__join {
-  font-size: clamp(14px, 1.5vw, 18px);
-  letter-spacing: 0.16em;
+/* The room's label, given exactly what the round screen gives NAME A: — cream
+   Bungee sitting above the gold rather than a plaque on it, so the banner
+   below stays the only loud thing on the stage. Its own class rather than a
+   reuse of `.name-a`, which is pinned to the top of a full-bleed stage; here
+   the banner is in the flow, so the label is too, and the stage's 26px gap is
+   the whole of the relationship. The phone's `.playing__name-a` is the same
+   look at phone scale. */
+.host-lobby__label {
+  font-family: var(--display);
+  font-size: clamp(22px, 3.2vw, 38px);
+  line-height: 1.2;
+  letter-spacing: 0.18em;
   color: var(--cream);
   text-align: center;
 }
@@ -754,7 +790,14 @@ ul, ol { list-style: none; }
   margin: 0 -74px;
 }
 
-.host-lobby__code .banner__text { letter-spacing: 0.1em; }
+/* Tracking is applied *after* the last character too, so a centred line with
+   0.1em of it sits half that far left of true centre — on a banner this size
+   that is a visible lean. The padding gives the box back the same amount on
+   the left and lands the code optically centred. */
+.host-lobby__code .banner__text {
+  letter-spacing: 0.1em;
+  padding-left: 0.1em;
+}
 
 .host-lobby__footer {
   flex: 0 0 auto;
@@ -1592,6 +1635,9 @@ ul, ol { list-style: none; }
   .timer-track { height: 22px; }
   .host-scoring { padding: 16px 16px 12px; }
   .host-lobby__code { margin: 0 -50px; }
+  /* The brand block is now two lines tall, and the header it sits in is the
+     only band the stage can take its height from. */
+  .host-lobby__brand { gap: 8px; }
   .host-exit { font-size: 11px; padding: 9px 13px; }
   .host-header__right { gap: 10px; }
   /* Five fixed 228px panels plus gaps need ~1250px. On a laptop-sized "TV"
