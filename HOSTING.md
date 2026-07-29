@@ -369,6 +369,15 @@ token with exactly one permission.
    **Create Custom Token** → Permissions: **Account | Account Analytics |
    Read**. Nothing else. Do **not** reuse the "Edit Cloudflare Workers" deploy
    token — that one can rewrite the Worker, and this one only reads numbers.
+
+   That is a **User API Token**, which is the right one here. Cloudflare also
+   offers **Account-owned tokens** (Manage Account → API Tokens), which survive
+   the creating user leaving the account — the correct shape for a shared or CI
+   credential, and no benefit at all on a single-user account. They are also
+   documented as incompatible with a handful of products, and the GraphQL
+   Analytics API appears on neither their supported nor their unsupported list.
+   Take the user token; switch only if this ever becomes a credential more than
+   one person depends on.
 2. Locally, copy `.dev.vars.example` to `.dev.vars` (gitignored) and fill in
    `CF_API_TOKEN` and `CF_ACCOUNT_ID`. `wrangler dev` picks it up.
 3. Set them as Worker secrets on **both** deployed environments — each Worker
