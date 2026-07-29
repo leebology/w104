@@ -10,23 +10,25 @@ Two independent pieces, deployed to two hosts, both on free tiers:
 
 | Piece           | What it is                              | Host              | URL                              |
 | --------------- | --------------------------------------- | ----------------- | -------------------------------- |
-| Web app         | Vite + TypeScript static frontend       | Vercel            | `https://w104.leebo.io`          |
+| Web app         | Vite + TypeScript static frontend       | Vercel            | `https://www.oknameone.com`      |
 | Realtime server | PartyServer on a Cloudflare Worker;     | Cloudflare        | `wss://w104.liam-donaher.workers.dev` |
 |                 | one SQLite Durable Object per room       |                   |                                  |
 
 The browser loads the web app from Vercel, then opens a WebSocket to the
-Cloudflare Worker. They are separate origins — that is intentional. Your main
-site at `leebo.io` is never touched.
+Cloudflare Worker. They are separate origins — that is intentional.
 
 ```
 Player phones ─┐
                ├─► wss://w104.liam-donaher.workers.dev  (Cloudflare Worker, PartyServer)
 Big screen ────┘
        │  loads UI from
-       └─► https://w104.leebo.io  (Vercel)
-
-leebo.io (your portfolio) — untouched
+       └─► https://www.oknameone.com  (Vercel)
 ```
+
+> The game used to live at `w104.leebo.io`, a subdomain of a personal site.
+> It now has its own domain. `w104` survives as the repo name, the Worker
+> name and the Durable Object class — those are deployment identifiers and
+> renaming them would mean a new Worker and a migration for no gain.
 
 > Why PartyServer and not PartyKit? PartyKit's shared hosting is full, and its
 > CLI can only create key-value Durable Objects, which Cloudflare's free plan no
@@ -43,7 +45,7 @@ production room state.
 
 | Branch    | Web app (Vercel)             | Worker (Cloudflare)                     |
 | --------- | ---------------------------- | --------------------------------------- |
-| `main`    | `https://w104.leebo.io`      | `wss://w104.liam-donaher.workers.dev`         |
+| `main`    | `https://www.oknameone.com`  | `wss://w104.liam-donaher.workers.dev`         |
 | `staging` | `https://staging.oknameone.com` | `wss://w104-staging.liam-donaher.workers.dev` |
 
 `wrangler.jsonc` defines the `env.staging` that produces the second Worker
@@ -105,7 +107,7 @@ around.
 
 ## One-time setup
 
-### 1. Web app on Vercel (subdomain `w104.leebo.io`)
+### 1. Web app on Vercel (`www.oknameone.com`)
 
 1. In Vercel, **Add New → Project** and import `leebology/w104`.
 2. Framework preset **Vite** (auto-detected). Leave build command / output dir at
@@ -114,8 +116,10 @@ around.
    - **Key:** `VITE_PARTYKIT_HOST`
    - **Value:** `w104.liam-donaher.workers.dev` (your Worker's URL — the
      `<worker-name>.<your-workers.dev-subdomain>` from step 2 below)
-4. **Settings → Domains → Add** `w104.leebo.io`; accept the DNS record Vercel
-   offers (or add the shown `CNAME` at your registrar).
+4. **Settings → Domains → Add** `www.oknameone.com` and assign it to
+   **Production**; accept the DNS record Vercel offers (or add the shown
+   `CNAME` at your registrar). Add the apex `oknameone.com` too and let Vercel
+   redirect it to `www` — people will type it without the prefix.
 
 ### 2. Realtime server on Cloudflare (Wrangler)
 
@@ -138,7 +142,7 @@ npm run deploy:party        # = wrangler deploy
 
 The output prints the Worker URL, e.g. `https://w104.liam-donaher.workers.dev`.
 That host (without `https://`) must equal the `VITE_PARTYKIT_HOST` you set in
-Vercel. Reload `w104.leebo.io`, create a lobby, then join it with the room
+Vercel. Reload `www.oknameone.com`, create a lobby, then join it with the room
 code from a second tab and confirm that player appears on the host's roster.
 
 > Do **not** use Cloudflare's dashboard "Create application / Connect to Git"
@@ -195,10 +199,41 @@ done once:
    Production-and-Preview variable would silently point staging at the
    production Worker, and the symptom — staging players landing in production
    rooms — looks like a game bug, not a config one.
+5. **Settings → Deployment Protection → Vercel Authentication → off → Save.**
+   Without this, staging is not public — see below.
 
-Staging is publicly reachable. It's a party game with no accounts and no
-personal data, so that's acceptable; if you'd rather it not be indexed, add a
-`X-Robots-Tag: noindex` header for the staging domain in `vercel.json`.
+### Deployment protection must be off
+
+A branch domain still serves *preview* deployments, and Vercel Authentication
+protects previews by default. Left on, `staging.oknameone.com` bounces every
+visitor to a Vercel login, and granting access one person at a time does not
+rescue it: **Hobby allows exactly one external user per account.** The second
+friend you hand the URL to cannot get in at all. This is the setting to check
+first when staging "works for me" and for nobody else.
+
+The toggle is not plan-gated — Hobby teams can disable it on their own
+projects. Equivalently, via the API:
+
+```bash
+curl -X PATCH "https://api.vercel.com/v9/projects/w104" -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" -d '{"ssoProtection":null}'
+```
+
+Protection is **per-project, not per-domain**, so turning it off also makes
+every PR preview URL public. That is fine here and is the accepted trade:
+the frontend is a static bundle with nothing secret in it (`VITE_PARTYKIT_HOST`
+is a public hostname by definition — the browser has to dial it), there are no
+accounts and no personal data, and the real access control on a game is the
+room code. The paid alternatives (Password Protection, Sharable Links) are
+Pro-only and this project stays on free tiers.
+
+> If PR previews ever *do* need to stay locked, the free way is a second Vercel
+> project on the same repo whose production branch is `staging`, with
+> `staging.oknameone.com` as that project's **production** domain — Standard
+> Protection leaves custom production domains public. It costs a duplicated
+> project and a duplicated `VITE_PARTYKIT_HOST`. Not worth it today.
+
+Staging is therefore publicly reachable. If you'd rather it not be indexed, add
+an `X-Robots-Tag: noindex` header for the staging domain in `vercel.json`.
 
 ---
 
@@ -211,7 +246,7 @@ personal data, so that's acceptable; if you'd rather it not be indexed, add a
 3. **CI** runs `typecheck` + `test` + `build`; **Vercel** posts a preview URL
    for the PR, pointed at the staging Worker.
 4. Merge when green. On merge to `main`:
-   - Vercel deploys the web app to `https://w104.leebo.io`.
+   - Vercel deploys the web app to `https://www.oknameone.com`.
    - GitHub Actions runs `wrangler deploy` for the production Worker.
 
 **Testing on real phones:** merge into `staging` instead. Within a minute or so
@@ -254,3 +289,209 @@ All free tier:
 - **Cloudflare Workers + SQLite Durable Objects free tier** — fine for
   party-sized rooms. Review current Workers/DO free-tier limits before any public
   launch.
+
+Current allowances, verified 2026-07-29. Cloudflare's compute limits reset at
+**00:00 UTC daily**; storage is a total ceiling that never resets. Vercel's
+reset on the account's billing anniversary.
+
+| Service | Metric | Free allowance | Resets |
+| --- | --- | --- | --- |
+| Workers | Requests | 100,000 / day | daily, 00:00 UTC |
+| Durable Objects | Requests | 100,000 / day | daily, 00:00 UTC |
+| Durable Objects | Duration | 13,000 GB-s / day | daily, 00:00 UTC |
+| Durable Objects | Stored data | 5 GB | never |
+| D1 | Rows read | 5,000,000 / day | daily, 00:00 UTC |
+| D1 | Rows written | 100,000 / day | daily, 00:00 UTC |
+| D1 | Stored data | 5 GB | never |
+| Vercel Hobby | Fast data transfer | 100 GB / month | billing date |
+| Vercel Hobby | Edge requests | 1,000,000 / month | billing date |
+
+These numbers also live in `LIMITS` in `shared/usage.ts`, which is what the
+debug panel draws its bars against. **Change them in both places** — a stale
+constant there makes every bar quietly lie, which is worse than no panel.
+
+### Durable Object duration is the one to watch
+
+It is the only limit this app can plausibly exhaust, and it is the least
+intuitive, so it is worth understanding before it bites.
+
+GB-s is memory × wall-clock time. A Durable Object gets a fixed 128 MB, so one
+second of one room being resident costs `128/1024 = 0.125` GB-s. The daily
+allowance therefore converts to:
+
+```
+13,000 GB-s ÷ 0.125  =  104,000 DO-seconds  ≈  29 room-hours per day
+```
+
+One room is one Durable Object, so **player count is irrelevant** — ten players
+in a lobby cost exactly what one does. What spends the allowance is concurrent
+rooms × how long they are resident.
+
+**WebSocket Hibernation (`static options = { hibernate: true }` on `W104`) is
+what keeps that in bounds.** Without it, an open socket pins the object in
+memory and an idle lobby costs ~10,800 GB-s/day — 83% of the allowance — for
+doing nothing at all; a single forgotten browser tab would have been enough to
+exhaust the day. With it, the object is evicted between messages and the only
+residual cost is the 15-second reap alarm, a few GB-s a day.
+
+Note that Duration, both Requests bars and both D1 row counts are **cumulative
+meters**: they only rise, and reset at 00:00 UTC. Closing every lobby stops them
+climbing but gives nothing back. Only the two *stored data* bars are levels that
+fall when data is deleted.
+
+### The debug usage panel
+
+Every build renders a small triangle in the top-right corner; hovering expands
+it to read "debug menu" and clicking slides out a drawer with three sections.
+
+**Debug** acts on a live round: hold the timer, cut it short, or fill every
+player's list with random test words so a round can be driven to the scoring
+screen without eight people typing. All three are **host-device only and only
+while a round is running**, and the Worker rejects them from anyone else —
+disabling the buttons is a courtesy, not the boundary.
+
+**Experimental features** holds on/off switches for things being tried mid-
+round. They are local to the device and stored in `localStorage`; toggling one
+changes nothing for anyone else in the room. `Sound effects` is a live example
+wired to nothing — copy it to add another, and read it anywhere with
+`useExperiment(id)`.
+
+**Usage** sits pinned to the bottom and collapsed, showing one thin bar per
+metric. That is the glanceable form: noticing a bar has gone red is not a task,
+whereas reading the numbers is, so expanding it gives the full figures, the
+reset countdowns and a Refresh button.
+
+**Production included, deliberately.** It was staging-only at first, which meant
+the numbers worth watching were the only ones you could not see without
+deploying a branch. Two things follow from that and are worth knowing rather
+than discovering:
+
+- The triangle is on the TV during a real party. It is 34px in a corner and
+  nothing opens it by accident, but it is there.
+- `https://w104.liam-donaher.workers.dev/debug/usage` is public and
+  unauthenticated. What it serves is a handful of account-level usage counts —
+  no tokens, no room state, no player data — and the API token never leaves the
+  Worker. If that trade stops holding, gate `handleUsage` in `party/server.ts`;
+  hiding the client button would not close the endpoint.
+
+#### Which numbers change between environments
+
+**None of them.** The panel reads identically from local, staging and
+production, by design — you can check production's usage from your dev machine
+and staging's from production.
+
+| Section | Rows | Scope |
+| --- | --- | --- |
+| Workers | All Workers · w104 · w104-staging | account total, then per-script |
+| Durable Objects | Requests · Duration · Stored data | account-wide |
+| D1 | Rows read · Rows written · Stored data | account-wide |
+| Vercel | — | dashboard link only |
+
+The Workers query is deliberately **unfiltered and grouped by `scriptName`**,
+so both deployed Workers are always listed no matter which one is answering.
+Durable Object and D1 counters are not per-script at all, so staging's rooms
+and production's rooms land in the same numbers — **playing a match on staging
+moves production's bars.**
+
+Two things about the Workers section specifically:
+
+- **The 100,000/day allowance is per account, not per Worker.** That is why the
+  section leads with "All Workers" — the figure the limit actually applies to —
+  and the two script rows underneath are a breakdown of it, not separate
+  budgets. Two independent bars at 60% each would look survivable while being
+  120% of one allowance.
+- The script names come from `WORKER_SCRIPTS` in `party/usage.ts`, which
+  mirrors the `name` fields in `wrangler.jsonc`. Rename a Worker without
+  updating that list and it shows as permanently idle rather than as an error.
+
+**Local dev generates no Cloudflare analytics whatsoever.** `wrangler dev` runs
+on your machine and never touches Cloudflare's edge, so playing locally moves
+nothing on any bar. The panel says so on the Workers section rather than
+leaving it to be worked out from a number that will not budge.
+
+#### Two sections that do not report live numbers
+
+**Vercel has no bars at all, and that is the honest answer.** Hobby has no usage
+API. `GET /v1/billing/charges` exists but reports *charges*, and a Hobby account
+has none; the dashboard's own numbers come from an internal endpoint with no
+compatibility promise. The section used to render bandwidth and edge requests as
+two permanently empty tracks, which reads as a broken panel rather than a
+limitation — so it is now a heading and a link to the project's usage page. The
+allowances themselves stay in the table above. If Vercel ever ships a real
+endpoint, `vercelService()` in `party/usage.ts` is the only thing that changes.
+
+**D1 says "not in use" because nothing writes to it yet.** The score archive is
+specced in `docs/superpowers/specs/2026-07-28-score-persistence-design.md` and
+approved, but not built: there is no `d1_databases` block in `wrangler.jsonc`
+and no `DB` binding. The collector checks for that binding, so the three D1 bars
+start reporting on their own the moment the archive lands — no change to the
+panel needed.
+
+#### Giving the panel real numbers
+
+Without credentials the panel still opens and still shows every limit — it just
+cannot fill in the "used" half. To read live figures it needs a Cloudflare API
+token with exactly one permission.
+
+> **Nothing goes into Vercel.** The token lives on the Cloudflare Worker and
+> only there. The browser never sees it: the page asks the Worker for
+> `/debug/usage`, and the Worker is what calls Cloudflare's API. A
+> `VITE_`-prefixed variable is compiled into the JS bundle and readable by
+> anyone who opens devtools, so putting an API token in Vercel's environment
+> settings would publish it. There is no Vercel-side step at all.
+>
+> Which mechanism you need depends on which Worker is answering:
+>
+> | Panel is showing… | Worker answering | Set the token via |
+> | --- | --- | --- |
+> | `localhost:5173` or a LAN IP | `wrangler dev` | `.dev.vars` |
+> | `staging.oknameone.com` or a PR preview | `w104-staging` | `wrangler secret put --env staging` |
+> | `www.oknameone.com` | `w104` | `wrangler secret put` |
+>
+> "NO CREDENTIALS" on a local page therefore means `.dev.vars` is missing —
+> `wrangler secret` would not fix it, because that writes to a deployed Worker
+> your local page is not talking to.
+
+1. <https://dash.cloudflare.com/profile/api-tokens> → **Create Token** →
+   **Create Custom Token** → Permissions: **Account | Account Analytics |
+   Read**. Nothing else. Do **not** reuse the "Edit Cloudflare Workers" deploy
+   token — that one can rewrite the Worker, and this one only reads numbers.
+
+   That is a **User API Token**, which is the right one here. Cloudflare also
+   offers **Account-owned tokens** (Manage Account → API Tokens), which survive
+   the creating user leaving the account — the correct shape for a shared or CI
+   credential, and no benefit at all on a single-user account. They are also
+   documented as incompatible with a handful of products, and the GraphQL
+   Analytics API appears on neither their supported nor their unsupported list.
+   Take the user token; switch only if this ever becomes a credential more than
+   one person depends on.
+2. Locally, copy `.dev.vars.example` to `.dev.vars` (gitignored) and fill in
+   `CF_API_TOKEN` and `CF_ACCOUNT_ID`. `wrangler dev` picks it up.
+3. Set them as Worker secrets on **both** deployed environments — each Worker
+   has its own secret store, and the staging pair does not reach production:
+
+```bash
+npx wrangler secret put CF_API_TOKEN --env staging
+```
+
+```bash
+npx wrangler secret put CF_ACCOUNT_ID --env staging
+```
+
+```bash
+npx wrangler secret put CF_API_TOKEN
+```
+
+```bash
+npx wrangler secret put CF_ACCOUNT_ID
+```
+
+The last two (no `--env`) target production. Skipping them is a supported
+state, not a broken one: the production panel opens and shows every limit, it
+just says "no credentials" instead of filling in the used half.
+
+Figures are cached in the Worker for 60 seconds, because Cloudflare's GraphQL
+API allows 300 queries per 5 minutes per user and a collection spends six. The
+panel's **Refresh** button sends `?fresh=1` and skips the cache. The analytics
+pipeline itself runs a few minutes behind, so a round you just played will not
+appear instantly no matter which button you press.

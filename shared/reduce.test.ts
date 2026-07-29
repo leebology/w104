@@ -653,10 +653,25 @@ describe("long rounds", () => {
     room = reduce(room, { t: "tick", now: playEnd, roll: 0 });
     room = reduce(room, { t: "tick", now: (room.phase as { endsAt: number }).endsAt, roll: 0 });
     expect(room.phase.name).toBe("scoring");
-    // 10 x 200 entries is ~2M union-find comparisons. Generous ceiling: this
-    // is a regression guard against an accidental O(n^3), not a benchmark.
-    expect(Date.now() - started).toBeLessThan(5_000);
-  });
+    // 10 x 200 entries is the absolute worst case MAX_PLAYERS and MAX_ENTRIES
+    // permit, and it is ~2M union-find comparisons, each running editDistance
+    // over a short string. That legitimately costs a few seconds.
+    //
+    // The ceiling was 5s and sat close enough to the real figure to fail on a
+    // machine with anything else running — measured at 5.0-5.1s here, failing
+    // two runs in three both on this branch and on an unmodified checkout, so
+    // it was flaky rather than newly slow. Raised rather than tuned, because
+    // what this guards is an accidental O(n^3), which would show up as orders
+    // of magnitude and not as 20%.
+    //
+    // A complexity-based guard would be the right tool and this is not it; a
+    // wall-clock assertion in CI can only ever be approximately right.
+    expect(Date.now() - started).toBeLessThan(20_000);
+    // The third argument is vitest's own testTimeout, and it is load-bearing:
+    // it defaults to 5000ms — the same figure the assertion above used to
+    // carry — so this test could fail two different ways for one reason, and
+    // raising only the assertion just converted the failure into a timeout.
+  }, 60_000);
 });
 
 /** A room that has reached the voting phase with `n` players. */
@@ -1498,5 +1513,155 @@ describe("submitEntry with a shared team list", () => {
     expect(out.room.entries.p1).toHaveLength(1);
     expect(out.room.entries.p1[0].by).toBe("p1");
     expect(out.room.entries.p0).toBeUndefined();
+  });
+});
+
+/**
+ * A room mid-round, teams off. Walks the real edges so the helper cannot
+ * drift from the rules; the round is 30s and started at 8000 + COUNTDOWN_MS.
+ */
+function playingRoom(durationSec = 30): Room {
+  let room = seed(2);
+  room = { ...room, settings: { ...room.settings, roundCount: 2, durationSec } };
+  room = readyAll(room, 1000);
+  const votingStart = (room.phase as { endsAt: number }).endsAt;
+  room = reduce(room, { t: "tick", now: votingStart, roll: 0 });
+  room = reduce(room, { t: "startGame", playerId: "host", now: 8000 });
+  room = reduce(room, { t: "tick", now: 8000 + COUNTDOWN_MS, roll: 0 });
+  expect(room.phase.name).toBe("playing");
+  return room;
+}
+
+describe("debug pause", () => {
+  test("banks the time left rather than the moment it happened", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const paused = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 12_000,
+    });
+    expect(paused.paused).toBe(12_000);
+  });
+
+  test("resuming spends the banked time forward from now, however long it sat", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    let held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 12_000,
+    });
+    // An hour later.
+    held = reduce(held, {
+      t: "debugPause", playerId: "host", paused: false, now: endsAt + 3_600_000,
+    });
+    expect(held.paused).toBeNull();
+    expect((held.phase as { endsAt: number }).endsAt).toBe(endsAt + 3_600_000 + 12_000);
+  });
+
+  test("pausing twice does not re-bank a shorter remainder", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const first = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 12_000,
+    });
+    const second = reduce(first, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 3_000,
+    });
+    expect(second).toBe(first);
+    expect(second.paused).toBe(12_000);
+  });
+
+  test("a held round does not advance when the alarm fires", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 5_000,
+    });
+    const ticked = reduce(held, { t: "tick", now: endsAt + 60_000, roll: 0 });
+    expect(ticked).toBe(held);
+    expect(ticked.phase.name).toBe("playing");
+  });
+
+  test("the alarm falls back to the idle horizon while held", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 5_000,
+    });
+    expect(nextAlarmAt(held)).toBe(held.lastActivityAt + IDLE_REAP_MS);
+  });
+
+  test("a held room with somebody connected is touched, never reaped", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 5_000,
+    });
+    const outcome = alarmOutcome(held, held.lastActivityAt + IDLE_REAP_MS, true, 0);
+    expect(outcome.action).toBe("touch");
+  });
+
+  test("a held room everyone abandoned still reaps", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 5_000,
+    });
+    const outcome = alarmOutcome(held, held.lastActivityAt + IDLE_REAP_MS, false, 0);
+    expect(outcome.action).toBe("reap");
+  });
+
+  test("a player cannot pause", () => {
+    const room = playingRoom(30);
+    const attempt = reduce(room, {
+      t: "debugPause", playerId: "p0", paused: true, now: 12_000,
+    });
+    expect(attempt).toBe(room);
+  });
+
+  test("only the playing phase can be held", () => {
+    const room = seed(2);
+    const attempt = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: 2000,
+    });
+    expect(attempt).toBe(room);
+  });
+
+  test("resuming a round that was never held is a no-op", () => {
+    const room = playingRoom(30);
+    const attempt = reduce(room, {
+      t: "debugPause", playerId: "host", paused: false, now: 12_000,
+    });
+    expect(attempt).toBe(room);
+  });
+});
+
+describe("debug skip", () => {
+  test("moves the deadline to now so the ordinary tick ends the round", () => {
+    const room = playingRoom(30);
+    const skipped = reduce(room, { t: "debugSkip", playerId: "host", now: 12_000 });
+    expect((skipped.phase as { endsAt: number }).endsAt).toBe(12_000);
+    const ticked = reduce(skipped, { t: "tick", now: 12_000, roll: 0 });
+    expect(ticked.phase.name).toBe("timesup");
+  });
+
+  test("skipping a held round ends it rather than resuming it", () => {
+    const room = playingRoom(30);
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: 12_000,
+    });
+    const skipped = reduce(held, { t: "debugSkip", playerId: "host", now: 20_000 });
+    expect(skipped.paused).toBeNull();
+    const ticked = reduce(skipped, { t: "tick", now: 20_000, roll: 0 });
+    expect(ticked.phase.name).toBe("timesup");
+  });
+
+  test("a player cannot skip", () => {
+    const room = playingRoom(30);
+    const attempt = reduce(room, { t: "debugSkip", playerId: "p0", now: 12_000 });
+    expect(attempt).toBe(room);
+  });
+
+  test("skipping outside a round is a no-op", () => {
+    const room = seed(2);
+    expect(reduce(room, { t: "debugSkip", playerId: "host", now: 2000 })).toBe(room);
   });
 });

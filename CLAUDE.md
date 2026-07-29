@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (293 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (378 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -74,6 +74,26 @@ src/      React client — net/room.ts socket store + screens/{host,player}
 The layering is the point: **all game rules live in `shared/`** so they test in
 milliseconds. `party/server.ts` is plumbing only. If you find yourself writing a
 rule inside the Durable Object, it belongs in `shared/reduce.ts` instead.
+
+Two subsystems hang off the Worker:
+
+- **The D1 score archive** — on no game path at all. `shared/archive.ts` maps
+  `Room`/`Results` to row shapes (pure, so the `shared/**/*.test.ts` glob covers
+  it); `party/archive.ts` is the only file that touches the `DB` binding;
+  `migrations/` holds the schema. Every call goes through `ctx.waitUntil()` in
+  try/catch that logs and swallows — **the archive is allowed to lose data, the
+  game is not allowed to notice.** The game never reads it back.
+- **The debug menu** (`src/components/DebugPanel.tsx`) — three sections. Two of
+  them, experiment flags and free-tier usage (`party/usage.ts` behind
+  `/debug/usage`), touch nothing. The third **deliberately mutates a live
+  round** — pause, skip, auto-fill — and is therefore host-only and enforced
+  server-side. See "Debug menu" below.
+
+Each keeps one file in `shared/` that is **not** game logic — `shared/archive.ts`
+and `shared/usage.ts` — and for the same two reasons: purity makes them testable
+under the existing vitest glob, and `party/` and `src/` are separate tsconfig
+projects, so a type the client imported from `party/` would drag the whole
+Worker into `tsconfig.json`. Nothing in the game imports either.
 
 ### State flow
 
@@ -131,6 +151,16 @@ replaced wholesale on each `state` push; every client action is a *request*.
   `storage.get<Room>` is an unchecked cast over older stored rooms.
 - **Durable Objects must stay on `new_sqlite_classes`** in `wrangler.jsonc`.
   `new_classes` requires a paid Cloudflare plan and breaks deploys.
+- **WebSocket Hibernation is on (`static options = { hibernate: true }`), so no
+  instance field survives between events.** Anything the `W104` class holds must
+  be reloadable in `onStart()` — that is why `room`, `archive` and
+  `kickedSessions` are all read from storage there. Adding a `private` field
+  with meaningful state and no `onStart()` load is a defect that will look like
+  intermittent amnesia rather than a crash. `Connection` state is the exception:
+  `setState` serializes into the socket's own attachment, so `ConnState` rides
+  with the socket. Hibernation is what keeps Durable Object *duration* off the
+  free-tier ceiling — an idle pinned room costs ~83% of a day's allowance on its
+  own.
 - **Local dev stays plain http.** An https page cannot open a `ws://` socket, so
   no `--local-protocol https`.
 - The host is not a player. A natural start needs 2+ *connected* players all
@@ -174,6 +204,18 @@ Three distinct ids, easy to confuse:
 
 A kick is durable for the room's lifetime (`backToLobby` does not clear it) and
 is enforced at the connect gate, before `join` can seat anyone.
+
+**`kickedSessions` is persisted, not an instance field**, and hibernation is
+why. An absent entry is treated as "still banned" — the safe direction — so an
+in-memory copy lost to eviction would leave a kicked player unable to rejoin at
+all rather than letting a stale socket slip through. That was already true on a
+cold wake before hibernation; it was just rare enough not to notice. Stored as
+a `Record<PlayerId, string[]>` because DO storage is JSON and a `Map` of `Set`s
+comes back empty.
+
+Known gap, pre-existing: kicking a player who is *already disconnected* records
+no sessions, so their next connect finds an empty array, matches nothing, and
+lifts the ban immediately.
 
 ### Teams
 
@@ -237,6 +279,77 @@ is enforced at the connect gate, before `join` can seat anyone.
   untouched — and sends it *before* the `entryAck`, so the authoritative copy
   lands ahead of the message that retires the client's optimistic one.
 
+### Debug menu
+
+Mostly off every game path — the Usage and Experimental sections are deletable
+without the game noticing. The Debug section is the exception: it is the one
+place outside normal play that mutates a live round.
+
+- **Its three controls are host-only and `playing`-only, enforced on the
+  server.** `debugPause` and `debugSkip` are rejected in `shared/reduce.ts`;
+  `debugFill` is rejected in `party/server.ts`. The panel also disables the
+  buttons for non-hosts, but **that is a courtesy, not the boundary** — the
+  panel renders in production, so the server assumes the buttons are missing.
+- **`Room.paused` holds the milliseconds remaining, not the moment of
+  pausing.** `phase.endsAt` is absolute and a pause must survive an arbitrary
+  wait; resuming is `endsAt = now + paused`. While it is non-null `phase.endsAt`
+  is stale by design, so `tick` returns early and every client timer reads the
+  banked figure through `useRemaining`'s third argument instead of counting to
+  a dead deadline.
+- **A held round falls back to the ordinary idle horizon**, not a longer
+  paused-specific one. `alarmOutcome` answers a stale room with `touch` while
+  anyone is connected, so the people in the room keep it alive and an abandoned
+  paused room reaps like any other.
+- **`debugSkip` moves the deadline to now rather than transitioning itself**,
+  so the round ends down the exact path a natural expiry takes — scoring, the
+  archive write and the standings hand-off cannot drift from the real one.
+- **Auto-fill loops `submitEntry`** rather than writing `entries` directly, so
+  phase, duplicates-within-a-scorer, `MAX_ENTRIES` and the team-merged list all
+  still apply. `fillWordsFor` in `shared/debug.ts` deals from a shared sub-pool
+  so the lists *deliberately overlap* — independent draws would leave nothing
+  for the Boggle rule to strike through.
+
+The rest is off every game path, and deletable without the game noticing.
+
+- **`GET /debug/usage` on the Worker, live in every environment including
+  production.** It was staging-only at first; that hid the only numbers worth
+  watching behind a branch deploy. The endpoint is consequently public and
+  unauthenticated, which is an accepted trade — it serves account-level usage
+  counts, never tokens or room state. `handleUsage` in `party/server.ts` is
+  where a gate goes if that changes; the client's `debugEnabled()` is a button,
+  not a boundary.
+- **`ENVIRONMENT` gates nothing** and is the only `var` left. It is the label in
+  the panel footer, so a tab open against the wrong Worker is obvious.
+- **Every figure in the panel reads the same from every environment.** Nothing
+  is scoped to the Worker serving it: the Workers query is unfiltered and
+  grouped by `scriptName`, so both deployed scripts are always listed and
+  staging usage is checkable from production and vice versa. Durable Object and
+  D1 counters are account-wide outright — a match played on staging moves
+  production's bars.
+- **The Workers allowance is per *account*, not per script.** 100,000/day
+  across everything deployed, which is why that section leads with the account
+  total and the per-script rows are a breakdown of it. Two independent bars at
+  60% each would look survivable while being 120% of one allowance.
+- `WORKER_SCRIPTS` in `party/usage.ts` mirrors the `name` fields in
+  `wrangler.jsonc`. Renaming a Worker without updating it shows that script as
+  permanently idle rather than as an error.
+- **Local dev generates no Cloudflare analytics at all.** `wrangler dev` never
+  reaches the edge, so nothing you do locally moves any bar. The Workers
+  section says so rather than leaving it to be discovered.
+- **One GraphQL request per metric, each with its own try/catch.** Cloudflare's
+  analytics schema is discovered by introspection rather than published field
+  by field, so a field name in `party/usage.ts` may be wrong. Batched, one bad
+  name returns no data at all and the panel goes blank with no clue why; split,
+  it nulls one bar and prints the error on it.
+- **Vercel has no usage API on Hobby.** The panel shows the ceilings and links
+  to the dashboard rather than inventing a number. `vercelService()` is the
+  only place that changes if Vercel ever ships one.
+- The panel deliberately ignores the design tokens for colour and shape: it is
+  ink-on-ink with a teal rule because anything wearing the game's gold-and-cream
+  buttons reads as a game control.
+
+See "The debug usage panel" in `HOSTING.md` for the API token setup.
+
 ### Client
 
 `src/net/room.ts` is a single `RoomStore` singleton exposed via
@@ -291,7 +404,13 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
   which is the brief it answers.
 - `docs/superpowers/specs/2026-07-28-score-persistence-design.md` — the D1
   archive: schema, where the writes happen, and the rule that the game never
-  reads it back. Approved, not yet implemented.
+  reads it back. Implemented (§14 steps 1–4); the write path has not yet been
+  exercised by a real match, which is step 5.
+- `docs/superpowers/specs/2026-07-29-freetier-debug-panel-design.md` — the
+  debug menu. §§1–11 are the usage half: the `/debug/usage` route, why one
+  GraphQL request per metric, the per-account Workers allowance, why Vercel is
+  a link rather than a bar. **§12 is the round controls** — pause, skip,
+  auto-fill, experiment flags, and why each is host-only. Implemented.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.
@@ -303,7 +422,14 @@ Branch off `main`, open a PR. CI (`.github/workflows/ci.yml`) runs typecheck,
 tests, build. Merges to `main` deploy production (Vercel for the app, GitHub
 Actions → `wrangler deploy` for the Worker).
 
-Two long-lived branches: `main` (production, `w104.leebo.io`) and `staging`
+**Every PR bumps the version.** Vite's `define` substitutes `package.json`'s
+`version` as `__APP_VERSION__`, which renders in Landing's corner and in the
+debug panel's footer — so on a deployed URL it is the only way to tell a fresh
+page from a cached one. Bump it in **three** places, all kept in sync:
+`package.json`, `package-lock.json`'s top-level `version`, and the matching one
+under `packages: { "": ... }`.
+
+Two long-lived branches: `main` (production, `www.oknameone.com`) and `staging`
 (`staging.oknameone.com` + the `w104-staging` Worker). **PRs no longer deploy
 the Worker** — they used to, which meant any open PR overwrote the shared
 staging Worker and changed what people testing on phones were talking to. Merge
@@ -315,8 +441,3 @@ Named Wrangler environments do not inherit `durable_objects` bindings, so
 
 Commits here stage explicit paths — never `git add -A`, so the untracked
 working note `Project W-104.md` stays untracked.
-
-Every PR bumps the version — `package.json`'s `version` and both spots in
-`package-lock.json` (the top-level `version` and the matching one under
-`packages: { "": ... }`), kept in sync per the existing "sync the lockfile
-version to package.json" precedent.

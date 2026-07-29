@@ -15,7 +15,7 @@ type Props = { room: RoomState; endsAt: number; offset: number };
  * results. The pulsing dot on each pill is the entire activity signal.
  */
 export function HostPlaying({ room, endsAt, offset }: Props) {
-  const remaining = useRemaining(endsAt, offset);
+  const remaining = useRemaining(endsAt, offset, room.paused);
   const fill = Math.max(0, Math.min(1, remaining / room.settings.durationSec));
 
   return (
@@ -49,7 +49,9 @@ export function HostPlaying({ room, endsAt, offset }: Props) {
           <div className="timer-track__fill" style={{ width: `${fill * 100}%` }} />
         </div>
         <span className="timer-bar__label">
-          {remaining} of {room.settings.durationSec} sec left
+          {room.paused !== null
+            ? `paused · ${remaining} of ${room.settings.durationSec} sec left`
+            : `${remaining} of ${room.settings.durationSec} sec left`}
         </span>
       </div>
     </main>

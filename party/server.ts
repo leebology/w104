@@ -4,16 +4,65 @@ import {
   alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry, MAX_PLAYERS,
 } from "../shared/reduce";
 import type { ClientMessage, ErrorCode, ServerMessage } from "../shared/protocol";
-import { createRoom, toRoomState } from "../shared/state";
+import { createRoom, matchComplete, toRoomState } from "../shared/state";
 import type { Entry, MatchSettings, PlayerId, Room } from "../shared/state";
 import { DEFAULT_DURATION_SEC } from "../shared/categories";
 import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes";
 import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
+import { SCORING_VERSION, scoreRound } from "../shared/scoring";
+import { placeRound } from "../shared/standings";
+import {
+  gameId as makeGameId, gameResultRows, gameStartRows, playedCategories,
+  roundRows, voteRows,
+} from "../shared/archive";
+import {
+  archiveGameStart, archiveMatchEnd, archiveRound, archiveVotes,
+} from "./archive";
+import { DEFAULT_FILL_COUNT, fillWordsFor } from "../shared/debug";
+import { collectUsage } from "./usage";
 
-// Durable Object binding declared in wrangler.jsonc.
+// Bindings declared in wrangler.jsonc.
 export interface Env {
   W104: DurableObjectNamespace;
+  /**
+   * The score archive. Write-only: nothing in this class reads from it, and
+   * the game must play identically when it is unavailable.
+   */
+  DB: D1Database;
+  /**
+   * Which deployment this is — "production" or "staging" from `vars` in
+   * wrangler.jsonc, or "local", which `npm run dev:party` passes. Gates
+   * nothing; the debug panel prints it in its footer so that a tab left open
+   * against the wrong Worker is obvious rather than merely confusing.
+   */
+  ENVIRONMENT?: string;
+  /** Debug-panel secrets. Absent everywhere until `wrangler secret put`. */
+  CF_API_TOKEN?: string;
+  CF_ACCOUNT_ID?: string;
 }
+
+/**
+ * Everything the archive needs that the game itself has no reason to keep.
+ * Persisted under its own storage key rather than added to `Room`, so no
+ * archive concern can reach `shared/`, ride in a broadcast, or need a
+ * defaulting fallback in `load()`.
+ */
+type ArchiveState = {
+  /** When this room was first created — earlier than the match's start. */
+  lobbyCreatedAt: number;
+  /** Set at the first `startGame`; null while no match has begun. */
+  gameId: string | null;
+  /** Whether the match-end row has already been written. */
+  finalized: boolean;
+  /** Whether the category pool and votes have been written for this match. */
+  votesWritten: boolean;
+  /**
+   * The current round's wall-clock window, captured when `playing` opens.
+   * `showStandings` is too late to derive it: by then the phase is `scoring`
+   * and the deadline it carried is gone.
+   */
+  round: { startedAt: number; endedAt: number } | null;
+};
 
 type ConnState = { playerId: PlayerId; role: "player" | "host"; session: string };
 
@@ -33,20 +82,75 @@ const DEFAULT_EMOJI = "🙂";
  * and schedule alarms.
  */
 export class W104 extends Server<Env> {
+  /**
+   * **WebSocket Hibernation.** The object is evicted from memory between
+   * messages instead of being pinned there for as long as a socket is open.
+   *
+   * This is the single biggest lever on Durable Object *duration*, which is
+   * billed as wall-clock GB-s while the object is resident. Without it an idle
+   * lobby costs roughly 10,800 GB-s a day — 83% of the free allowance — purely
+   * for existing; with it the only cost is the moments something actually
+   * runs, and an idle room's 15-second reap alarm brings that to a few GB-s.
+   *
+   * The trade is that **no instance field survives between events.** Everything
+   * this class holds must therefore be reloadable in `onStart()`, which
+   * PartyServer calls via `#ensureInitialized()` before every
+   * `webSocketMessage`, `webSocketClose` and alarm. `Connection` state is the
+   * exception and is safe: with hibernation `setState` serializes into the
+   * socket's own attachment, so `ConnState` rides along with the socket.
+   */
+  static options = { hibernate: true };
+
   private room: Room | null = null;
   /**
-   * In-memory only, not persisted: which session ids were live for a kicked
-   * player at the moment of the kick. Lets a deliberate rejoin (a new
-   * `connect()` call mints a new session id) back in while a kicked socket's
-   * own automatic reconnect — which resends the same session id — stays
-   * blocked. If the object hibernates and loses this, a stale reconnect can
-   * slip through; for a casual party game that failure mode (occasionally
-   * early, never permanently stuck) is the acceptable side to fail on.
+   * Which session ids were live for a kicked player at the moment of the kick.
+   * Lets a deliberate rejoin (a new `connect()` call mints a new session id)
+   * back in while a kicked socket's own automatic reconnect — which resends the
+   * same session id — stays blocked.
+   *
+   * **Persisted, not an instance field.** Under hibernation the object is
+   * evicted constantly, so an in-memory copy would be empty on essentially
+   * every connect — and an absent entry is treated as "still banned", which
+   * would leave a kicked player unable to rejoin at all for the room's
+   * lifetime. That was already the behaviour on a cold wake before hibernation;
+   * it was simply rare enough not to notice.
+   *
+   * A `Record` of arrays rather than a `Map` of `Set`s, because Durable Object
+   * storage serializes as JSON and both of those come back empty.
    */
-  private kickedSessions = new Map<PlayerId, Set<string>>();
+  private kickedSessions: Record<PlayerId, string[]> = {};
+
+  /**
+   * Archive bookkeeping. Loaded alongside the room and written back whenever
+   * it changes; absent for any room created before the archive existed, which
+   * is why every read guards on it.
+   */
+  private archive: ArchiveState | null = null;
 
   async onStart(): Promise<void> {
     this.room = await this.load();
+    this.archive = (await this.ctx.storage.get<ArchiveState>("archive")) ?? null;
+    this.kickedSessions =
+      (await this.ctx.storage.get<Record<PlayerId, string[]>>("kickedSessions")) ?? {};
+  }
+
+  private async saveKickedSessions(next: Record<PlayerId, string[]>): Promise<void> {
+    this.kickedSessions = next;
+    await this.ctx.storage.put("kickedSessions", next);
+  }
+
+  private async saveArchiveState(next: ArchiveState): Promise<void> {
+    this.archive = next;
+    await this.ctx.storage.put("archive", next);
+  }
+
+  /**
+   * Fire-and-forget: the archive is never awaited on a path the game is
+   * waiting for. `waitUntil` keeps the Durable Object alive long enough for
+   * the write to land without the round's transition queueing behind it.
+   */
+  private archiveInBackground(work: Promise<void>): void {
+    this.ctx.waitUntil(work);
   }
 
   /**
@@ -74,6 +178,10 @@ export class W104 extends Server<Env> {
       votes: rest.votes ?? {},
       history: rest.history ?? [],
       configuring: rest.configuring ?? false,
+      // A room stored before the debug pause existed has no such key, and an
+      // undefined `paused` would read as "held" to every `!== null` check —
+      // freezing the round and stopping its alarm from ever advancing it.
+      paused: rest.paused ?? null,
       teams: rest.teams ?? [],
       // Two backfills in one pass. `teamId` gives players stored before teams
       // existed a null slot, and `by` gives their words an author — redundant
@@ -145,6 +253,15 @@ export class W104 extends Server<Env> {
         return this.reject(conn, "room-exists", "That code is already in use.");
       }
       this.room = createRoom(this.name, now);
+      // The lobby's birth time. Nothing is archived yet — a lobby that never
+      // starts a match is deliberately not a row.
+      await this.saveArchiveState({
+        lobbyCreatedAt: now,
+        gameId: null,
+        finalized: false,
+        votesWritten: false,
+        round: null,
+      });
     } else if (!this.room) {
       return this.reject(conn, "no-such-room", "No game with that code.");
     }
@@ -153,8 +270,12 @@ export class W104 extends Server<Env> {
     // reconnects on its own, and in the lobby the join below would otherwise
     // welcome a kicked player straight back in as a newcomer.
     if (this.room.kicked.includes(playerId)) {
-      const banned = this.kickedSessions.get(playerId);
-      if (!banned || banned.has(session)) {
+      const banned = this.kickedSessions[playerId];
+      // No recorded sessions at all means the ban's bookkeeping is missing
+      // rather than that this connection is new, so it stays enforced — the
+      // safe direction, and now a genuine can't-happen since the record is
+      // persisted alongside the kick.
+      if (banned === undefined || banned.includes(session)) {
         return this.reject(conn, "kicked", "The host removed you from this game.");
       }
       // A session id the ban never recorded means this is a deliberate new
@@ -164,7 +285,8 @@ export class W104 extends Server<Env> {
         ...this.room,
         kicked: this.room.kicked.filter((id) => id !== playerId),
       };
-      this.kickedSessions.delete(playerId);
+      const { [playerId]: _lifted, ...rest } = this.kickedSessions;
+      await this.saveKickedSessions(rest);
     }
 
     const existing = this.room.players.find((p) => p.id === playerId);
@@ -245,6 +367,51 @@ export class W104 extends Server<Env> {
       return; // Still no broadcast: entry counts are not published.
     }
 
+    /**
+     * Debug: put a plausible list in front of every scorer so a round can be
+     * driven to the scoring screen without eight people typing.
+     *
+     * Handled here rather than as a `reduce` event for the same reason
+     * `submitEntry` is: it touches the server-only entries map, and that is
+     * the one mutation `reduce` deliberately does not own. Going through
+     * `submitEntry` per word is what keeps every existing rule — phase,
+     * duplicates within a scorer, `MAX_ENTRIES`, the team-merged list — in
+     * force for free, instead of a second write path free to drift from the
+     * one real players use.
+     *
+     * Host-only, checked here *and* in `shared/reduce.ts` for the two sibling
+     * events. Hiding the button in the panel is not the boundary.
+     */
+    if (msg.type === "debugFill") {
+      if (playerId !== this.room.hostId) return;
+      if (this.room.phase.name !== "playing") return;
+
+      const scorers = rosterOf(this.room);
+      const lists = fillWordsFor(scorers.length, DEFAULT_FILL_COUNT, Math.random);
+      scorers.forEach((scorer, i) => {
+        (lists[i] ?? []).forEach((word, w) => {
+          // Round-robin the authorship across a team's members, so a shared
+          // list ends up looking like several people typed it rather than one.
+          // With teams off every scorer has exactly one member and this is a
+          // no-op.
+          const author = scorer.members[w % scorer.members.length]!;
+          // Timestamps ascend so the merged team list sorts sensibly and the
+          // archive's `ms_into_round` is not a flat line.
+          this.room = submitEntry(this.room!, author, word, now + w).room;
+        });
+      });
+
+      await this.persist();
+      // One push per scorer, not per player: `sendEntriesToTeam` already fans
+      // out to every connected member of the scorer it is given.
+      for (const scorer of scorers) {
+        if (scorer.members[0]) this.sendEntriesToTeam(scorer.members[0]);
+      }
+      // Deliberately no `broadcastState`: entry counts are not published, and
+      // nothing in `RoomState` changed.
+      return;
+    }
+
     // Ends the room outright rather than producing a new state, so it cannot
     // go through `reduce` and the shared persist/broadcast tail below — there
     // is nothing left to persist or broadcast.
@@ -270,9 +437,15 @@ export class W104 extends Server<Env> {
       case "ready":
         this.room = reduce(this.room, { t: "ready", playerId, ready: msg.ready, now });
         break;
-      case "startGame":
+      case "startGame": {
+        const before = this.room;
         this.room = reduce(this.room, { t: "startGame", playerId, now });
+        // Only the first accepted start of a match writes the game row.
+        // `startGame` is legal from the lobby, team select, voting and
+        // standings, so it fires several times across one match.
+        if (this.room !== before) await this.beginArchivedGame(now);
         break;
+      }
       case "cancelStart":
         this.room = reduce(this.room, { t: "cancelStart", playerId, now });
         break;
@@ -290,7 +463,13 @@ export class W104 extends Server<Env> {
           for (const c of this.getConnections<ConnState>()) {
             if (c.state?.playerId === msg.targetId) sessions.add(c.state.session);
           }
-          this.kickedSessions.set(msg.targetId, sessions);
+          // Written to storage, not just to the instance: the target's
+          // reconnect may well arrive after the object has hibernated, and an
+          // unpersisted record would leave them banned for good.
+          await this.saveKickedSessions({
+            ...this.kickedSessions,
+            [msg.targetId]: [...sessions],
+          });
           // Tell them why before the socket goes away, so their device can
           // return to the first screen instead of showing a bare close.
           this.rejectConnectionsFor(
@@ -319,9 +498,14 @@ export class W104 extends Server<Env> {
           t: "setConfiguring", playerId, open: msg.open === true, now,
         });
         break;
-      case "showStandings":
+      case "showStandings": {
+        // Captured BEFORE the reduce: `showStandings` is the single place
+        // `entries` is emptied, so a room read afterwards has no words left.
+        const banked = this.room;
         this.room = reduce(this.room, { t: "showStandings", playerId, now });
+        if (this.room !== banked) this.archiveBankedRound(banked, this.room, now);
         break;
+      }
       case "backToLobby":
         this.room = reduce(this.room, { t: "backToLobby", playerId, now });
         break;
@@ -343,6 +527,14 @@ export class W104 extends Server<Env> {
         break;
       case "balanceTeams":
         this.room = reduce(this.room, { t: "balanceTeams", playerId, now });
+        break;
+      case "debugPause":
+        this.room = reduce(this.room, {
+          t: "debugPause", playerId, paused: msg.paused === true, now,
+        });
+        break;
+      case "debugSkip":
+        this.room = reduce(this.room, { t: "debugSkip", playerId, now });
         break;
       case "setTeamName":
         this.room = reduce(this.room, {
@@ -391,11 +583,25 @@ export class W104 extends Server<Env> {
     // The only randomness in the game, and it enters here — shared/ stays pure.
     const outcome = alarmOutcome(this.room, Date.now(), this.hasAnyConnection(), Math.random());
     switch (outcome.action) {
-      case "advance":
-        this.room = outcome.room;
+      case "advance": {
+        const previous = this.room.phase.name;
+        // A local, not `this.room`: narrowing a mutable class property does
+        // not survive the assignment, and tsc collapses the phase to `never`.
+        const advanced = outcome.room;
+        this.room = advanced;
+        // The whistle. This is the only moment the round's start and deadline
+        // are both known — `scoring` carries neither, and it is `scoring` that
+        // the round is archived from.
+        if (advanced.phase.name === "playing" && previous !== "playing" && this.archive) {
+          await this.saveArchiveState({
+            ...this.archive,
+            round: { startedAt: Date.now(), endedAt: advanced.phase.endsAt },
+          });
+        }
         await this.persist();
         this.broadcastState();
         return;
+      }
       case "touch":
         this.room = outcome.room;
         await this.persist();
@@ -413,6 +619,96 @@ export class W104 extends Server<Env> {
           : this.endRoom("no-such-room", "This game expired."));
         return;
     }
+  }
+
+  // ---- score archive ----
+  //
+  // Everything below is a side effect of play. None of it feeds back into the
+  // room, none of it is awaited on a path a player is waiting on, and all of
+  // it is safe to lose. See docs/superpowers/specs/2026-07-28-score-persistence-design.md.
+
+  /** Writes the game row on the first accepted `startGame` of a match. */
+  private async beginArchivedGame(now: number): Promise<void> {
+    if (!this.room || !this.archive || this.archive.gameId !== null) return;
+    const id = makeGameId(this.room.code, now);
+    await this.saveArchiveState({ ...this.archive, gameId: id });
+    this.archiveInBackground(
+      archiveGameStart(
+        this.env.DB,
+        gameStartRows(this.room, {
+          gameId: id,
+          lobbyCreatedAt: this.archive.lobbyCreatedAt,
+          startedAt: now,
+          scoringVersion: SCORING_VERSION,
+        }),
+      ),
+    );
+  }
+
+  /**
+   * Writes one banked round, and the match's final rows when that round was
+   * the last. `banked` is the room as it stood before `showStandings`, which
+   * is the only copy that still has the words; `after` is the room with the
+   * round pushed onto history, which is what says whether the match is over.
+   *
+   * Per round rather than per match on purpose: rooms are abandoned far more
+   * often than they are finished, and the reap takes everything with it.
+   */
+  private archiveBankedRound(banked: Room, after: Room, now: number): void {
+    const state = this.archive;
+    if (!state?.gameId || banked.phase.name !== "scoring") return;
+    const window = state.round ?? { startedAt: now, endedAt: now };
+    const results = banked.phase.results;
+
+    this.archiveInBackground((async () => {
+      await archiveRound(
+        this.env.DB,
+        roundRows(banked, results, placeRound(results), {
+          gameId: state.gameId!,
+          // `after.history` already includes this round, so its index is the
+          // length before the push — which is what the round was playing as.
+          roundIndex: after.history.length - 1,
+          startedAt: window.startedAt,
+          endedAt: window.endedAt,
+        }),
+      );
+      // Voting has definitely closed by the first bank, so the tally is final.
+      // It could not have been written at `startGame`: voting happens after.
+      if (!state.votesWritten) {
+        await archiveVotes(this.env.DB, voteRows(banked, state.gameId!));
+      }
+      if (matchComplete(after)) {
+        await archiveMatchEnd(
+          this.env.DB, state.gameId!, gameResultRows(after, state.gameId!),
+          playedCategories(after), now, true, null,
+        );
+      }
+    })());
+
+    void this.saveArchiveState({
+      ...state,
+      votesWritten: true,
+      finalized: state.finalized || matchComplete(after),
+      round: null,
+    });
+  }
+
+  /**
+   * Marks a match that never reached its final standings. Called from the one
+   * place a room dies, so a host walking out mid-round still leaves a record
+   * of how far the match got.
+   */
+  private finalizeAbandoned(): void {
+    const state = this.archive;
+    const room = this.room;
+    if (!state?.gameId || state.finalized || !room) return;
+    const phase = room.phase.name;
+    this.archiveInBackground(
+      archiveMatchEnd(
+        this.env.DB, state.gameId, gameResultRows(room, state.gameId),
+        playedCategories(room), Date.now(), false, phase,
+      ),
+    );
   }
 
   // ---- plumbing ----
@@ -514,8 +810,13 @@ export class W104 extends Server<Env> {
     /** The connection that asked for this, if any; closed without the error. */
     except?: Connection<ConnState>,
   ): Promise<void> {
+    // Before the delete: this reads `this.room` and the archive state, and
+    // `deleteAll` takes both. The write itself outlives this call via
+    // `waitUntil`, which is why it does not need the storage to still be here.
+    this.finalizeAbandoned();
     await this.ctx.storage.deleteAll();
     this.room = null;
+    this.archive = null;
     for (const conn of this.getConnections<ConnState>()) {
       if (conn === except) conn.close();
       else this.reject(conn, code, message);
@@ -523,9 +824,48 @@ export class W104 extends Server<Env> {
   }
 }
 
+/**
+ * Free-tier usage for the debug panel, as JSON.
+ *
+ * **Live in every environment, production included.** It used to 404 on
+ * production, which meant the only numbers worth watching were the only ones
+ * you could not see without deploying a branch first.
+ *
+ * The endpoint is therefore unauthenticated on a public host. What it serves
+ * is a handful of account-level usage counts — no tokens, no room state, no
+ * player data — and the API token itself never leaves the Worker. This is the
+ * place to add a gate if that trade ever stops holding; hiding the client
+ * button would not close it.
+ *
+ * CORS is wide open because the caller is always a different origin — the app
+ * is on Vercel, this is on workers.dev.
+ *
+ * `?fresh=1` skips the 60-second cache, for when you have just played a round
+ * and want to watch the number move.
+ */
+async function handleUsage(request: Request, env: Env): Promise<Response> {
+  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
+  const report = await collectUsage(env, Date.now(), { fresh });
+  return new Response(JSON.stringify(report), {
+    headers: {
+      "Content-Type": "application/json",
+      "Access-Control-Allow-Origin": "*",
+      // The figures are already a minute stale by design; letting a browser
+      // cache them on top of that would make the refresh button a no-op.
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 // Worker entrypoint: route /parties/:party/:room to the right room instance.
 export default {
   async fetch(request, env) {
+    // Checked before `routePartykitRequest`, which would otherwise 404 it
+    // itself — this path is not a party route and never reaches a room.
+    if (new URL(request.url).pathname === "/debug/usage") {
+      return handleUsage(request, env);
+    }
+
     // PartyServer takes the connection id from `_pk`, and partysocket mints one
     // `_pk` per socket instance and reuses it on every auto-reconnect. Two
     // sockets would then share an id in a Map keyed by it, and the stale one's

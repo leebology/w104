@@ -1,11 +1,19 @@
 # Score persistence — design
 
 **Date:** 2026-07-28
-**Status:** approved, not yet implemented
+**Status:** implemented — §14 steps 1–4. Step 5 (a full match on real phones)
+is still outstanding: the write path has never been exercised by a real game.
 **Builds on:** `2026-07-26-match-structure-design.md` (rounds and standings),
 `2026-07-26-category-voting-design.md` (the pool and the vote), and
 `2026-07-27-teams-design.md` (the scorer, not the player, is the unit of
 scoring — this spec's schema is keyed the same way).
+
+> **Since this was written (2026-07-29):** the free-tier debug panel shipped
+> (`2026-07-29-freetier-debug-panel-design.md`) and this spec's `DB` binding
+> landed alongside it, so the panel's D1 section switched itself on — rows
+> read, rows written and stored data are now live bars. **That is the tool for
+> §5's write budget** (100,000 rows/day, index updates counted) during step 5's
+> first real match. Nothing else in the two specs interacts.
 
 ## Problem
 
@@ -84,9 +92,19 @@ which is the biased half. So:
 
 | Moment | Write |
 |---|---|
-| first `startGame` of a match | `INSERT` the `game` row, `participation`, `game_category`, `vote` |
+| first `startGame` of a match | `INSERT` the `player` rows, the `game` row, `participation` |
+| first `showStandings` | `INSERT` `game_category` and `vote` |
 | `showStandings` (round banked) | `INSERT` the `round`, its `round_score` rows, its `word` rows |
-| match complete, or room reaped | `UPDATE game` with `ended_at`/`completed`; `INSERT game_result` |
+| match complete, or room reaped | `UPDATE game` with `ended_at`/`completed`; `INSERT game_result`; set `was_played` |
+
+**Votes cannot be written at `startGame`** — an earlier draft of this table said
+they could, and it was wrong. Voting happens *after* the first `startGame`, so
+at that moment the tally is empty. The first round bank is the earliest point
+they are both complete and final, since votes are immutable once voting closes.
+
+`showStandings` is also the single place `entries` is emptied, so the round
+must be archived from the room **as it stood before that reduce**. A room read
+afterwards has no words left in it.
 
 `game_id` is deterministic — `` `${code}:${startedAt}` `` — and every insert is
 `ON CONFLICT DO NOTHING`, because alarms and reconnects can re-run a
@@ -351,17 +369,46 @@ Confirmed out of the schema, since each is a query over `word`:
 Smaller than it first looked, because §6 removed every client-side change:
 
 - `wrangler.jsonc` — `d1_databases` at top level and repeated in `env.staging`.
-- `party/server.ts` — capture `round.started_at` at the whistle; call the
-  archive at the three moments in §2.
+- `migrations/0001_create_archive.sql` — the schema.
+- `shared/archive.ts` — new. The row shapes and the pure mapping onto them.
 - `party/archive.ts` — new; the only file that imports the D1 binding.
+- `party/server.ts` — capture the round window at the whistle; call the archive
+  at the moments in §2; hold archive bookkeeping under its own storage key.
 - **No change to any file under `src/`.** No client instrumentation, no new UI.
-- **No change to `shared/`** — not `protocol.ts`, not `reduce.ts`, not
-  `scoring.ts`, not any game rule. `collision_group` is read out of the
-  union-find result `scoreRound` already computes; it changes nothing about how
-  a round scores, and the pure-module test suite is untouched.
+- **No change to `shared/reduce.ts`, `shared/protocol.ts`, or any game rule.**
 
-The whole feature is therefore additive server-side plumbing. If
-`party/archive.ts` were deleted the game would behave identically.
+### Two deviations from the draft, found while building
+
+**The mapping lives in `shared/`, not `party/`.** The draft put it in
+`party/archive.ts` and called for it to be unit-tested. Those are
+contradictory: `vitest.config.ts` globs `shared/**/*.test.ts` only, so mapping
+functions in `party/` would never run. Splitting it — pure row-mapping in
+`shared/archive.ts`, the D1 binding alone in `party/archive.ts` — keeps the
+tests in the existing suite and still holds the "no D1 in `shared/`" line,
+which was the actual point. Widening the vitest glob to `party/` was the
+alternative, and it would invite runtime-dependent tests into a suite that is
+deliberately runtime-free.
+
+**`shared/scoring.ts` did change**, against the draft's claim that it would
+not. `ScoredEntry` gains a `group`, and `SCORING_VERSION` is declared there.
+The draft assumed `alsoBy` could reconstruct the collision clusters; it cannot.
+One scorer can write two different words each cancelled by exactly the same
+rival — one `alsoBy` value, two clusters. The options were re-running union-find
+inside the archive, which is a second copy of the clustering that could drift
+from the one that actually scored the round, or exposing the cluster id
+`scoreRound` already computes and discards. The second is the only one that can
+honour §7's rule that the archive records what really happened.
+
+`group` is the raw union-find root rather than a renumbered 0..n id. Dense ids
+would read better in a database dump and cost a second pass over every entry —
+measurable against the ten-player entry cap, where scoring is already ~5s of
+O(n²) work. Nothing needs them contiguous, only equal within a cluster.
+
+Scoring behaviour is unchanged: same uniqueness, same places, same 293 original
+tests passing.
+
+The feature remains additive server-side plumbing. If `party/archive.ts` were
+deleted the game would behave identically.
 
 ## 12. The boundary this moves
 

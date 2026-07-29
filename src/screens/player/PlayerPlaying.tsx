@@ -20,16 +20,18 @@ type Props = {
  * SVG geometry to keep in sync with a ring's radius. Teal rather than a new
  * colour — the same fill the "OK," plaque and the host timer bar use.
  */
-function TimerWheel({ endsAt, offset, durationSec }: {
+function TimerWheel({ endsAt, offset, durationSec, pausedMs }: {
   endsAt: number;
   offset: number;
   durationSec: number;
+  /** `RoomState.paused` — the wheel holds its slice rather than draining. */
+  pausedMs: number | null;
 }) {
-  const remaining = useRemaining(endsAt, offset);
+  const remaining = useRemaining(endsAt, offset, pausedMs);
   const frac = durationSec > 0 ? Math.max(0, Math.min(1, remaining / durationSec)) : 0;
   return (
     <div
-      className="playing__timer"
+      className={`playing__timer${pausedMs !== null ? " playing__timer--paused" : ""}`}
       style={{ "--frac": frac } as CSSProperties}
       aria-hidden="true"
     />
@@ -68,6 +70,7 @@ export function PlayerPlaying({ room, playerId, entries, offset }: Props) {
           endsAt={room.phase.endsAt}
           offset={offset}
           durationSec={room.settings.durationSec}
+          pausedMs={room.paused}
         />
       )}
       <div className="playing__head">

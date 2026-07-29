@@ -66,6 +66,14 @@ export type RoomEvent =
   | { t: "setTeamName"; playerId: PlayerId; teamId: TeamId; name: string; now: number }
   | { t: "balanceTeams"; playerId: PlayerId; now: number }
   /**
+   * Debug controls, host-only and legal only during `playing`. They exist to
+   * make a round inspectable — hold it still, or cut it short — and the host
+   * check lives here rather than only in the UI, because a hidden button is
+   * not an authorization boundary.
+   */
+  | { t: "debugPause"; playerId: PlayerId; paused: boolean; now: number }
+  | { t: "debugSkip"; playerId: PlayerId; now: number }
+  /**
    * `roll` is a uniform [0,1) supplied by the caller. Randomness is injected
    * at the edge so `reduce` stays a pure function and the draw is testable
    * against fixed rolls rather than a stubbed global.
@@ -619,6 +627,48 @@ function apply(room: Room, ev: RoomEvent): Room {
       };
     }
 
+    /**
+     * Holds the round where it stands, or lets it go again.
+     *
+     * Pausing banks the time left; resuming spends it forward from `now`, so
+     * an hour spent paused costs the round nothing. Only `playing` can be
+     * held: the countdown, the voting window and `timesup` are all short
+     * fixed-length screens, and pausing one buys nothing worth the extra
+     * states to reason about.
+     */
+    case "debugPause": {
+      if (ev.playerId !== room.hostId) return room;
+      if (room.phase.name !== "playing") return room;
+      if (ev.paused) {
+        // Already held — returning a fresh object here would re-bank a
+        // shorter remainder every time the button was pressed.
+        if (room.paused !== null) return room;
+        return { ...room, paused: Math.max(0, room.phase.endsAt - ev.now) };
+      }
+      if (room.paused === null) return room;
+      return {
+        ...room,
+        phase: { ...room.phase, endsAt: ev.now + room.paused },
+        paused: null,
+      };
+    }
+
+    /**
+     * Ends the round now by moving its deadline to the present rather than
+     * transitioning here. The alarm re-arms on persist, `tick` fires, and the
+     * round ends down the exact path a natural expiry takes — so scoring, the
+     * archive write and the standings hand-off cannot drift from the real one.
+     *
+     * Clears `paused` because a held round has a stale `endsAt`, and skipping
+     * without this would resume it instead of ending it.
+     */
+    case "debugSkip": {
+      if (ev.playerId !== room.hostId) return room;
+      if (room.phase.name !== "playing") return room;
+      if (room.paused === null && room.phase.endsAt <= ev.now) return room;
+      return { ...room, phase: { ...room.phase, endsAt: ev.now }, paused: null };
+    }
+
     case "tick":
       return tick(room, ev.now, ev.roll);
   }
@@ -629,6 +679,11 @@ function apply(room: Room, ev: RoomEvent): Room {
  * `now >= endsAt` rather than an equality check.
  */
 function tick(room: Room, now: number, roll: number): Room {
+  // A held round's `endsAt` is stale by design, so every deadline comparison
+  // below would read as long overdue and end the round the first time an
+  // alarm fired. Returning the identical object is the "no change" contract
+  // `alarmOutcome` and `party/server.ts` both rely on.
+  if (room.paused !== null) return room;
   const phase = room.phase;
   if (phase.name === "countdown" && now >= phase.endsAt) {
     if (phase.to === "voting") {
@@ -750,11 +805,22 @@ export function canEndGame(room: Room, playerId: PlayerId): boolean {
  */
 export function nextAlarmAt(room: Room): number {
   const phase = room.phase;
+  // A held round has no deadline to wake for, so the alarm falls back to its
+  // other job. That is deliberately the ordinary idle horizon rather than a
+  // longer paused-specific one: `alarmOutcome` answers a stale room with
+  // `touch` while anyone is still connected, so a paused game is kept alive by
+  // the people in it and reaped like any other once they all leave. A room
+  // paused and abandoned should not outlive one that was simply abandoned.
+  //
+  // The `paused` check sits inside the condition rather than in a named
+  // boolean above it, because tsc only narrows `phase` through the test it
+  // can see here.
   const base =
-    phase.name === "countdown" ||
-    phase.name === "voting" ||
-    phase.name === "playing" ||
-    phase.name === "timesup"
+    room.paused === null &&
+    (phase.name === "countdown" ||
+      phase.name === "voting" ||
+      phase.name === "playing" ||
+      phase.name === "timesup")
       ? phase.endsAt
       : room.lastActivityAt + IDLE_REAP_MS;
   if (room.hostGoneAt === null) return base;
