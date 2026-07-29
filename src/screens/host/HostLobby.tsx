@@ -23,6 +23,11 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
   const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   const host = typeof location === "undefined" ? "" : location.host.toUpperCase();
   const waiting = room.players.length === 0;
+  // Almost every time this screen is up it is round one's own waiting room,
+  // and a marker that only ever reads "ROUND 1 / 3" there counts nothing that
+  // has happened yet. It earns its place only in the one case where the lobby
+  // has rounds behind it: the host walked the room back here mid-match.
+  const round = currentRound(room);
   const [drawer, setDrawer] = useState<OpenDrawer>(null);
   const [closing, setClosing] = useState(false);
 
@@ -52,8 +57,18 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
           that is already the hero here, so the lobby leads with the wordmark
           instead — the join instruction below is louder than any chip. */}
       <HostHeader
-        left={<Wordmark small />}
-        round={currentRound(room)}
+        left={
+          /* The join URL rides under the wordmark on the same tilt as the
+             NAME ONE! plaque, so the pair reads as one stamped block. It is
+             the standing instruction for the room — it belongs with the
+             branding, not in front of the room code, which is the one thing
+             the stage is for. */
+          <div className="host-lobby__brand">
+            <Wordmark small />
+            {host && <p className="host-lobby__url">JOIN AT {host}</p>}
+          </div>
+        }
+        round={round > 1 ? round : undefined}
         of={room.settings.roundCount}
         right={
           <HostHeaderRight>
@@ -71,9 +86,9 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
       />
 
       <div className="host-lobby__stage">
-        <p className="host-lobby__join">
-          {host ? `JOIN AT ${host} · ROOM CODE` : "ROOM CODE"}
-        </p>
+        {/* The label the round screen gives NAME A: — cream Bungee above the
+            gold, not a plaque on it. */}
+        <p className="host-lobby__label">ROOM CODE</p>
         <div className="banner host-lobby__code">
           <span className="banner__text">{room.code}</span>
         </div>
