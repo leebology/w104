@@ -143,6 +143,23 @@ export function fraction(used: number | null, limit: number): number {
   return Math.min(1, Math.max(0, used / limit));
 }
 
+/**
+ * The CSS width for a bar's fill.
+ *
+ * Anything above zero gets at least a 2px hairline. A metric at 0.04% of its
+ * allowance rounds to nought painted pixels, which on the collapsed strip —
+ * where there is no number beside it — is indistinguishable from a metric at
+ * a true zero. "We have used a little" and "we have used none" are different
+ * facts, and the glance view is precisely where the difference is all you
+ * have.
+ *
+ * Exactly zero still paints nothing, so an empty track stays honestly empty.
+ */
+export function barWidth(used: number | null, limit: number): string {
+  const f = fraction(used, limit);
+  return f === 0 ? "0" : `max(2px, ${f * 100}%)`;
+}
+
 /** Where the panel draws attention. Only the top band is alarming. */
 export type Severity = "ok" | "warn" | "danger";
 

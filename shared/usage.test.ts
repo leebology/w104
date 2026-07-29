@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   activeTimeToGbSeconds,
+  barWidth,
   formatBytes,
   formatCountdown,
   formatValue,
@@ -156,5 +157,29 @@ describe("LIMITS", () => {
   test("storage ceilings are 5 GB in bytes, not 5e9", () => {
     expect(LIMITS.doStoredBytes).toBe(5_368_709_120);
     expect(LIMITS.d1StoredBytes).toBe(5_368_709_120);
+  });
+});
+
+describe("barWidth", () => {
+  test("a true zero paints nothing", () => {
+    expect(barWidth(0, 100)).toBe("0");
+  });
+
+  test("an unknown reading paints nothing", () => {
+    expect(barWidth(null, 100)).toBe("0");
+  });
+
+  test("a tiny but real figure keeps a visible hairline", () => {
+    // 41 of 100,000 is 0.041% — zero painted pixels on a 245px track without
+    // this, and so indistinguishable from unused on the collapsed strip.
+    expect(barWidth(41, 100_000)).toBe("max(2px, 0.041%)");
+  });
+
+  test("an ordinary figure is just its percentage", () => {
+    expect(barWidth(25, 100)).toBe("max(2px, 25%)");
+  });
+
+  test("over the limit pins full, matching fraction's clamp", () => {
+    expect(barWidth(150, 100)).toBe("max(2px, 100%)");
   });
 });

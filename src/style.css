@@ -2989,7 +2989,14 @@ ul, ol { list-style: none; }
   );
 }
 
+/* `display: block` is load-bearing, not tidying. The expanded bars nest a
+   `div` in a `div`, but the collapsed strip nests a `span` in a `span` — and
+   on an inline box both `width: n%` and `height: 100%` are ignored outright,
+   so every mini bar rendered empty while the same number drew correctly one
+   click away. Setting it here rather than on `.debug-track--mini` keeps the
+   fill's own layout independent of which element happens to wrap it. */
 .debug-fill {
+  display: block;
   height: 100%;
   border-radius: 999px;
   transition: width 300ms ease;

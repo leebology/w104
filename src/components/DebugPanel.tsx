@@ -3,7 +3,7 @@ import type { Metric, Service, UsageReport } from "../../shared/usage";
 import {
   formatCountdown,
   formatValue,
-  fraction,
+  barWidth,
   nextReset,
   RESET_LABEL,
   severity,
@@ -368,7 +368,7 @@ function MiniBars({ report }: { report: UsageReport }) {
           <span className="debug-track debug-track--mini">
             <span
               className={`debug-fill debug-fill--${severity(metric.used, metric.limit)}`}
-              style={{ width: `${fraction(metric.used, metric.limit) * 100}%` }}
+              style={{ width: barWidth(metric.used, metric.limit) }}
             />
           </span>
         </li>
@@ -487,7 +487,7 @@ function Bar({
       <div className={`debug-track${known ? "" : " debug-track--unknown"}`}>
         <div
           className={`debug-fill debug-fill--${severity(metric.used, metric.limit)}`}
-          style={{ width: `${fraction(metric.used, metric.limit) * 100}%` }}
+          style={{ width: barWidth(metric.used, metric.limit) }}
         />
       </div>
       <p className="debug-bar__reset">
