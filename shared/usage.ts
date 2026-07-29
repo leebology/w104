@@ -59,6 +59,16 @@ export type Service = {
   /** Shown as the section heading, e.g. "Durable Objects". */
   name: string;
   status: ServiceStatus;
+  /**
+   * What in *this app* actually spends this service's allowance, in a
+   * sentence or two. Rendered right under the heading, above `detail`.
+   *
+   * The panel's job is "which resource are we burning fastest", and a bar
+   * alone cannot answer that — knowing Duration is at 14% is only useful
+   * next to knowing Duration is wall-clock time per open room rather than
+   * anything to do with how busy the room is.
+   */
+  sources?: string;
   /** Explains a non-"ok" status, or adds context to an "ok" one. */
   detail?: string;
   /** Where a human goes to see the real numbers. */

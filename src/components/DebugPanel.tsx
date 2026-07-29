@@ -444,6 +444,10 @@ function ServiceBlock({ service, now }: { service: Service; now: number }) {
         )}
         {tag && <span className={`debug-chip debug-chip--${service.status}`}>{tag}</span>}
       </h4>
+      {/* What spends this allowance, before the caveats about scope. Ordered
+          this way on purpose: "which are we burning fastest" is the question
+          the panel is open to answer. */}
+      {service.sources && <p className="debug-service__sources">{service.sources}</p>}
       {service.detail && <p className="debug-service__detail">{service.detail}</p>}
       {/* Only for services whose dashboard is the sole source of the numbers.
           Everywhere else the heading link is enough, and a second link per

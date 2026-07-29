@@ -3217,3 +3217,39 @@ ul, ol { list-style: none; }
   .debug-toggle__track,
   .debug-toggle__knob { transition: none; }
 }
+
+/* What spends each allowance. Brighter than `__detail`, which carries the
+   scope caveats — this is the line you actually came to read, so it must not
+   sit at the same 55% opacity as a footnote. */
+.debug-service__sources {
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.45;
+  opacity: 0.8;
+}
+
+/* The Usage header is a cream plaque, so the boundary between the controls
+   above and the reporting below is unmistakable — it is the one section that
+   is collapsed by default, and a collapsed section with a quiet header reads
+   as the end of the panel rather than as something openable. Inverted rather
+   than merely brighter: this is the only surface in the drawer that is not
+   ink, which is what makes it register as a divider. */
+.debug-section--usage .debug-section__toggle {
+  background: var(--cream);
+  color: var(--ink);
+  padding: 7px 10px;
+  border-radius: 4px;
+}
+
+.debug-section--usage .debug-section__toggle:hover {
+  background: var(--paper-lit);
+}
+
+/* Both inherit `currentColor`, so they follow the flip to ink automatically;
+   only the opacity needs lifting, since dim cream-on-ink and dim ink-on-cream
+   do not read the same. */
+.debug-section--usage .debug-section__meta { opacity: 0.65; }
+.debug-section--usage .debug-section__chev { opacity: 0.75; }
+
+/* The plaque already separates it; a rule as well is two dividers for one job. */
+.debug-section--usage { border-top: 0; padding-top: 16px; }

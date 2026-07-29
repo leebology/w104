@@ -363,6 +363,28 @@ const WORKERS_DETAIL =
 
 /** Durable Object and D1 counters are neither per-script nor per-environment. */
 const ACCOUNT_WIDE = "Account-wide — shared between every environment.";
+
+/**
+ * What actually spends each allowance, in this app specifically.
+ *
+ * Written against how w104 is built rather than restating Cloudflare's
+ * pricing page, because the useful question is "which of ours is going
+ * fastest and why", and the answer is not obvious from the bars: Durable
+ * Object *duration* runs far ahead of Durable Object *requests* here, and the
+ * reason is architectural rather than anything to do with how busy a room is.
+ *
+ * Verified against Cloudflare's pricing docs and this repo on 2026-07-29.
+ * Re-check the hibernation claim if `partyserver` is upgraded — it is the one
+ * that would silently stop being true.
+ */
+const SOURCES = {
+  workers:
+    "One request per socket a phone opens, plus this panel's own polling. The page itself loads from Vercel and never touches the Worker.",
+  durableObjects:
+    "Requests are incoming socket messages — each word submitted, each ready tap — plus alarms; broadcasts out are free and messages in bill 20:1. Duration is wall-clock time a room is held in memory, and PartyServer runs without the hibernation API here, so a room bills from first join until it is reaped whether or not anyone is typing. That makes Duration the fastest-moving bar, and it tracks how long rooms stay open rather than how busy they are.",
+  d1:
+    "Writes from the score archive: one row per word plus round and scorer rows each time a round banks, and index updates count as writes too. The game never reads D1, so rows read stays near zero.",
+} as const;
 const D1_DASHBOARD = "https://dash.cloudflare.com/?to=/:account/workers/d1";
 /**
  * The project's own usage page, not the account-wide one. Both are behind a
@@ -415,6 +437,7 @@ async function workersService(env: UsageEnv, now: number): Promise<Service> {
   const base: Omit<Service, "metrics" | "status"> = {
     id: "workers",
     name: "Workers",
+    sources: SOURCES.workers,
     detail: WORKERS_DETAIL,
     dashboard: WORKERS_DASHBOARD,
   };
@@ -463,6 +486,7 @@ async function durableObjectsService(env: UsageEnv, now: number): Promise<Servic
     id: "durable-objects",
     name: "Durable Objects",
     status: doReq.used === null && doDur.used === null ? "error" : "ok",
+    sources: SOURCES.durableObjects,
     detail: ACCOUNT_WIDE,
     dashboard: WORKERS_DASHBOARD,
     metrics: [doReq, doDur, doBytes],
@@ -473,6 +497,7 @@ async function d1Service(env: UsageEnv, now: number): Promise<Service> {
   const base: Omit<Service, "metrics" | "status"> = {
     id: "d1",
     name: "D1",
+    sources: SOURCES.d1,
     dashboard: D1_DASHBOARD,
   };
 
@@ -530,6 +555,9 @@ function unconfiguredServices(): Service[] {
       id: "workers",
       name: "Workers",
       status: "unconfigured",
+      // Worth showing without a token too: what burns an allowance is useful
+      // to know before you can see how much of it is gone.
+      sources: SOURCES.workers,
       detail,
       dashboard: WORKERS_DASHBOARD,
       // Same three rows the live section has, so the shape does not change
@@ -545,6 +573,7 @@ function unconfiguredServices(): Service[] {
       id: "durable-objects",
       name: "Durable Objects",
       status: "unconfigured",
+      sources: SOURCES.durableObjects,
       detail,
       dashboard: WORKERS_DASHBOARD,
       metrics: [
@@ -557,6 +586,7 @@ function unconfiguredServices(): Service[] {
       id: "d1",
       name: "D1",
       status: "unconfigured",
+      sources: SOURCES.d1,
       detail,
       dashboard: D1_DASHBOARD,
       metrics: [

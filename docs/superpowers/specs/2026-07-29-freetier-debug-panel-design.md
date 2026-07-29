@@ -163,6 +163,24 @@ projects, and a type the client imported from `party/` would drag the Worker
 into `tsconfig.json`. It is pure data and pure functions, unit-tested like
 everything else there, and no game code imports it.
 
+## 8a. Each section says what spends it
+
+`Service.sources` renders under the heading, above the scope caveat. A bar on
+its own cannot answer the question the panel is open for — "which resource are
+we burning fastest" — because the answer is architectural, not arithmetic.
+
+Durable Object **Duration** is the worked example. It runs an order of
+magnitude ahead of Durable Object **Requests** here, and the reason is that
+`partyserver` defaults to `hibernate: false` and this repo does not override
+it: a room bills wall-clock time from first join until it is reaped, whether
+or not anyone is typing. So Duration tracks how long rooms stay *open*, not how
+busy they are, and the lever on it is the WebSocket Hibernation API rather than
+anything about gameplay. None of that is visible in a 14% bar.
+
+The blurbs are written against how w104 is built rather than restating
+Cloudflare's pricing page. **Re-check the hibernation claim if `partyserver` is
+upgraded** — it is the one that would silently stop being true.
+
 ## 9. Look
 
 The panel deliberately ignores the design tokens for colour and shape. Every
