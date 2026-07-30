@@ -1,7 +1,45 @@
 import { useEffect, useState } from "react";
 import { nextChangeAt, stepAt } from "../shared/reveal";
-import type { RevealSchedule } from "../shared/reveal";
+import type { CardView, RevealSchedule, RowView } from "../shared/reveal";
+import type { RowReveal } from "./components/WordList";
 import { roomStore } from "./net/room";
+
+/**
+ * Alternating class suffix. See `RowReveal.pop` for why every flash needs one.
+ *
+ * Fed an *ordinal* — how many strikes, trail arrivals or manual marks there have
+ * been — never a step number. Two strikes two steps apart share a step parity, so
+ * the class string would not change and the flash would simply be skipped.
+ */
+export function parity(ordinal: number): "a" | "b" {
+  return ordinal % 2 === 1 ? "a" : "b";
+}
+
+/**
+ * A row's manual mark as one class suffix: which way its last tap went, plus the
+ * parity, so tapping the same word off and on again plays twice.
+ *
+ * Shared by both screens rather than written twice — the TV draws a self-strike
+ * exactly as the phone that made it does, and only one of them can un-draw it.
+ */
+export function selfMarkClass(row: RowView): RowReveal["selfMark"] {
+  if (row.selfMarks === 0) return null;
+  return `${row.selfStruck ? "strike" : "restore"}-${parity(row.selfMarks)}`;
+}
+
+/**
+ * The card's reaction to a manual mark — the feathered ring, red on the way down
+ * and green on the way up — or null when the room's last mark was not on this
+ * card. Returned as a class rather than a boolean because it carries the
+ * direction *and* the parity: two marks on one card have to flash twice.
+ *
+ * A space-prefixed string so both callers can append it directly.
+ */
+export function selfMarkCardClass(card: CardView): string {
+  if (card.selfDirection === null) return "";
+  const dir = card.selfDirection === "struck" ? "strike" : "restore";
+  return ` card--self-${dir}-${parity(card.selfMarkCount)}`;
+}
 
 export function prefersReducedMotion(): boolean {
   return (

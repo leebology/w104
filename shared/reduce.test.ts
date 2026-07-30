@@ -4,6 +4,10 @@ import type { Room } from "./state";
 import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, TIMESUP_MS, VOTING_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
 import { voteBudget } from "./voting";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS } from "./teams";
+import { rowKey } from "./reveal";
+import { isSelfStruck } from "./selfstrike";
+import type { SelfMarks } from "./selfstrike";
+import type { Results } from "./scoring";
 
 /** A room with `n` joined players, none ready, plus a host. */
 function seed(n: number, now = 1000): Room {
@@ -1717,3 +1721,162 @@ describe("the results screen", () => {
     expect(reduce(mid, { t: "fastForward", playerId: "host", now: 51_000 })).toBe(mid);
   });
 });
+
+describe("selfStrike", () => {
+  /** The row index of a word in that scorer's scored list. */
+  const indexOf = (room: Room, scorerId: string, text: string) => {
+    const scorer = (room.phase as { results: Results }).results.scorers.find(
+      (s) => s.id === scorerId,
+    )!;
+    return scorer.entries.findIndex((e) => e.text === text);
+  };
+  const marksOf = (room: Room) =>
+    (room.phase as { selfMarks: SelfMarks }).selfMarks;
+
+  test("the scoring phase opens with nothing marked", () => {
+    expect(marksOf(scored())).toEqual({ counts: {}, last: null });
+  });
+
+  test("a player strikes one of their own words out", () => {
+    const before = scored();
+    const index = indexOf(before, "p0", "Beyonce");
+    const after = reduce(before, {
+      t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000,
+    });
+    expect(isSelfStruck(marksOf(after), rowKey("p0", index))).toBe(true);
+    expect(marksOf(after).last).toEqual({ row: rowKey("p0", index), at: 50_000 });
+  });
+
+  test("tapping it again takes it back", () => {
+    let room = scored();
+    const index = indexOf(room, "p0", "Beyonce");
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 });
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: false, now: 51_000 });
+    expect(isSelfStruck(marksOf(room), rowKey("p0", index))).toBe(false);
+  });
+
+  test("asking for the state it is already in is a no-op", () => {
+    const before = scored();
+    const index = indexOf(before, "p0", "Beyonce");
+    expect(
+      reduce(before, { t: "selfStrike", playerId: "p0", index, struck: false, now: 50_000 }),
+    ).toBe(before);
+    const struck = reduce(before, {
+      t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000,
+    });
+    expect(
+      reduce(struck, { t: "selfStrike", playerId: "p0", index, struck: true, now: 51_000 }),
+    ).toBe(struck);
+  });
+
+  // The whole point of the guard: a duplicate is already struck, so restoring
+  // one would award back a point nobody ever had.
+  test("a duplicated word cannot be marked", () => {
+    const before = scored();
+    const index = indexOf(before, "p0", "Adele");
+    expect(
+      reduce(before, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 }),
+    ).toBe(before);
+  });
+
+  test("an index outside the scorer's list is ignored", () => {
+    const before = scored();
+    for (const index of [-1, 99, Number.NaN]) {
+      expect(
+        reduce(before, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 }),
+      ).toBe(before);
+    }
+  });
+
+  test("somebody who was not in the round cannot mark anything", () => {
+    const before = scored();
+    expect(
+      reduce(before, { t: "selfStrike", playerId: "host", index: 0, struck: true, now: 50_000 }),
+    ).toBe(before);
+  });
+
+  test("it is refused outside the scoring screen", () => {
+    const before = playing();
+    expect(
+      reduce(before, { t: "selfStrike", playerId: "p0", index: 0, struck: true, now: 50_000 }),
+    ).toBe(before);
+  });
+
+  test("the banked round places the self-validated scores", () => {
+    let room = scored();
+    // p0 had Adele (duplicated) and Beyonce (unique); p1 had Adele only. p0
+    // wins the round 1-0 until it disowns the only word that scored.
+    const index = indexOf(room, "p0", "Beyonce");
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 });
+    room = reduce(room, { t: "showStandings", playerId: "host", now: 51_000 });
+    expect(room.history[0].places.p0).toMatchObject({ unique: 0, total: 2, place: 1 });
+    expect(room.history[0].places.p1).toMatchObject({ unique: 0, total: 1, place: 1 });
+  });
+
+  test("a word taken back before the round banks still scores", () => {
+    let room = scored();
+    const index = indexOf(room, "p0", "Beyonce");
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 });
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: false, now: 51_000 });
+    room = reduce(room, { t: "showStandings", playerId: "host", now: 52_000 });
+    expect(room.history[0].places.p0.unique).toBe(1);
+    expect(room.history[0].places.p0.place).toBe(1);
+    expect(room.history[0].places.p1.place).toBe(2);
+  });
+
+  test("readying everyone up banks the self-validated round too", () => {
+    let room = scored();
+    const index = indexOf(room, "p0", "Beyonce");
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 });
+    room = readyAll(room, 51_000);
+    expect(room.phase.name).toBe("standings");
+    expect(room.history[0].places.p0.unique).toBe(0);
+  });
+
+  // The marks live on the phase, so the next round starts clean with nothing
+  // having to clear them.
+  test("the next round's scoring screen opens with no marks", () => {
+    let room = scored();
+    const index = indexOf(room, "p0", "Beyonce");
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 });
+    room = reduce(room, { t: "showStandings", playerId: "host", now: 51_000 });
+    room = readyAll(room, 52_000);
+    const startAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: startAt, roll: 0 }); // -> playing
+    const playEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: playEnd, roll: 0 }); // -> timesup
+    const upEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: upEnd, roll: 0 }); // -> scoring
+    expect(room.phase.name).toBe("scoring");
+    expect(marksOf(room)).toEqual({ counts: {}, last: null });
+  });
+});
+
+describe("selfStrike in team play", () => {
+  test("any member may mark the list their team shares", () => {
+    let room = playingInTeams();
+    room = submitEntry(room, "p0", "Adele", 10_000).room;
+    room = submitEntry(room, "p1", "Cher", 10_100).room;
+    const playEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: playEnd, roll: 0 });
+    const upEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: upEnd, roll: 0 });
+    expect(room.phase.name).toBe("scoring");
+
+    const teamId = room.players.find((p) => p.id === "p1")!.teamId!;
+    const results = (room.phase as { results: Results }).results;
+    const team = results.scorers.find((s) => s.id === teamId)!;
+    const index = team.entries.findIndex((e) => e.by === "p0");
+    expect(index).toBeGreaterThanOrEqual(0);
+
+    // p1 strikes the word p0 wrote: it is the team's list, not p0's.
+    const after = reduce(room, {
+      t: "selfStrike", playerId: "p1", index, struck: true, now: 50_000,
+    });
+    expect(isSelfStruck(marksOfPhase(after), rowKey(teamId, index))).toBe(true);
+  });
+});
+
+function marksOfPhase(room: Room): SelfMarks {
+  return (room.phase as { selfMarks: SelfMarks }).selfMarks;
+}

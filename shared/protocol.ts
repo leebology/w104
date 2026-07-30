@@ -16,6 +16,12 @@ export type ClientMessage =
   | { type: "showStandings" }
   /** Host-only, `scoring` only: land every outstanding strike of the reveal. */
   | { type: "fastForward" }
+  /**
+   * Self-validation, `scoring` only: strike one of your own words out by hand,
+   * or take it back. `index` is into your own scorer's `results` entries. Not
+   * host-only — it is the player's own list.
+   */
+  | { type: "selfStrike"; index: number; struck: boolean }
   | { type: "backToLobby" }
   | { type: "castVote"; category: string }
   | { type: "resetVotes" }

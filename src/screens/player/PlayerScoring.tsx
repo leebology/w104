@@ -3,9 +3,22 @@ import { TeamBadge } from "../../components/TeamBadge";
 import { WordList } from "../../components/WordList";
 import type { RowReveal } from "../../components/WordList";
 import { useMarquee } from "../../marquee";
-import { prefersReducedMotion, useRevealStep } from "../../reveal";
+import {
+  parity,
+  prefersReducedMotion,
+  selfMarkCardClass,
+  selfMarkClass,
+  useRevealStep,
+} from "../../reveal";
 import { roomStore } from "../../net/room";
-import { buildSchedule, cardView, rowView, seededRng } from "../../../shared/reveal";
+import {
+  buildSchedule,
+  cardView,
+  rowView,
+  seededRng,
+  uniqueDirection,
+} from "../../../shared/reveal";
+import type { SelfMarks } from "../../../shared/selfstrike";
 import { currentRound } from "../../../shared/state";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import type { Results } from "../../../shared/scoring";
@@ -17,12 +30,9 @@ type Props = {
   /** Server time the reveal began — the TV's reveal and this one share it. */
   startedAt: number;
   skipped: boolean;
+  /** Words disowned by hand, this room over. See shared/selfstrike.ts. */
+  marks: SelfMarks;
 };
-
-/** Alternating class suffix for the trail's pop. See HostScoring's `parity`. */
-function parity(ordinal: number): "a" | "b" {
-  return ordinal % 2 === 1 ? "a" : "b";
-}
 
 /**
  * Your own results, on your own phone — the same two cards as one host column.
@@ -33,8 +43,15 @@ function parity(ordinal: number): "a" | "b" {
  * the beat the TV strikes it, because both derive their line count from the same
  * schedule and the same `scoring.startedAt`. Reading a strike here before the
  * room has seen it would give away the reveal.
+ *
+ * It is also the one screen where a player can *change* the round: tapping a word
+ * that scored disowns it, and tapping it again takes it back. That is a request
+ * like any other — the mark lives on the room's scoring phase, so the TV crosses
+ * the word out too and the banked standings agree with what the room was shown.
  */
-export function PlayerScoring({ room, results, playerId, startedAt, skipped }: Props) {
+export function PlayerScoring({
+  room, results, playerId, startedAt, skipped, marks,
+}: Props) {
   const me = results.scorers.find((s) => s.members.includes(playerId));
   const [reduced] = useState(prefersReducedMotion);
 
@@ -52,9 +69,9 @@ export function PlayerScoring({ room, results, playerId, startedAt, skipped }: P
   const { step } = useRevealStep(schedule, startedAt, skipped, reduced);
 
   // A word too long for the phone's column clips and travels, same as on the TV.
-  // Re-measured as the reveal runs: a growing emoji trail changes the room left
-  // for the word beside it.
-  const list = useMarquee<HTMLDivElement>([me?.entries, step]);
+  // Re-measured on a manual mark as well: a word losing its bold weight is a
+  // word that may now fit.
+  const list = useMarquee<HTMLDivElement>([me?.entries, step, marks]);
   const emojiOf = (id: string) => room.players.find((p) => p.id === id)?.emoji ?? "";
   // A team has no emoji of its own, so it identifies itself by name in the
   // "somebody else had this too" trail.
@@ -76,7 +93,8 @@ export function PlayerScoring({ room, results, playerId, startedAt, skipped }: P
     );
   }
 
-  const card = cardView(schedule, me, step);
+  const card = cardView(schedule, me, step, marks);
+  const direction = uniqueDirection(schedule, card, startedAt);
 
   /**
    * Every row, always — `revealed` is deliberately ignored. A row the TV has not
@@ -87,18 +105,31 @@ export function PlayerScoring({ room, results, playerId, startedAt, skipped }: P
    * never *appears* pre-struck, and here the word has been on screen all along.
    */
   const reveal = (index: number): RowReveal => {
-    const row = rowView(schedule, me.id, index, step);
+    const row = rowView(schedule, me.id, index, step, marks);
     return {
-      struck: row.struck,
+      // The two strikes look the same and only one of them is yours to undo.
+      struck: row.struck || row.selfStruck,
       strikeDelayMs: 0,
       alsoShown: row.alsoShown,
       pop: row.popCount === 0 ? null : parity(row.popCount),
+      selfMark: selfMarkClass(row),
     };
   };
 
   return (
     <main className="screen screen--mobile screen--locked player-scoring">
-      <div className={`card id-card${me.colorIndex !== null ? " id-card--team" : ""}`}>
+      <div
+        className={
+          `card id-card${me.colorIndex !== null ? " id-card--team" : ""}` +
+          selfMarkCardClass(card)
+        }
+      >
+        {/* The same feathered ring the TV's card takes, and the same overlay
+            child rather than the card itself — on `.card` it would fight the
+            hard offset shadow. Red for a word disowned, green for one taken
+            back. */}
+        <span className="card__penalty" aria-hidden="true" />
+
         {/* Same tab the team wore in team select and during the round. */}
         {me.colorIndex !== null && (
           <TeamBadge
@@ -118,13 +149,21 @@ export function PlayerScoring({ room, results, playerId, startedAt, skipped }: P
           <div className="id-card__stats">
             <div className="stat">
               {/* Opens at TOTAL and counts down as the TV strikes words
-                  through, blinking on each one. Keyed on the strike count for
-                  the same reason the host's is — see HostScoring. */}
+                  through, blinking on each one. Keyed on the count of things
+                  that have moved it — revealed strikes plus manual marks — for
+                  the same reason the host's is, see HostScoring.
+
+                  The green blink is the one the round cannot cause: only taking
+                  a word back moves this number up. */}
               <span
-                key={card.strikeCount}
+                key={`${card.strikeCount}:${card.selfMarkCount}`}
                 className={
                   "stat__num stat__num--unique" +
-                  (card.strikeCount > 0 ? " stat__num--flash" : "")
+                  (direction === "up"
+                    ? " stat__num--flash-up"
+                    : direction === "down"
+                      ? " stat__num--flash"
+                      : "")
                 }
               >
                 {card.unique}
@@ -156,7 +195,21 @@ export function PlayerScoring({ room, results, playerId, startedAt, skipped }: P
           labelFor={labelFor}
           authorFor={me.colorIndex !== null ? emojiOf : undefined}
           reveal={reveal}
+          // The request is fire-and-forget, like every other client action: the
+          // struck state comes back in the next `state` push, so there is no
+          // optimistic copy to reconcile. A round trip is one hop and nothing
+          // here is racing a timer.
+          onSelfStrike={(index) =>
+            roomStore.send({
+              type: "selfStrike",
+              index,
+              struck: !rowView(schedule, me.id, index, step, marks).selfStruck,
+            })
+          }
         />
+        {/* Said once, quietly, under the list. Without it the only clue that a
+            word can be tapped is that it happens to be tappable. */}
+        <p className="list-card__hint">Tap a word to cross it out</p>
       </div>
 
       <div className="player-scoring__footer">

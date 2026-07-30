@@ -62,6 +62,7 @@ export function HostView({ state, onLeave }: { state: ClientState; onLeave: () =
           results={room.phase.results}
           startedAt={room.phase.startedAt}
           skipped={room.phase.skipped}
+          marks={room.phase.selfMarks}
         />
       );
     case "standings":

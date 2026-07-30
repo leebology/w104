@@ -28,6 +28,23 @@
   --penalty: #8E0B24;
   --penalty-soft: #BA1B40;
 
+  /* Self-validation. `--restore` is `--penalty`'s mirror: the beat a player
+     takes one of their own words back, and the only thing on the results screen
+     that moves a score up. Deeper than `--team-green` on purpose — it must never
+     read as a team accent — and like the penalty pair it lives ONLY inside cream
+     cards, never on the pink field. `--restore-soft` is the ring's counterpart to
+     `--penalty-soft` and is only ever feathered, for the same reason. */
+  --restore: #1B7A46;
+  --restore-soft: #1FA05B;
+
+  /* The resting colour of a word its own scorer disowned, and the one thing that
+     tells the two kinds of strike apart at a glance: a duplicate greys out to
+     `--struck`, a manual one stays burnt orange. Warm enough to read as
+     deliberate rather than as dead, dark enough to hold on cream, and well clear
+     of both `--gold` and `--team-orange` — a struck word must never look like a
+     forward action or a team. */
+  --self-struck: #B4530C;
+
   /* Podium. Gold is the existing token — the same yellow the forward action
      wears — so only second and third need adding. Bronze is warm enough to sit
      beside cream and dark enough to hold ink text. */
@@ -1171,6 +1188,10 @@ ul, ol { list-style: none; }
    no parity trick can fail to re-fire it. */
 .stat__num--flash { animation: statBlink 420ms ease-in-out; }
 
+/* The same blink the other way up: only a player taking one of their own words
+   back moves this number up, so green is unambiguous. */
+.stat__num--flash-up { animation: statBlinkUp 420ms ease-in-out; }
+
 .stat__label { font-size: 9px; color: var(--ink-dim); letter-spacing: 0.1em; }
 
 .list-card { padding: 14px; flex: 1; min-height: 0; }
@@ -1284,6 +1305,27 @@ ul, ol { list-style: none; }
    a jump cut rather than as "all of that happened". */
 .result-card--ack .card__penalty { animation: ackRing 320ms ease-out; }
 
+/* Self-validation takes the same ring as a strike the round landed: the card is
+   still losing a word, and it should feel like it. Declared after
+   `.result-card--hit-*` on purpose — equal specificity, so on a card that has
+   both classes the manual mark is the one that just happened and wins.
+
+   The green ring is the mirror, and it is the only thing in the whole design
+   system that means "you got something back". A/B pairs throughout, so tapping a
+   word off and on again flashes twice. */
+.card--self-strike-a .card__penalty { animation: penaltyBlinkA 420ms ease-out; }
+.card--self-strike-b .card__penalty { animation: penaltyBlinkB 420ms ease-out; }
+.card--self-restore-a .card__penalty { animation: restoreBlinkA 420ms ease-out; }
+.card--self-restore-b .card__penalty { animation: restoreBlinkB 420ms ease-out; }
+
+/* Green rather than red, and nothing else changes. `--penalty-soft` is baked
+   into `.card__penalty`'s own box-shadow, so the colour has to be restated on
+   the element rather than left to the keyframes. */
+.card--self-restore-a .card__penalty,
+.card--self-restore-b .card__penalty {
+  box-shadow: inset 0 0 17px 3px var(--restore-soft);
+}
+
 /* The podium is flat graphic, by decision: no glow, no blur, no sparkle. A
    tilted plaque on the house angle, and the card's existing hard offset shadow
    recoloured from ink to the medal. */
@@ -1344,15 +1386,32 @@ ul, ol { list-style: none; }
 /* Frame 3. Vertical first, horizontal 180ms behind it when the card is changing
    rows — that lag is what stops an eight-player two-row swap reading as a
    shuffle instead of as travel. Both hold their end state, so the cards stay
-   where their rank put them; the DOM never reorders. */
-.result-col--swapped {
-  animation: swapY var(--swap-dur) cubic-bezier(0.34, 1.28, 0.64, 1) both;
+   where their rank put them; the DOM never reorders.
+
+   An A/B pair, like the dip and the ring, and here it is not a nicety: the swap
+   can run a second time, when a word crossed out on a phone re-ranks a podium
+   that has already landed. Clearing the class and re-adding it does not restart
+   an animation when both happen inside one React effect flush — nothing paints in
+   between, so the browser sees the same animation, already finished, and the
+   `both` fill snaps the card onto its new slot with no travel. Only a different
+   animation-name plays. */
+.result-col--swapped-a {
+  animation: swapYA var(--swap-dur) cubic-bezier(0.34, 1.28, 0.64, 1) both;
+}
+
+.result-col--swapped-b {
+  animation: swapYB var(--swap-dur) cubic-bezier(0.34, 1.28, 0.64, 1) both;
 }
 
 /* Beats `.result-card--hit-*` on specificity, which matters only because that
    class is still on the card long after its dip has finished. */
-.result-col--swapped > .result-card {
-  animation: swapX var(--swap-dur) cubic-bezier(0.34, 1.28, 0.64, 1)
+.result-col--swapped-a > .result-card {
+  animation: swapXA var(--swap-dur) cubic-bezier(0.34, 1.28, 0.64, 1)
+    var(--swap-x-delay) both;
+}
+
+.result-col--swapped-b > .result-card {
+  animation: swapXB var(--swap-dur) cubic-bezier(0.34, 1.28, 0.64, 1)
     var(--swap-x-delay) both;
 }
 
@@ -1468,6 +1527,18 @@ ul, ol { list-style: none; }
   text-decoration-color: var(--struck);
 }
 
+/* The line has to be declared on the RUN, not only on the clip box around it.
+   Two reasons, and either one alone is enough: a clip box is an inline-block, and
+   a parent's decoration is not propagated into one — and `text-decoration-color`
+   set on one element cannot colour a decoration declared on another, so the
+   strike and restore animations (which run on `.marquee`) would have nothing of
+   their own to draw. The clip box keeps its own declaration for the shorter
+   words, where the two coincide. */
+.word--struck .marquee {
+  text-decoration-line: line-through;
+  text-decoration-color: var(--struck);
+}
+
 /* The clip box carries the pop and the run inside carries the travel — one
    transform each, so the two never fight. A clipped emoji is a missing
    attribution, so this scrolls rather than truncating. */
@@ -1514,6 +1585,80 @@ ul, ol { list-style: none; }
     strikeIn 300ms cubic-bezier(0.2, 0.7, 0.3, 1) var(--strike-delay, 0ms) both;
 }
 
+/* Self-validation, in both directions. Same duration and same curve as a strike
+   the round landed — it is the same event, chosen rather than suffered — but with
+   no hold in front of it: the player just tapped the word, so there is nothing
+   left to conceal.
+
+   Four rules, not two, and the pair in each is a byte-for-byte copy: an
+   identical animation string does not restart, so crossing a word out, taking it
+   back and crossing it out again would play once. Same reason the dip, the ring
+   and the trail pop each come in an A/B pair. */
+.word--self-strike-a .marquee,
+.word--self-strike-b .marquee {
+  animation:
+    marqueeX 5200ms ease-in-out 700ms infinite alternate,
+    selfStrikeIn 300ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* Burnt orange, and it stays: a word the round struck is grey and gone, a word
+   its own scorer disowned is a decision, and the room should be able to tell
+   which is which without being told. Declared statically as well as landed on by
+   the keyframes, because reduced motion strips the animation off `.marquee` and
+   the resting colour cannot depend on a fill. Ordered after `.word--struck
+   .marquee`, which it ties with on specificity. */
+.word--self-strike-a,
+.word--self-strike-b { color: var(--self-struck); }
+
+.word--self-strike-a .marquee,
+.word--self-strike-b .marquee { text-decoration-color: var(--self-struck); }
+
+.word--self-restore-a .marquee,
+.word--self-restore-b .marquee {
+  /* The row lost `word--struck` on the same commit, so the line being taken away
+     has to be restated here for the animation to have something to fade out. It
+     ends on `transparent` and stays there, which is why nothing has to remove
+     it afterwards. */
+  text-decoration-line: line-through;
+  /* The resting state, stated rather than left to the animation's fill: reduced
+     motion strips the animation off `.marquee` entirely, and without this the
+     line would come back at its inherited colour on a word just taken back. */
+  text-decoration-color: transparent;
+  animation:
+    marqueeX 5200ms ease-in-out 700ms infinite alternate,
+    restoreIn 300ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* A word on your own list, waiting to be judged. A button, so it resets: the
+   row keeps the flex layout every other row has and gains only a hit target and
+   the pointer. No pill, no chip, no hover box — the list must read as a list. */
+.word-row--tappable {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  width: 100%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The whole affordance, deliberately: the press itself, and the one line of hint
+   under the list. No underline and no hover box — the row already carries a
+   line-through as *state*, and a second decoration on the same word to mean
+   "tappable" is the one thing this list cannot afford to say. */
+.word-row--tappable:active { opacity: 0.7; }
+
+/* Said once, under the list, in the same quiet ink as an empty list. */
+.list-card__hint {
+  flex: 0 0 auto;
+  padding-top: 10px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  letter-spacing: 0.04em;
+}
+
 .result-card .word-row { animation: rowIn 156ms ease-out both; }
 
 /* Who wrote a word, in team play only — dimmed so it never competes with
@@ -1554,6 +1699,25 @@ ul, ol { list-style: none; }
   100% { color: var(--struck); text-decoration-color: var(--struck); }
 }
 
+/* `strikeIn`, landing on burnt orange instead of grey. The red beat at 55% is
+   kept: the moment is the same moment — a word is being given up — and only where
+   it comes to rest differs. */
+@keyframes selfStrikeIn {
+  0% { color: var(--ink); text-decoration-color: transparent; }
+  55% { color: var(--penalty); text-decoration-color: var(--penalty); }
+  100% { color: var(--self-struck); text-decoration-color: var(--self-struck); }
+}
+
+/* `selfStrikeIn` played backwards, in green. The row has already lost
+   `word--struck` by the time this runs, so frame 0 puts the burnt orange back by
+   hand — exactly as `strikeIn` starts from plain ink on a row that is already
+   marked struck. */
+@keyframes restoreIn {
+  0% { color: var(--self-struck); text-decoration-color: var(--self-struck); }
+  55% { color: var(--restore); text-decoration-color: var(--restore); }
+  100% { color: var(--ink); text-decoration-color: transparent; }
+}
+
 /* Two identical copies. See `.result-card--hit-a`. */
 @keyframes popInA {
   0% { opacity: 0; transform: scale(0.4); }
@@ -1574,6 +1738,19 @@ ul, ol { list-style: none; }
 }
 
 @keyframes penaltyBlinkB {
+  0%, 100% { opacity: 0; }
+  18% { opacity: 1; }
+  52% { opacity: 0.82; }
+}
+
+/* Two identical copies, in green. See `.result-card--hit-a`. */
+@keyframes restoreBlinkA {
+  0%, 100% { opacity: 0; }
+  18% { opacity: 1; }
+  52% { opacity: 0.82; }
+}
+
+@keyframes restoreBlinkB {
   0%, 100% { opacity: 0; }
   18% { opacity: 1; }
   52% { opacity: 0.82; }
@@ -1604,6 +1781,13 @@ ul, ol { list-style: none; }
   24% { color: var(--penalty); transform: scale(1.16); }
 }
 
+/* Identical timing and identical overshoot — the gesture is the same one, and
+   only the colour says which direction the number went. */
+@keyframes statBlinkUp {
+  0%, 100% { color: var(--pink); transform: none; }
+  24% { color: var(--restore); transform: scale(1.16); }
+}
+
 @keyframes shakeCue {
   0%, 100% { transform: none; }
   10% { transform: translateX(-5px) rotate(-0.7deg); }
@@ -1620,13 +1804,28 @@ ul, ol { list-style: none; }
 }
 
 /* Frame 3. Y and X are separate elements so the two travels can be staggered
-   without either one needing to know the other's value. */
-@keyframes swapY {
+   without either one needing to know the other's value. Two identical copies of
+   each — see `.result-col--swapped-a`, where the pair is what makes a second swap
+   play at all rather than snapping. */
+@keyframes swapYA {
   from { transform: none; }
   to { transform: translateY(var(--travel-y, 0px)); }
 }
 
-@keyframes swapX {
+@keyframes swapYB {
+  from { transform: none; }
+  to { transform: translateY(var(--travel-y, 0px)); }
+}
+
+@keyframes swapXA {
+  from { transform: none; }
+  50% {
+    transform: translateX(calc(var(--travel-x, 0px) * 0.5)) rotate(1.5deg) scale(1.03);
+  }
+  to { transform: translateX(var(--travel-x, 0px)); }
+}
+
+@keyframes swapXB {
   from { transform: none; }
   50% {
     transform: translateX(calc(var(--travel-x, 0px) * 0.5)) rotate(1.5deg) scale(1.03);

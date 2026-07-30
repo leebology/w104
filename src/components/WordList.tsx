@@ -23,6 +23,14 @@ export type RowReveal = {
    * coalesce and read as a deliberate cooldown.
    */
   pop: "a" | "b" | null;
+  /**
+   * Self-validation, as one class suffix: the row's last manual mark and an
+   * alternating parity so two taps in a row both fire. `strike-*` draws the red
+   * line through, `restore-*` takes it back in green. Null when the row has
+   * never been marked — which is every row on the host's screen and most rows on
+   * the player's.
+   */
+  selfMark: "strike-a" | "strike-b" | "restore-a" | "restore-b" | null;
 };
 
 type Props = {
@@ -50,6 +58,13 @@ type Props = {
   pending?: boolean;
   /** The scroll box, so the revealing column can follow its newest line. */
   listRef?: Ref<HTMLDivElement>;
+  /**
+   * Self-validation, on a player's own list only. Given the row index when a row
+   * is tapped. Wired to rows the round *scored*: a duplicate is already struck
+   * and there is no point to take back, so those stay plain text with no hit
+   * target at all. Omitted, the whole list is inert — which is the host's case.
+   */
+  onSelfStrike?: (index: number) => void;
 };
 
 /**
@@ -70,7 +85,7 @@ type Props = {
  */
 export function WordList({
   entries, size = 16, empty = "No words this round.", labelFor, authorFor,
-  reveal, pending, listRef,
+  reveal, pending, listRef, onSelfStrike,
 }: Props) {
   const style = { "--word-size": `${size}px` } as CSSProperties;
 
@@ -93,12 +108,21 @@ export function WordList({
 
         const struck = row ? row.struck : !entry.unique;
         const alsoShown = row ? row.alsoShown : entry.alsoBy;
+        // A manual mark owns the animation when it has one: `word--striking` is
+        // a constant class, so a word struck by hand, taken back and struck
+        // again would not re-fire it. The suffix carries its own parity.
         const word =
           `word word--clip${struck ? " word--struck" : ""}` +
-          (row && struck ? " word--striking" : "");
+          (row?.selfMark
+            ? ` word--self-${row.selfMark}`
+            : row && struck
+              ? " word--striking"
+              : "");
+        // Only rows the round scored are tappable — see `onSelfStrike`.
+        const tappable = onSelfStrike !== undefined && entry.alsoBy.length === 0;
 
-        return (
-          <div className="word-row" key={`${entry.text}-${i}`}>
+        const body = (
+          <>
             {authorFor && <span className="word-row__by">{authorFor(entry.by)}</span>}
             <span
               className={word}
@@ -119,7 +143,25 @@ export function WordList({
                 <span className="marquee">{alsoShown.map(labelFor).join("")}</span>
               </span>
             )}
-          </div>
+          </>
+        );
+
+        // A real button, not a tap handler on the div: this is the only control
+        // on the results screen, it has to be reachable without a pointer, and
+        // `aria-pressed` is what says "this word is crossed out" to a reader
+        // that cannot see the line through it.
+        return tappable ? (
+          <button
+            type="button"
+            className="word-row word-row--tappable"
+            key={`${entry.text}-${i}`}
+            aria-pressed={struck}
+            onClick={() => onSelfStrike!(i)}
+          >
+            {body}
+          </button>
+        ) : (
+          <div className="word-row" key={`${entry.text}-${i}`}>{body}</div>
         );
       })}
     </div>

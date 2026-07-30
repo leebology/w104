@@ -1,5 +1,7 @@
 import { scoreRound, normalize } from "./scoring";
 import type { Results } from "./scoring";
+import { rowKey, withSelfStrikes } from "./reveal";
+import { NO_SELF_MARKS, toggleMark } from "./selfstrike";
 import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, MatchSettings, Player, PlayerId, Room, RoundSummary } from "./state";
@@ -81,6 +83,13 @@ export type RoomEvent =
    * through lines the room has already been shown.
    */
   | { t: "fastForward"; playerId: PlayerId; now: number }
+  /**
+   * Self-validation, `scoring` only: the scorer strikes one of their own words
+   * out by hand, or takes it back. `index` addresses their own row in
+   * `phase.results`; anything else — somebody else's list, an index past the
+   * end, a word the round already struck — is ignored. See shared/selfstrike.ts.
+   */
+  | { t: "selfStrike"; playerId: PlayerId; index: number; struck: boolean; now: number }
   /**
    * `roll` is a uniform [0,1) supplied by the caller. Randomness is injected
    * at the edge so `reduce` stays a pure function and the draw is testable
@@ -187,6 +196,11 @@ function enterTeams(room: Room): Room {
  * Clearing `entries` here is the single place the raw word store is emptied —
  * the round is banked into history and the words have already been shown, so
  * nothing reads it again.
+ *
+ * `results` is what both callers must pass through `withSelfStrikes` first: the
+ * places banked into history are the ones the room was shown, self-validation
+ * included. The marks themselves need no clearing — they live on the phase this
+ * leaves behind.
  */
 function bankRound(room: Room, results: Results): Room {
   const summary: RoundSummary = {
@@ -240,7 +254,9 @@ function settle(room: Room, now: number): Room {
     // The results screen is the one place `ready` means "seen enough" rather
     // than "waiting". It advances the room the host's Standings button does, so
     // a room that has finished reading does not sit waiting on the TV.
-    return everyoneReady(room, MIN_PLAYERS) ? bankRound(room, phase.results) : room;
+    return everyoneReady(room, MIN_PLAYERS)
+      ? bankRound(room, withSelfStrikes(phase.results, phase.selfMarks))
+      : room;
   }
 
   if (phase.name === "standings") {
@@ -610,7 +626,10 @@ function apply(room: Room, ev: RoomEvent): Room {
     case "showStandings": {
       if (ev.playerId !== room.hostId) return room;
       if (room.phase.name !== "scoring") return room;
-      return bankRound(room, room.phase.results);
+      return bankRound(
+        room,
+        withSelfStrikes(room.phase.results, room.phase.selfMarks),
+      );
     }
 
     /**
@@ -624,6 +643,37 @@ function apply(room: Room, ev: RoomEvent): Room {
       if (room.phase.name !== "scoring") return room;
       if (room.phase.skipped) return room;
       return { ...room, phase: { ...room.phase, skipped: true } };
+    }
+
+    /**
+     * Self-validation: a scorer disowning one of their own words, or taking it
+     * back. Not host-only — it is the *player's* judgement on the player's own
+     * list, and in team play any member may mark the list the team shares.
+     *
+     * A duplicate is refused rather than toggled. It is already struck by the
+     * round's own rule, so striking it would change nothing and restoring it
+     * would award back a point nobody had — which is why the phones render those
+     * rows inert, and why that is not the boundary.
+     */
+    case "selfStrike": {
+      if (room.phase.name !== "scoring") return room;
+      const scorer = room.phase.results.scorers.find((s) =>
+        s.members.includes(ev.playerId),
+      );
+      if (!scorer) return room;
+      const entry = scorer.entries[ev.index];
+      if (entry === undefined) return room;
+      if (entry.alsoBy.length > 0) return room;
+      const marks = toggleMark(
+        room.phase.selfMarks,
+        rowKey(scorer.id, ev.index),
+        ev.struck,
+        ev.now,
+      );
+      // `toggleMark` hands back the identical object when the row is already
+      // the way it was asked for — the no-op contract, not an optimisation.
+      if (marks === room.phase.selfMarks) return room;
+      return { ...room, phase: { ...room.phase, selfMarks: marks } };
     }
 
     case "backToLobby": {
@@ -777,6 +827,7 @@ function tick(room: Room, now: number, roll: number): Room {
         // The reveal's zero. Every client counts its own lines from here.
         startedAt: now,
         skipped: false,
+        selfMarks: NO_SELF_MARKS,
       },
       // Load-bearing, exactly as the clear at the voting edge is: `ready` means
       // "typing this round" on this side of the edge and "seen enough of the

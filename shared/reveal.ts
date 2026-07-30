@@ -1,5 +1,7 @@
 import { isMatch, normalize } from "./scoring";
 import type { Results, ScorerResult } from "./scoring";
+import { NO_SELF_MARKS, isSelfStruck, markCount } from "./selfstrike";
+import type { SelfMarks } from "./selfstrike";
 import type { ScorerId } from "./teams";
 
 /**
@@ -297,6 +299,17 @@ export type RowView = {
   struckAt: number | null;
   /** Scorers whose matching word is already on screen, earliest first. */
   alsoShown: ScorerId[];
+  /**
+   * Struck out by its own scorer, by hand. Kept apart from `struck` rather than
+   * folded into it: the two are drawn the same but they are not the same fact,
+   * and only one of them can be taken back. Render sites compose the pair.
+   */
+  selfStruck: boolean;
+  /**
+   * How many times this row has been marked by hand. The strike and the restore
+   * alternate their parity off this — see `SelfMarks.counts`.
+   */
+  selfMarks: number;
   /** The step the trail last grew on; null when there is no trail. */
   poppedAt: number | null;
   /**
@@ -314,6 +327,8 @@ const HIDDEN: RowView = {
   backCheck: false,
   struckAt: null,
   alsoShown: [],
+  selfStruck: false,
+  selfMarks: 0,
   poppedAt: null,
   popCount: 0,
 };
@@ -328,22 +343,26 @@ const HIDDEN: RowView = {
  *
  * A word never appears pre-struck. `struckAt` is never earlier than the row's own
  * step, so a line that lands already-duplicated still lands in plain ink and is
- * struck through after.
+ * struck through after. A *self*-strike is the exception and deliberately so: a
+ * scorer can disown a word on their phone before the TV has reached it, and the
+ * TV then reveals it already crossed out, because that is what happened.
  */
 export function rowView(
   schedule: RevealSchedule,
   scorerId: ScorerId,
   index: number,
   step: number,
+  marks: SelfMarks = NO_SELF_MARKS,
 ): RowView {
-  const own = schedule.stepOf[rowKey(scorerId, index)];
+  const key = rowKey(scorerId, index);
+  const own = schedule.stepOf[key];
   if (own === undefined || own > step) return HIDDEN;
 
   // Earliest step per partner *scorer*: a scorer with two near-spellings of the
   // same answer must appear once in the trail, at its first.
   const firstBy = new Map<ScorerId, number>();
   let earliest = Infinity;
-  for (const partner of schedule.partners[rowKey(scorerId, index)] ?? []) {
+  for (const partner of schedule.partners[key] ?? []) {
     const at = schedule.stepOf[rowKey(partner.scorerId, partner.index)];
     if (at === undefined) continue;
     if (at < earliest) earliest = at;
@@ -364,6 +383,8 @@ export function rowView(
     backCheck: struck && struckAt! > own,
     struckAt: struck ? struckAt : null,
     alsoShown: shown.map(([id]) => id),
+    selfStruck: isSelfStruck(marks, key),
+    selfMarks: markCount(marks, key),
     // The trail appears with the row when the partners got there first, and
     // grows at each later partner — so it pops once per arrival, not once ever.
     poppedAt: shown.length === 0 ? null : Math.max(own, shown[shown.length - 1][1]),
@@ -375,9 +396,15 @@ export type CardView = {
   /** Rows on screen. */
   shown: number;
   /**
-   * Words still scoring. Opens at the scorer's TOTAL and only ever counts down:
-   * a row that has not been revealed has not been caught yet, so it is still
-   * counted, and once struck a row stays struck.
+   * Words still scoring. Opens at the scorer's TOTAL and counts down as the
+   * reveal catches words out: a row not yet revealed has not been caught yet, so
+   * it is still counted, and once struck by the round's own rule a row stays
+   * struck.
+   *
+   * Self-validation is the one thing that moves this number *up* — a scorer
+   * taking back a word they had disowned. Manual marks are counted whether or
+   * not their row is on screen yet, so this reads the same on the TV as on the
+   * phone that made them.
    */
   unique: number;
   /** The latest step any of this card's rows struck on. */
@@ -396,21 +423,52 @@ export type CardView = {
    */
   strikeCount: number;
   flinchCount: number;
+  /**
+   * Manual marks on this card's rows, in total — the ordinal the UNIQUE blink
+   * restarts off, alongside `strikeCount`.
+   */
+  selfMarkCount: number;
+  /**
+   * Where the *most recent* manual mark in the room left this card: "struck" or
+   * "restored", or null when the last mark was on somebody else's card (or there
+   * has been none). Paired with `selfMarkAt` by `uniqueDirection`.
+   */
+  selfDirection: "struck" | "restored" | null;
+  /** Server time of that mark, or null. */
+  selfMarkAt: number | null;
 };
 
 export function cardView(
   schedule: RevealSchedule,
   scorer: ScorerResult,
   step: number,
+  marks: SelfMarks = NO_SELF_MARKS,
 ): CardView {
   let shown = 0;
   let struck = 0;
   let flinched = 0;
   let struckAt: number | null = null;
   let flinchAt: number | null = null;
+  let selfStruck = 0;
+  let selfMarkCount = 0;
+  let selfDirection: "struck" | "restored" | null = null;
+  let selfMarkAt: number | null = null;
 
-  scorer.entries.forEach((_, index) => {
-    const row = rowView(schedule, scorer.id, index, step);
+  scorer.entries.forEach((entry, index) => {
+    const row = rowView(schedule, scorer.id, index, step, marks);
+    const key = rowKey(scorer.id, index);
+    // Counted off the reveal, unlike everything else here: a scorer can disown a
+    // word before the TV reaches it, and the number has to agree on both.
+    // Guarded on `alsoBy` so a mark that somehow landed on a duplicate cannot
+    // subtract the same word twice — the same rule the server enforces.
+    if (entry.alsoBy.length === 0) {
+      selfMarkCount += markCount(marks, key);
+      if (row.selfStruck || (!row.revealed && isSelfStruck(marks, key))) selfStruck++;
+      if (marks.last?.row === key) {
+        selfDirection = isSelfStruck(marks, key) ? "struck" : "restored";
+        selfMarkAt = marks.last.at;
+      }
+    }
     if (!row.revealed) return;
     shown++;
     if (!row.struck) return;
@@ -424,12 +482,66 @@ export function cardView(
 
   return {
     shown,
-    unique: scorer.entries.length - struck,
+    unique: scorer.entries.length - struck - selfStruck,
     struckAt,
     flinchAt,
     strikeCount: struck,
     flinchCount: flinched,
+    selfMarkCount,
+    selfDirection,
+    selfMarkAt,
   };
+}
+
+/**
+ * Which way the UNIQUE number last moved on this card — "down" for a strike the
+ * reveal landed or a word its scorer disowned, "up" for one they took back, null
+ * before anything has moved it.
+ *
+ * The two sources are ordered against each other in *time*, because they arrive
+ * differently: a revealed strike lands at `startedAt + timeOf[step]`, while a
+ * manual mark carries the server time it was made. Without that comparison a
+ * restore would leave the stat green for the next revealed strike to land on.
+ */
+export function uniqueDirection(
+  schedule: RevealSchedule,
+  card: CardView,
+  startedAt: number,
+): "up" | "down" | null {
+  const strikeAt =
+    card.struckAt === null ? null : startedAt + schedule.timeOf[card.struckAt];
+  if (card.selfMarkAt === null) return strikeAt === null ? null : "down";
+  if (strikeAt !== null && strikeAt > card.selfMarkAt) return "down";
+  return card.selfDirection === "restored" ? "up" : "down";
+}
+
+/**
+ * `results` as the round is actually placed and archived: every self-struck row
+ * loses its `unique` and each scorer's count is recomputed from what is left.
+ *
+ * A disowned word keeps its `group`, which leaves it as the only member of its
+ * cluster — not-unique and alone — and that is precisely the signature of a
+ * self-strike in the archive, so nothing extra has to be recorded to spot one.
+ *
+ * Returns the identical object when nothing was marked, so the ordinary path
+ * costs nothing and `reduce`'s no-op identity check still holds.
+ */
+export function withSelfStrikes(results: Results, marks: SelfMarks): Results {
+  if (marks.last === null) return results;
+  let touched = false;
+  const scorers = results.scorers.map((scorer) => {
+    let changed = false;
+    const entries = scorer.entries.map((entry, index) => {
+      if (!entry.unique) return entry;
+      if (!isSelfStruck(marks, rowKey(scorer.id, index))) return entry;
+      changed = true;
+      return { ...entry, unique: false };
+    });
+    if (!changed) return scorer;
+    touched = true;
+    return { ...scorer, entries, unique: entries.filter((e) => e.unique).length };
+  });
+  return touched ? { scorers } : results;
 }
 
 /** Final order: unique descending, then total descending. Stable beyond that. */

@@ -13,7 +13,10 @@ import {
   rowView,
   seededRng,
   stepAt,
+  uniqueDirection,
+  withSelfStrikes,
 } from "./reveal";
+import { NO_SELF_MARKS, toggleMark } from "./selfstrike";
 import { scoreRound } from "./scoring";
 import type { Results } from "./scoring";
 import type { Scorer } from "./teams";
@@ -342,6 +345,9 @@ describe("cardView", () => {
       flinchAt: null,
       strikeCount: 0,
       flinchCount: 0,
+      selfMarkCount: 0,
+      selfDirection: null,
+      selfMarkAt: null,
     });
   });
 
@@ -593,5 +599,179 @@ describe("flash ordinals", () => {
       (_, step) => rowView(schedule, first, 0, step).popCount,
     );
     expect(counts).toEqual([0, 0, 1, 2]);
+  });
+});
+
+describe("self-validation", () => {
+  const marksFor = (...rows: string[]) =>
+    rows.reduce((marks, row, i) => toggleMark(marks, row, true, 1_000 + i), NO_SELF_MARKS);
+
+  test("a self-struck row reads struck and marked, and its partners are unchanged", () => {
+    const results = score([["adele", "cher"], ["cher"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    const marks = marksFor(rowKey("p1", 0));
+
+    const row = rowView(schedule, "p1", 0, schedule.lastStep, marks);
+    expect(row.selfStruck).toBe(true);
+    expect(row.selfMarks).toBe(1);
+    // `struck` stays the round's own verdict — adele was nobody else's word.
+    // The two are composed by the screens, never folded together here.
+    expect(row.struck).toBe(false);
+    expect(row.alsoShown).toEqual([]);
+  });
+
+  test("marks on one row leave every other row alone", () => {
+    const results = score([["adele", "cher"], ["cher"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    const marks = marksFor(rowKey("p1", 0));
+    expect(rowView(schedule, "p1", 1, schedule.lastStep, marks).selfStruck).toBe(false);
+    expect(rowView(schedule, "p2", 0, schedule.lastStep, marks).selfStruck).toBe(false);
+  });
+
+  test("a restore leaves the count behind so the animation can re-fire", () => {
+    const results = score([["adele"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    const key = rowKey("p1", 0);
+    const marks = toggleMark(marksFor(key), key, false, 2_000);
+    const row = rowView(schedule, "p1", 0, schedule.lastStep, marks);
+    expect(row.selfStruck).toBe(false);
+    expect(row.selfMarks).toBe(2);
+  });
+
+  test("UNIQUE drops on a self-strike and comes back on a restore", () => {
+    const results = score([["adele", "cher", "pink"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    const p1 = results.scorers[0];
+    const key = rowKey("p1", 1);
+
+    expect(cardView(schedule, p1, schedule.lastStep).unique).toBe(3);
+    const struck = marksFor(key);
+    expect(cardView(schedule, p1, schedule.lastStep, struck).unique).toBe(2);
+    const back = toggleMark(struck, key, false, 3_000);
+    expect(cardView(schedule, p1, schedule.lastStep, back).unique).toBe(3);
+  });
+
+  // The TV and the phone that made the mark have to show the same number, and
+  // the phone shows the whole list from the first frame.
+  test("a mark counts before its row has been revealed", () => {
+    const results = score([["adele", "cher"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    const marks = marksFor(rowKey("p1", 1));
+    expect(cardView(schedule, results.scorers[0], 0, marks).unique).toBe(1);
+    expect(cardView(schedule, results.scorers[0], 0, marks).shown).toBe(0);
+  });
+
+  test("a duplicate cannot be marked down twice", () => {
+    const results = score([["adele"], ["adele"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    // A mark that should never have been accepted; `cardView` refuses to
+    // subtract the same word both as a duplicate and as a self-strike.
+    const marks = marksFor(rowKey("p1", 0));
+    const card = cardView(schedule, results.scorers[0], schedule.lastStep, marks);
+    expect(card.unique).toBe(0);
+    expect(card.selfMarkCount).toBe(0);
+  });
+
+  test("selfDirection and selfMarkAt follow only the last mark, on its own card", () => {
+    const results = score([["adele"], ["cher"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    const marks = toggleMark(marksFor(rowKey("p1", 0)), rowKey("p2", 0), true, 5_000);
+
+    const p1 = cardView(schedule, results.scorers[0], schedule.lastStep, marks);
+    expect(p1.selfDirection).toBeNull();
+    expect(p1.selfMarkAt).toBeNull();
+    expect(p1.selfMarkCount).toBe(1);
+
+    const p2 = cardView(schedule, results.scorers[1], schedule.lastStep, marks);
+    expect(p2.selfDirection).toBe("struck");
+    expect(p2.selfMarkAt).toBe(5_000);
+  });
+});
+
+describe("uniqueDirection", () => {
+  const startedAt = 10_000;
+
+  test("is null while nothing has moved the number", () => {
+    const results = score([["adele"], ["cher"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    const card = cardView(schedule, results.scorers[0], schedule.lastStep);
+    expect(uniqueDirection(schedule, card, startedAt)).toBeNull();
+  });
+
+  test("is down for a strike the reveal landed", () => {
+    const results = score([["adele"], ["adele"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    const card = cardView(schedule, results.scorers[0], schedule.lastStep);
+    expect(uniqueDirection(schedule, card, startedAt)).toBe("down");
+  });
+
+  test("is up for a restore made after the last revealed strike", () => {
+    const results = score([["adele", "cher"], ["adele"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    const key = rowKey("p1", 1);
+    const marks = toggleMark(
+      toggleMark(NO_SELF_MARKS, key, true, 90_000),
+      key,
+      false,
+      91_000,
+    );
+    const card = cardView(schedule, results.scorers[0], schedule.lastStep, marks);
+    expect(uniqueDirection(schedule, card, startedAt)).toBe("up");
+  });
+
+  // Without ordering the two sources in time, a restore would leave the stat
+  // green for the next revealed strike to land on.
+  test("a later revealed strike wins over an earlier restore", () => {
+    const results = score([["adele", "cher"], ["adele"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    const key = rowKey("p1", 1);
+    // Marked and taken back in the first millisecond, before any line was out.
+    const marks = toggleMark(toggleMark(NO_SELF_MARKS, key, true, 1), key, false, 2);
+    const card = cardView(schedule, results.scorers[0], schedule.lastStep, marks);
+    expect(card.selfDirection).toBe("restored");
+    expect(uniqueDirection(schedule, card, startedAt)).toBe("down");
+  });
+});
+
+describe("withSelfStrikes", () => {
+  test("returns the identical object when nothing was marked", () => {
+    const results = score([["adele"], ["cher"]]);
+    expect(withSelfStrikes(results, NO_SELF_MARKS)).toBe(results);
+  });
+
+  test("clears the entry's unique and recomputes the scorer's count", () => {
+    const results = score([["adele", "cher", "pink"], ["sia"]]);
+    const marks = toggleMark(NO_SELF_MARKS, rowKey("p1", 1), true, 1_000);
+    const placed = withSelfStrikes(results, marks);
+
+    const p1 = placed.scorers[0];
+    expect(p1.entries.map((e) => e.unique)).toEqual([true, false, true]);
+    expect(p1.unique).toBe(2);
+    // A disowned word is not-unique and alone in its collision group, which is
+    // exactly how the archive can tell one from a real collision.
+    expect(p1.entries[1].group).toBe(results.scorers[0].entries[1].group);
+    // Untouched scorers keep their identity, so nothing downstream re-renders.
+    expect(placed.scorers[1]).toBe(results.scorers[1]);
+  });
+
+  test("leaves the original results alone", () => {
+    const results = score([["adele"]]);
+    withSelfStrikes(results, toggleMark(NO_SELF_MARKS, rowKey("p1", 0), true, 1));
+    expect(results.scorers[0].unique).toBe(1);
+    expect(results.scorers[0].entries[0].unique).toBe(true);
+  });
+
+  test("a restored row is scored again", () => {
+    const results = score([["adele"]]);
+    const key = rowKey("p1", 0);
+    const marks = toggleMark(toggleMark(NO_SELF_MARKS, key, true, 1), key, false, 2);
+    expect(withSelfStrikes(results, marks).scorers[0].unique).toBe(1);
+  });
+
+  test("ignores a mark on a word that was already a duplicate", () => {
+    const results = score([["adele"], ["adele"]]);
+    const marks = toggleMark(NO_SELF_MARKS, rowKey("p1", 0), true, 1);
+    // Already not unique, so there is nothing to clear and no count to change.
+    expect(withSelfStrikes(results, marks).scorers[0].unique).toBe(0);
   });
 });

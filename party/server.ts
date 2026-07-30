@@ -10,6 +10,8 @@ import { DEFAULT_DURATION_SEC } from "../shared/categories";
 import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes";
 import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
 import { SCORING_VERSION, scoreRound } from "../shared/scoring";
+import { withSelfStrikes } from "../shared/reveal";
+import { NO_SELF_MARKS } from "../shared/selfstrike";
 import { placeRound } from "../shared/standings";
 import {
   gameId as makeGameId, gameResultRows, gameStartRows, playedCategories,
@@ -237,6 +239,9 @@ export class W104 extends Server<Env> {
             ...scoring,
             startedAt: scoring.startedAt ?? Date.now(),
             skipped: scoring.skipped ?? false,
+            // Stored before self-validation existed: no marks, and every
+            // derivation reads the empty set as "nothing disowned".
+            selfMarks: scoring.selfMarks ?? NO_SELF_MARKS,
           };
         }
         return rest.phase;
@@ -523,6 +528,18 @@ export class W104 extends Server<Env> {
       case "fastForward":
         this.room = reduce(this.room, { t: "fastForward", playerId, now });
         break;
+      case "selfStrike":
+        this.room = reduce(this.room, {
+          t: "selfStrike",
+          playerId,
+          // A hand-rolled message can send anything at all here; `reduce`
+          // rejects an index that is not one of this scorer's rows, and
+          // `Number` keeps a string or a null from indexing the array at all.
+          index: Number(msg.index),
+          struck: msg.struck === true,
+          now,
+        });
+        break;
       case "backToLobby":
         this.room = reduce(this.room, { t: "backToLobby", playerId, now });
         break;
@@ -696,7 +713,10 @@ export class W104 extends Server<Env> {
     const state = this.archive;
     if (!state?.gameId || banked.phase.name !== "scoring") return;
     const window = state.round ?? { startedAt: now, endedAt: now };
-    const results = banked.phase.results;
+    // The self-validated round, which is the one that was scored and placed.
+    // A disowned word archives as not-unique and alone in its collision group —
+    // see `withSelfStrikes`.
+    const results = withSelfStrikes(banked.phase.results, banked.phase.selfMarks);
 
     this.archiveInBackground((async () => {
       await archiveRound(

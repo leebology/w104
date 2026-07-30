@@ -153,6 +153,7 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
           playerId={getPlayerId()}
           startedAt={room.phase.startedAt}
           skipped={room.phase.skipped}
+          marks={room.phase.selfMarks}
         />
       );
     case "standings":
