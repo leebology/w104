@@ -11,6 +11,9 @@ import type { NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, balanceTeams, makeTeams, rosterOf, teamsEnabled } from "./teams";
 import type { TeamId } from "./teams";
+import { MIN_TEAM_COUNT } from "./gamemodes";
+import type { ViewId } from "./views";
+import { isHuman, isWaiting, seatBots, setBotCount } from "./bots";
 
 export const COUNTDOWN_MS = 5_000;
 /** One voting window per match, whatever the round count. */
@@ -77,6 +80,19 @@ export type RoomEvent =
   | { t: "debugPause"; playerId: PlayerId; paused: boolean; now: number }
   | { t: "debugSkip"; playerId: PlayerId; now: number }
   /**
+   * Host-only, legal from **every** phase: put the room on the named screen.
+   * `roll` is the category draw's, for the one target that needs it. See
+   * `jumpTo`.
+   */
+  | { t: "debugJump"; playerId: PlayerId; to: ViewId; roll: number; now: number }
+  /**
+   * Host-only, legal from every phase: set the placeholder-bot population to
+   * exactly `count` (0..MAX_BOTS). Absolute rather than an add/remove delta so
+   * a double-tapped button cannot drift the room away from what the panel is
+   * showing. See `shared/bots.ts`.
+   */
+  | { t: "debugBots"; playerId: PlayerId; count: number; now: number }
+  /**
    * Host-only, `scoring` only: land every outstanding strike at once. In state
    * rather than as a client-side control because the phones are watching the
    * same reveal — a skip only the TV knew about would leave them crawling
@@ -111,10 +127,14 @@ const mapPlayer = (
  * all: MIN_PLAYERS in the lobby and at standings, but 1 during voting — the
  * match has already begun by then, and a host solo-start has to be able to
  * close its own vote.
+ *
+ * Debug bots are inert on both halves — excluded from the floor, and always
+ * counted as waiting. Scenery must neither hold a room down nor make one
+ * startable that would not have started without it. See `shared/bots.ts`.
  */
 function everyoneReady(room: Room, min: number): boolean {
   const active = room.players.filter((p) => p.connected);
-  return active.length >= min && active.every((p) => p.ready);
+  return active.filter(isHuman).length >= min && active.every(isWaiting);
 }
 
 function openCountdown(room: Room, now: number, to: "voting" | "playing"): Room {
@@ -176,7 +196,14 @@ function enterTeams(room: Room): Room {
     ...room,
     phase: { name: "teams" },
     teams,
-    players: room.players.map((p) => ({ ...p, ready: false, teamId: null })),
+    // Clearing membership is what stops `settle` closing team select the
+    // instant it opens; the bots are then put straight back on teams, because
+    // a placeholder has nothing to pick with and an empty panel is the one
+    // thing this screen is dressed to avoid.
+    players: seatBots(
+      room.players.map((p) => ({ ...p, ready: false, teamId: null })),
+      teams,
+    ),
   };
 }
 
@@ -315,6 +342,168 @@ function inTeamSelect(room: Room): boolean {
   );
 }
 
+const unready = (players: Player[]): Player[] =>
+  players.map((p) => ({ ...p, ready: false }));
+
+/**
+ * Stands the teams up as team select would have left them: the teams exist and
+ * everybody is on one.
+ *
+ * Everything downstream of team select assumes that, and gets it for free
+ * because the only way past team select is through it. A **jump skips that
+ * edge**, so a team match dropped straight into a round would otherwise reach
+ * `rosterOf` with no teams — and `rosterOf` drops empty ones, so the round
+ * would have no scorers at all and the results screen nothing to show.
+ *
+ * A no-op with teams off, which is why every jump past the lobby can call it
+ * unconditionally.
+ */
+function standUpTeams(room: Room): Room {
+  if (!teamsEnabled(room.settings)) return room;
+  const teams =
+    room.teams.length === room.settings.teamCount
+      ? room.teams
+      : makeTeams(room.settings.teamCount);
+  return { ...room, teams, players: assignStragglers(room.players, teams) };
+}
+
+/**
+ * Puts the room on the named screen, standing up whatever that screen needs.
+ *
+ * **A jump is not a transition.** It does not reset the match: history, votes
+ * and settings survive, because the point is to look at one screen without
+ * losing the state that makes it interesting. What it does do is satisfy each
+ * view's own preconditions, since it arrives from anywhere and cannot rely on
+ * the edge that normally leads there.
+ *
+ * Two of those preconditions are load-bearing rather than cosmetic:
+ *
+ * - **Readiness is cleared for every untimed target** — lobby, team select,
+ *   voting, results, standings. Left as it was, the very next event would
+ *   `settle` straight back out of the screen the jump just asked for.
+ * - **Readiness is *forced* for the countdowns**, and `reduce` skips `settle`
+ *   for this event entirely, exactly as it does for `startGame`. `settle`'s
+ *   countdown branch tears one down below MIN_PLAYERS, so without both a
+ *   countdown jumped to on a quiet room would revert on the next message.
+ *
+ * The words are not this function's business: `scoring` and `standings` are
+ * made of a round that has been typed, and standing that up means writing
+ * `entries`, which `reduce` deliberately does not own. `party/server.ts` deals
+ * the lists first and then jumps here. See `jumpToView`.
+ */
+function jumpTo(room: Room, to: ViewId, now: number, roll: number): Room {
+  // Cleared on every jump. A held round's `endsAt` is stale by design, so
+  // carrying the hold into a phase whose timer nothing can resume would freeze
+  // the room with no visible cause.
+  const base: Room = { ...room, paused: null };
+
+  switch (to) {
+    case "lobby":
+      return { ...base, phase: { name: "lobby" }, players: unready(base.players) };
+
+    case "teams": {
+      // Team select does not exist with teams off, so asking for it turns them
+      // on. A jump is allowed to move a setting — that is what separates it
+      // from a request, which `setSettings` would refuse outside the lobby.
+      const settings = teamsEnabled(base.settings)
+        ? base.settings
+        : { ...base.settings, teamCount: MIN_TEAM_COUNT };
+      // `teams: []` forces a rebuild rather than keeping the panels: a jump to
+      // team select is a fresh one, and the names typed on the last pass belong
+      // to it. `enterTeams` also clears readiness and membership, which is what
+      // keeps `settle` from closing team select the instant it opens.
+      return enterTeams({ ...base, settings, teams: [] });
+    }
+
+    case "countdownToVoting":
+    case "countdownToPlaying": {
+      const staged = standUpTeams(base);
+      return {
+        ...staged,
+        // Forced, not cleared — see the note above.
+        players: staged.players.map((p) => ({ ...p, ready: true })),
+        phase: {
+          name: "countdown",
+          endsAt: now + COUNTDOWN_MS,
+          to: to === "countdownToVoting" ? "voting" : "playing",
+        },
+      };
+    }
+
+    case "voting": {
+      const staged = standUpTeams(base);
+      return {
+        ...staged,
+        phase: { name: "voting", endsAt: now + VOTING_MS },
+        players: unready(staged.players),
+        // `ready` means "votes spent" on this side of the edge, so the tally has
+        // to start empty or the cleared flags disagree with the votes behind
+        // them. The same pairing the `countdown -> voting` tick makes.
+        votes: {},
+      };
+    }
+
+    case "playing": {
+      const staged = standUpTeams(base);
+      return {
+        ...staged,
+        // Drawn here for the same reason the whistle draws it: `playing` is the
+        // first screen that shows the category, so it is the first that needs
+        // one. Weighted by whatever votes the room has, uniform when it has none.
+        category: pickCategory(staged.votes, spentCategories(staged), roll),
+        phase: { name: "playing", endsAt: now + staged.settings.durationSec * 1_000 },
+        // A round starts empty. This is also what makes jumping to `playing`
+        // the way to re-run a round from the top, rather than resuming into a
+        // list somebody already filled.
+        entries: {},
+      };
+    }
+
+    case "timesup":
+      // Entries survive: this is the end of a round, and the scoring screen it
+      // falls into three seconds later is made of them.
+      return {
+        ...standUpTeams(base),
+        phase: { name: "timesup", endsAt: now + TIMESUP_MS },
+      };
+
+    case "scoring": {
+      const staged = standUpTeams(base);
+      return {
+        ...staged,
+        phase: {
+          name: "scoring",
+          // Re-scored from `entries` rather than carried over from a `scoring`
+          // phase already on screen, so a refresh picks up any word dealt since
+          // — and so the reveal's schedule is rebuilt from the same input the
+          // real transition builds it from.
+          results: scoreRound({ scorers: rosterOf(staged), entries: staged.entries }),
+          startedAt: now,
+          skipped: false,
+          // A refresh is a fresh reveal, and the marks belonged to the last one.
+          selfMarks: NO_SELF_MARKS,
+        },
+        players: unready(staged.players),
+      };
+    }
+
+    case "standings": {
+      const staged = standUpTeams(base);
+      // Arriving from the results screen banks the round on it, exactly as the
+      // host's Standings button does — so the round the room was just shown
+      // lands in history and earns its badge, rather than being dropped on the
+      // way to the screen that would have displayed it.
+      if (staged.phase.name === "scoring") {
+        return bankRound(
+          staged,
+          withSelfStrikes(staged.phase.results, staged.phase.selfMarks),
+        );
+      }
+      return { ...staged, phase: { name: "standings" }, players: unready(staged.players) };
+    }
+  }
+}
+
 export function reduce(room: Room, ev: RoomEvent): Room {
   const next = apply(room, ev);
   if (next === room) return room;
@@ -322,7 +511,12 @@ export function reduce(room: Room, ev: RoomEvent): Room {
   // `startGame` already decided the countdown transition itself, overriding
   // MIN_PLAYERS as a deliberate host action. Running it back through
   // `settle`'s everyoneReady gate would immediately revert a solo start.
-  return ev.t === "startGame" ? withTime : settle(withTime, ev.now);
+  //
+  // `debugJump` is skipped for the same reason and one more: it has just built
+  // the exact phase it was asked for, and `settle` exists to derive a phase
+  // from readiness. Every countdown it can land on would be torn straight back
+  // down on a room below MIN_PLAYERS, which is most rooms a jump is used on.
+  return ev.t === "startGame" || ev.t === "debugJump" ? withTime : settle(withTime, ev.now);
 }
 
 function apply(room: Room, ev: RoomEvent): Room {
@@ -347,7 +541,10 @@ function apply(room: Room, ev: RoomEvent): Room {
       // Both checks sit below the returning-player branch above, so someone
       // already seated always gets back in.
       if (room.phase.name !== "lobby") return room;
-      if (room.players.length >= MAX_PLAYERS) return room;
+      // Bots do not count against the cap. Twenty of them fit on purpose, and
+      // a room dressed for a screenshot must not be a room real phones are
+      // locked out of.
+      if (room.players.filter(isHuman).length >= MAX_PLAYERS) return room;
       return {
         ...room,
         players: [...room.players, {
@@ -763,6 +960,58 @@ function apply(room: Room, ev: RoomEvent): Room {
       if (room.phase.name !== "playing") return room;
       if (room.paused === null && room.phase.endsAt <= ev.now) return room;
       return { ...room, phase: { ...room.phase, endsAt: ev.now }, paused: null };
+    }
+
+    /**
+     * Puts the room on any screen at all, from any screen at all.
+     *
+     * Host-only, like its two siblings, and enforced here rather than only in
+     * the panel — this moves every phone in the room, not just the TV.
+     *
+     * Unlike them it is **not** restricted to `playing`: "jump to a view" with a
+     * legal-phase list would be a jumper that could not reach most of what it
+     * lists. The phase it lands on is built by `jumpTo`.
+     *
+     * `viewNonce` is bumped unconditionally, and that is what makes a jump to
+     * the view the room is already on — the refresh button — a real change
+     * rather than a no-op returning the identical object. See `Room.viewNonce`.
+     */
+    case "debugJump": {
+      if (ev.playerId !== room.hostId) return room;
+      return {
+        ...jumpTo(room, ev.to, ev.now, ev.roll),
+        viewNonce: room.viewNonce + 1,
+      };
+    }
+
+    /**
+     * Dresses the room with placeholder players, or clears them away.
+     *
+     * Host-only and enforced here, like its siblings. Legal from every phase,
+     * because "see what this screen looks like with six players on it" is the
+     * entire point and most of those screens are not the lobby.
+     *
+     * Deliberately *not* exempt from `settle`: bots are inert by construction
+     * (`isWaiting`, and excluded from the readiness floor), so there is no
+     * countdown for `settle` to open or tear down on their account, and no
+     * reason to make this the third special case.
+     *
+     * A bot on a live results screen is scenery arriving late: `phase.results`
+     * was computed when the phase opened and is not recomputed here. Refreshing
+     * the view (`debugJump`) is what re-scores the room as it now stands.
+     */
+    case "debugBots": {
+      if (ev.playerId !== room.hostId) return room;
+      const players = setBotCount(room.players, ev.count);
+      if (players === room.players) return room;
+      // Bots trimmed away take their words with them, exactly as a kick does —
+      // `scoreRound` clusters by scorer, and a departed bot's list would
+      // otherwise keep striking through the words of players still on screen.
+      const live = new Set(players.map((p) => p.id));
+      const entries = Object.fromEntries(
+        Object.entries(room.entries).filter(([id]) => live.has(id)),
+      );
+      return { ...room, players: seatBots(players, room.teams), entries };
     }
 
     case "tick":

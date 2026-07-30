@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { Player } from "../../shared/state";
+import { isWaiting } from "../../shared/bots";
 
 /**
  * A stable animation interval per player, 0.9s–1.6s, so the dots and bobbing
@@ -25,11 +26,15 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
   // lifts off the page in gold and a waiting one sits flat and sunken, so the
   // host can read the room's state from the shape of the row alone, at a
   // distance where a tick mark is already gone.
+  // A debug bot reads as ready, matching the one predicate the rules use
+  // (`everyoneReady` never waits on one). A pill that sat flat forever while
+  // the room started anyway would misreport the only thing this pill says.
+  const ready = isWaiting(player);
   if (variant === "lobby") {
-    classes.push(player.ready ? "player-pill--ready" : "player-pill--waiting");
+    classes.push(ready ? "player-pill--ready" : "player-pill--waiting");
   }
   if (!player.connected) classes.push("player-pill--offline");
-  const bobbing = variant === "lobby" && !player.ready;
+  const bobbing = variant === "lobby" && !ready;
   return (
     <li className={classes.join(" ")}>
       <span
@@ -49,7 +54,7 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
           aria-hidden="true"
         />
       ) : (
-        player.ready && <span className="player-pill__mark">✓ READY</span>
+        ready && <span className="player-pill__mark">✓ READY</span>
       )}
       {onKick && (
         <button

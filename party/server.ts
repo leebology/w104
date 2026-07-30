@@ -9,6 +9,10 @@ import type { Entry, MatchSettings, PlayerId, Room } from "../shared/state";
 import { DEFAULT_DURATION_SEC } from "../shared/categories";
 import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes";
 import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
+import type { Scorer } from "../shared/teams";
+import { isHuman } from "../shared/bots";
+import { isViewId } from "../shared/views";
+import type { ViewId } from "../shared/views";
 import { SCORING_VERSION, scoreRound } from "../shared/scoring";
 import { withSelfStrikes } from "../shared/reveal";
 import { NO_SELF_MARKS } from "../shared/selfstrike";
@@ -184,6 +188,9 @@ export class W104 extends Server<Env> {
       // undefined `paused` would read as "held" to every `!== null` check —
       // freezing the round and stopping its alarm from ever advancing it.
       paused: rest.paused ?? null,
+      // Debug-only, so an absent one is harmless — but `undefined + 1` is NaN,
+      // and a NaN React key would stop remounting the view on every later jump.
+      viewNonce: rest.viewNonce ?? 0,
       teams: rest.teams ?? [],
       // Two backfills in one pass. `teamId` gives players stored before teams
       // existed a null slot, and `by` gives their words an author — redundant
@@ -317,8 +324,13 @@ export class W104 extends Server<Env> {
     // Only newcomers are capped. Someone already seated — including the tenth
     // player reconnecting after their phone locked — is `known` and skips
     // this, so the cap can never lock a player out of their own room. The
-    // host holds no player slot, hence the role check.
-    if (!known && role === "player" && this.room.players.length >= MAX_PLAYERS) {
+    // host holds no player slot, hence the role check. Debug bots hold none
+    // either — a room dressed with twenty of them must still take real phones.
+    if (
+      !known &&
+      role === "player" &&
+      this.room.players.filter(isHuman).length >= MAX_PLAYERS
+    ) {
       return this.reject(conn, "room-full", "That room is full.");
     }
 
@@ -405,27 +417,9 @@ export class W104 extends Server<Env> {
       if (playerId !== this.room.hostId) return;
       if (this.room.phase.name !== "playing") return;
 
-      const scorers = rosterOf(this.room);
-      const lists = fillWordsFor(scorers.length, DEFAULT_FILL_COUNT, Math.random);
-      scorers.forEach((scorer, i) => {
-        (lists[i] ?? []).forEach((word, w) => {
-          // Round-robin the authorship across a team's members, so a shared
-          // list ends up looking like several people typed it rather than one.
-          // With teams off every scorer has exactly one member and this is a
-          // no-op.
-          const author = scorer.members[w % scorer.members.length]!;
-          // Timestamps ascend so the merged team list sorts sensibly and the
-          // archive's `ms_into_round` is not a flat line.
-          this.room = submitEntry(this.room!, author, word, now + w).room;
-        });
-      });
-
+      const scorers = this.fillEveryList(now);
       await this.persist();
-      // One push per scorer, not per player: `sendEntriesToTeam` already fans
-      // out to every connected member of the scorer it is given.
-      for (const scorer of scorers) {
-        if (scorer.members[0]) this.sendEntriesToTeam(scorer.members[0]);
-      }
+      this.pushEntriesFor(scorers);
       // Deliberately no `broadcastState`: entry counts are not published, and
       // nothing in `RoomState` changed.
       return;
@@ -447,6 +441,37 @@ export class W104 extends Server<Env> {
     // `entries` is emptied, so a room read afterwards has no words left to
     // archive. See `maybeArchiveBank`.
     const before = this.room;
+
+    /**
+     * Debug: put the whole room on any screen, or restart the one it is on.
+     *
+     * Handled here rather than as one `switch` case because it is more than one
+     * `reduce` — a couple of the views are made of a round that has been typed,
+     * and standing that round up means writing `entries`, the one mutation
+     * `reduce` deliberately does not own. `jumpToView` sequences it; the
+     * archive check, the persist and the broadcast below are the ordinary tail,
+     * spelled out because the entry push has to sit between two of them.
+     *
+     * Host-only, checked here *and* in `shared/reduce.ts`.
+     */
+    if (msg.type === "debugJump") {
+      if (playerId !== this.room.hostId) return;
+      // The catalog is the gate, not the client: `to` is whatever the socket
+      // said, and an unknown id would fall off the end of `jumpTo`'s switch and
+      // return undefined as a `Room`.
+      if (!isViewId(msg.to)) return;
+      const filled = this.jumpToView(msg.to, playerId, now);
+      // A jump *out of a real scoring screen* into standings banks that round
+      // like any other, so it archives like any other. A jump that stood the
+      // round up itself cannot reach this: `before` is the room as the message
+      // arrived, and that room was not on `scoring`. Synthetic rounds therefore
+      // stay out of the archive for free, with nothing checking for them.
+      this.maybeArchiveBank(before, now);
+      await this.persist();
+      if (filled) this.pushEntriesFor(filled);
+      this.broadcastState();
+      return;
+    }
 
     switch (msg.type) {
       case "setProfile":
@@ -570,6 +595,16 @@ export class W104 extends Server<Env> {
       case "debugSkip":
         this.room = reduce(this.room, { t: "debugSkip", playerId, now });
         break;
+      case "debugBots":
+        this.room = reduce(this.room, {
+          t: "debugBots",
+          playerId,
+          // A hand-rolled message can send anything at all; `setBotCount`
+          // clamps and floors, so a non-number only has to arrive as one.
+          count: Number(msg.count),
+          now,
+        });
+        break;
       case "setTeamName":
         this.room = reduce(this.room, {
           t: "setTeamName",
@@ -659,6 +694,97 @@ export class W104 extends Server<Env> {
           : this.endRoom("no-such-room", "This game expired."));
         return;
     }
+  }
+
+  // ---- debug view jumper ----
+
+  /**
+   * Deals a plausible list to every scorer and returns the scorers it dealt to.
+   *
+   * Loops `submitEntry` rather than writing `entries` directly, which is what
+   * keeps every existing rule — phase, duplicates within a scorer,
+   * `MAX_ENTRIES`, the team-merged list — in force for free, instead of a second
+   * write path free to drift from the one real players use. Requires the room to
+   * be on `playing`, for exactly that reason.
+   */
+  private fillEveryList(now: number): Scorer[] {
+    const scorers = rosterOf(this.room!);
+    const lists = fillWordsFor(scorers.length, DEFAULT_FILL_COUNT, Math.random);
+    scorers.forEach((scorer, i) => {
+      (lists[i] ?? []).forEach((word, w) => {
+        // Round-robin the authorship across a team's members, so a shared
+        // list ends up looking like several people typed it rather than one.
+        // With teams off every scorer has exactly one member and this is a
+        // no-op.
+        const author = scorer.members[w % scorer.members.length]!;
+        // Timestamps ascend so the merged team list sorts sensibly and the
+        // archive's `ms_into_round` is not a flat line.
+        this.room = submitEntry(this.room!, author, word, now + w).room;
+      });
+    });
+    return scorers;
+  }
+
+  /**
+   * Pushes each scorer's merged list to its own connected members. One send per
+   * *scorer*, not per player: `sendEntriesToTeam` already fans out to everybody
+   * on the list it is given.
+   */
+  private pushEntriesFor(scorers: Scorer[]): void {
+    for (const scorer of scorers) {
+      if (scorer.members[0]) this.sendEntriesToTeam(scorer.members[0]);
+    }
+  }
+
+  /** Whether anybody has a word down. See `jumpToView`. */
+  private hasWords(): boolean {
+    return Object.values(this.room?.entries ?? {}).some((list) => list.length > 0);
+  }
+
+  /**
+   * Carries out one view jump, standing up a round first for the two views that
+   * are made of one.
+   *
+   * `scoring` and `standings` are the whole reason this is a sequence rather
+   * than a single `reduce`. A jump can arrive from a lobby where nobody has
+   * typed anything, and a results screen with no words has nothing to reveal —
+   * so the room is walked through `playing`, dealt a set of lists, and then
+   * jumped on. That chain is also why the fill is reused rather than the entries
+   * written straight: it goes through `playing` precisely so `submitEntry`'s
+   * rules apply to the synthetic words too.
+   *
+   * The two synthesis guards are different on purpose. `scoring` stands a round
+   * up whenever there are no words, so refreshing the results screen re-reveals
+   * the same list rather than an empty one. `standings` additionally requires an
+   * **empty history**: without that, every press of refresh on the standings
+   * screen would deal a fresh round and bank it, and the match would grow a
+   * round per press.
+   *
+   * Returns the scorers whose lists it wrote, or null when it wrote none.
+   */
+  private jumpToView(to: ViewId, playerId: PlayerId, now: number): Scorer[] | null {
+    const jump = (target: ViewId) => {
+      // A fresh roll per jump. Only `playing` spends it — on the category draw.
+      this.room = reduce(this.room!, {
+        t: "debugJump", playerId, to: target, roll: Math.random(), now,
+      });
+    };
+
+    const synthesize =
+      to === "scoring"
+        ? !this.hasWords()
+        : to === "standings" && this.room!.history.length === 0 && !this.hasWords();
+
+    let filled: Scorer[] | null = null;
+    if (synthesize) {
+      jump("playing");
+      filled = this.fillEveryList(now);
+      jump("scoring");
+    }
+    // Already there when we synthesized for it; the second jump would only
+    // re-roll the same reveal.
+    if (!(synthesize && to === "scoring")) jump(to);
+    return filled;
   }
 
   // ---- score archive ----

@@ -3813,6 +3813,47 @@ ul, ol { list-style: none; }
 
 .debug-btn--wide { width: 100%; text-align: left; padding: 7px 10px; }
 
+/* Two columns, so nine views are five rows rather than nine — the whole list
+   has to be visible at once for the play order to read as a map of the match. */
+.debug-views {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.debug-view {
+  text-align: left;
+  padding: 6px 8px;
+  /* Labels differ by a word ("Countdown → vote" / "Countdown → round"), so a
+     truncated one would name the wrong target. Wrap instead. */
+  white-space: normal;
+  line-height: 1.25;
+}
+
+/* Marked, never disabled: a jump to the view already showing is the refresh. */
+.debug-view--here {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+/* One row: the two nudge buttons sit either side of the readout, so the count
+   is between the controls that change it rather than above them. */
+.debug-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.debug-stepper__value {
+  /* Fixed, so stepping 9 → 10 does not shuffle the buttons sideways. */
+  min-width: 62px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--teal);
+}
+
 /* ---- the collapsed usage strip ---- */
 
 .debug-mini {
