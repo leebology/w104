@@ -378,6 +378,36 @@ only chance to have a keyboard up when `playing` begins off a timer. Do not
 move that input into a phase-specific screen, and keep it out of a `<form>`
 (triggers Safari's AutoFill bar).
 
+### The scoring reveal
+
+`HostScoring` plays a round's results as three frames — deal in, reveal line by
+line, swap into final order. Its state is `phase` plus **one integer**, `step`,
+and every visible thing derives from that integer against a schedule built once
+in `shared/reveal.ts`: which words are out, which are struck, whose emoji trails
+them, what each UNIQUE reads, what rank each card ends on. Rules to keep:
+
+- **Nothing is stored per row and nothing is diffed.** This is what makes FAST
+  FORWARD `setStep(lastStep)` rather than a second code path, and it is why the
+  animation classes' A/B flash parity is derived from the step a strike landed
+  on rather than tracked. A rule that needs its own piece of state belongs in
+  `shared/reveal.ts` as a derivation.
+- **A row is struck once any partner is already on screen.** Back-checking falls
+  out of that with nothing watching for it, and `struckAt` is never earlier than
+  the row's own step, so a word never appears pre-struck.
+- **`flinchAt` is back-check strikes only** — the active card does not flinch at
+  its own words.
+- **The strike partners are re-derived here, not carried on `ScoredEntry`.**
+  `alsoBy` keeps scorer ids, and the reveal needs the matching *rows*, because a
+  word strikes at the step another column lands it. Re-clustering with the same
+  `normalize`/`isMatch` leaves the wire format and the stored `Room` alone.
+- **The frame-3 swap is measured, never calculated.** The DOM stays in deal
+  order; columns are translated by `getBoundingClientRect` deltas, so the grid's
+  arithmetic is not duplicated in the driver.
+- **The marquee is measured too, and must not use `container-type`** — that
+  zeroes an element's intrinsic width and collapses a shrink-to-fit team badge.
+  `src/marquee.ts` re-measures on `document.fonts.ready`, because Bungee lands
+  after first paint and a mount-only measurement says "it fits".
+
 ## Docs
 
 - `docs/superpowers/specs/2026-07-25-w104-mvp-design.md` — the design spec:
@@ -411,6 +441,11 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
   GraphQL request per metric, the per-account Workers allowance, why Vercel is
   a link rather than a bar. **§12 is the round controls** — pause, skip,
   auto-fill, experiment flags, and why each is host-only. Implemented.
+- `docs/superpowers/specs/2026-07-29-host-scoring-reveal-design.md` — the host
+  results screen and its three-frame reveal: the merged card, the derive-from-one-
+  integer schedule, the strike/back-check rule, the measured swap, the podium and
+  the guarded footer swap. Read with `design_handoff_host_scoring_reveal/README.md`,
+  which is the brief it answers. Implemented.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.

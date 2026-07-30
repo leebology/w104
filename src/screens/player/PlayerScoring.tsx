@@ -1,5 +1,6 @@
 import { TeamBadge } from "../../components/TeamBadge";
 import { WordList } from "../../components/WordList";
+import { useMarquee } from "../../marquee";
 import { currentRound } from "../../../shared/state";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import type { Results } from "../../../shared/scoring";
@@ -9,6 +10,8 @@ type Props = { room: RoomState; results: Results; playerId: PlayerId };
 /** Your own results, on your own phone — the same two cards as one host column. */
 export function PlayerScoring({ room, results, playerId }: Props) {
   const me = results.scorers.find((s) => s.members.includes(playerId));
+  // A word too long for the phone's column clips and travels, same as on the TV.
+  const list = useMarquee<HTMLDivElement>([me?.entries]);
   const emojiOf = (id: string) => room.players.find((p) => p.id === id)?.emoji ?? "";
   // A team has no emoji of its own, so it identifies itself by name in the
   // "somebody else had this too" trail.
@@ -70,7 +73,7 @@ export function PlayerScoring({ room, results, playerId }: Props) {
         )}
       </div>
 
-      <div className="card list-card">
+      <div className="card list-card" ref={list}>
         <WordList
           entries={me.entries}
           size={19}
