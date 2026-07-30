@@ -192,6 +192,47 @@ replaced wholesale on each `state` push; every client action is a *request*.
   stays down. The flag is cleared on host disconnect — otherwise a locked phone
   freezes the room until the grace reap.
 
+### Room codes and the connect budget
+
+A code is one four-letter word from `CODE_WORDS` (`shared/words.ts`),
+uppercased. Four letters because Landing's join control is four single-letter
+`[A-Z]` boxes; real words because the code is read off a TV and shouted across
+a room. Those two constraints are fixed; the length of the list is not.
+
+- **The list length is a capacity number, not a cosmetic one.** Creation is
+  self-guarding — the DO refuses an occupied code, the client rolls another,
+  capped at `MAX_CODE_ATTEMPTS` — so a create fails at roughly
+  `(live rooms / list length)^6`. At the original 85 words that was ~12% with
+  sixty games running. `words.test.ts` floors the list at 600 for that reason;
+  the old floor of 64 was what let an 85-word list through review.
+- **The floor is slack on purpose, and words get deleted on taste.** A code has
+  to survive being shouted across a room, so the list holds no homophones, no
+  silent-letter spellings, no words with two pronunciations, no `grey`/`gray`
+  variants and no function words — see the header in `shared/words.ts`. Striking
+  another word off is a one-line change that needs no thought about anything
+  else: nothing indexes into `CODE_WORDS`, and a live room keyed by a word just
+  removed keeps working, because a room is found by DO name and never validated
+  against this list.
+- **No word list solves enumeration — the budget does.** A room's code *is* its
+  DO name, so walking the code space enumerates every live lobby, and ~800
+  codes is still only ~800 requests. `rateLimited()` in `party/server.ts`
+  meters room connects per client IP; growing `CODE_WORDS` only raises the cost
+  of a sweep, it never closes it.
+- **`JOIN_LIMITER` is optional in `Env`, and a missing limiter means no
+  limiting.** `wrangler dev` requests carry no `CF-Connecting-IP` and an
+  environment deployed before the binding existed has none — neither may fail
+  closed and take the games down with it.
+- **Each environment needs its own `namespace_id`** (1001 production, 1002
+  staging). Counters are shared account-wide by that number, so a shared one
+  would have phone testing spending the budget of people actually playing.
+  Named environments do not inherit `ratelimits`, same as the other bindings.
+- The budget sits above what `MAX_PLAYERS` phones behind one household NAT plus
+  partysocket's reconnects can need, and far below a walk of the code space. It
+  is per Cloudflare location and keyed on address, so it stops enumeration from
+  one machine and not from a botnet — an accepted trade, since what a sweep
+  yields is joinable lobbies, never word lists (`toRoomState` strips them) and
+  never a running game (`onConnect` refuses it).
+
 ### Identity, sessions, and kicks
 
 Three distinct ids, easy to confuse:

@@ -37,14 +37,29 @@
       "migrations_dir": "migrations"
     }
   ],
+  // Per-IP budget on room connects, so the four-letter code space cannot be
+  // walked to enumerate live lobbies — see `rateLimited` in party/server.ts for
+  // what this does and does not buy.
+  //
+  // `namespace_id` is the counter's identity: any binding anywhere in the
+  // account sharing this number shares its counters. Staging therefore uses a
+  // DIFFERENT one below, or an afternoon of phone testing would spend the
+  // budget real players are using. `period` accepts only 10 or 60.
+  "ratelimits": [
+    {
+      "name": "JOIN_LIMITER",
+      "namespace_id": "1001",
+      "simple": { "limit": 60, "period": 60 }
+    }
+  ],
   // `new_sqlite_classes` (not `new_classes`) is required for Durable Objects on
   // the Cloudflare free plan. Do not change to new_classes — it needs a paid plan.
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["W104"] }],
-  // Named environments do NOT inherit durable_objects or d1_databases bindings
-  // from the top level, so both must be repeated here. Migrations are
-  // top-level and apply to every environment already, so they are not
-  // repeated. Omitting the D1 block would not fail the deploy — it would fail
-  // at the first archive write, in production-shaped traffic.
+  // Named environments do NOT inherit durable_objects, d1_databases or
+  // ratelimits bindings from the top level, so all three must be repeated here.
+  // Migrations are top-level and apply to every environment already, so they
+  // are not repeated. Omitting the D1 block would not fail the deploy — it
+  // would fail at the first archive write, in production-shaped traffic.
   "env": {
     "staging": {
       "name": "w104-staging",
@@ -64,6 +79,16 @@
           "database_name": "w104-staging-archive",
           "database_id": "a7d51d00-5226-4c12-99d9-ccecb6d6ddc3",
           "migrations_dir": "migrations"
+        }
+      ],
+      // 1002, not 1001: counters are shared by namespace_id across the whole
+      // account, so reusing production's would have three phones on a sofa
+      // eating into the budget of the people actually playing.
+      "ratelimits": [
+        {
+          "name": "JOIN_LIMITER",
+          "namespace_id": "1002",
+          "simple": { "limit": 60, "period": 60 }
         }
       ]
     }
