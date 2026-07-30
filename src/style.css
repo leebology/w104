@@ -18,6 +18,30 @@
   --code-empty: #F6D9C6;  /* unfilled room-code box */
   --paper-lit: #FFF3C4;   /* the one cream card that is *yours* */
   --scroll-thumb: #C9B8A2;
+  --gold-dim: #7A5A00;    /* secondary text INSIDE a gold card — the gold twin of --ink-dim */
+  --ink-veil: rgba(26, 7, 16, 0.35);     /* a translucent ink outline drawn ON the pink field */
+  --cream-veil: rgba(255, 247, 232, 0.35); /* a surface that has emptied out — the dropped plinth */
+
+  /* The podium's paper ramp. A plinth gets dirtier the further down the
+     staircase it sits, so place reads as a material and not only as a height
+     — which is what carries the bottom of the board across a room, where the
+     step difference between 8th and 9th is a few pixels. Tier 1 is `--cream`;
+     the rest are the same paper mixed progressively further into the field.
+     Each tier's `-lip` is its own inset bottom edge, the shadow the step
+     casts on itself. */
+  --plinth-2: #FBEFDC;
+  --plinth-3: #F6E7CE;
+  --plinth-4: #EFDFC8;
+  --plinth-lip-1: #E7D3BE;  /* = --card-rule; named separately so the ramp reads as a ramp */
+  --plinth-lip-2: #E0CBB2;
+  --plinth-lip-3: #DCC5A9;
+  --plinth-lip-gold: rgba(26, 7, 16, 0.18);
+
+  /* Ready signalling on an ink pill. `--teal` is tuned for cream and pink and
+     goes muddy on ink, so the chip gets a lifted pair: mint for the word,
+     brighter mint for the dot. Nothing else in the app sits teal on ink. */
+  --mint: #7CE0D3;
+  --mint-lit: #00E0C6;
 
   /* The scoring reveal. `--penalty` is the strike moment — the word as the line
      draws through it, and the UNIQUE numeral as it drops. Darker and less
@@ -2312,97 +2336,797 @@ ul, ol { list-style: none; }
 
 /* ------------------------------------------------------- host standings */
 
-.host-standings {
-  padding: 0;
+.host-standings { padding: 0; }
+
+/* Everything the countdown dims. It is a flex column in its own right because
+   it stands in for `.screen--host` as the layout parent — the countdown has
+   to be a sibling of the whole board, not a row inside it. */
+.host-standings__stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
+/* The standings stay on screen through the count rather than being replaced
+   by it: they are what the room is still arguing about, and the number is an
+   interruption laid over them, not the next screen. */
+.host-standings__stage--dimmed {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.host-standings .host-header { padding: 18px 26px 0; }
+
 .host-standings__title {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  min-width: 0;
+}
+
+.host-standings__title h1 {
   font-family: var(--display);
-  font-size: clamp(18px, 2.2vw, 28px);
-  letter-spacing: 0.02em;
+  font-size: clamp(20px, 2.4vw, 30px);
+  line-height: 1.2;
   margin: 0;
 }
 
-/* The list is the only thing allowed to scroll — the footer button has to
-   stay on screen at ten players. */
-.standings-list {
+/* Says which direction is good, in the one place everybody looks first. Golf
+   scoring is inverted from every party-game scoreboard anyone has seen, and a
+   bare column of numbers cannot tell you that on its own. */
+.host-standings__title p {
+  font-size: clamp(11px, 1.2vw, 15px);
+  letter-spacing: 0.14em;
+  color: var(--cream-dim);
+  white-space: nowrap;
+}
+
+.host-standings__meta {
+  font-size: clamp(11px, 1.1vw, 14px);
+  letter-spacing: 0.16em;
+  color: var(--cream-dim);
+  white-space: nowrap;
+}
+
+/* The plaque family's teal member. Teal and not gold because gold is "go
+   forward" everywhere in this app, the gold button in the footer is still
+   live underneath it, and this is the one screen with nowhere further to go. */
+.plaque--over {
+  background: var(--teal);
+  color: var(--cream);
+  border-radius: 8px;
+  padding: 3px 14px;
+  font-size: clamp(15px, 1.9vw, 22px);
+  letter-spacing: 0.06em;
+  transform: rotate(-3deg);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.plaque--over-sm {
+  align-self: flex-start;
+  font-size: 18px;
+  transform: rotate(-4deg);
+}
+
+/* ---------------------------------------------------------------- podium */
+
+/* The staircase. Ordered strictly by rank, left to right, so 1st is always
+   leftmost — deliberately not the centred-podium arrangement, which only
+   orders its first three and leaves everyone behind them in a heap. This
+   board runs to ten. */
+.podium {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 14px 26px 0;
+}
+
+/* Full height with its contents pushed to the bottom, so the plinth's
+   percentage height resolves against the staircase and the stack above it
+   rides on top of the step wherever that step happens to end. */
+.podium-col {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 18px 28px;
-}
-
-/* Same accent convention as `.id-card`: a flat left border read from
-   `--accent`, for the same reason. Unconditional on purpose — see the
-   comment on `.id-card` for why a player's row, with no `--accent` set,
-   renders no border at all. */
-.standing-card {
-  display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 10px 18px;
-  border-left: 10px solid var(--accent);
+  justify-content: flex-end;
+  gap: 6px;
 }
 
-.standing-card__place {
-  font-family: var(--display);
-  font-size: clamp(22px, 2.6vw, 34px);
-  color: var(--ink);
-  min-width: 1.6em;
-}
+/* The winner gets a wider column as well as a taller one; their name is set
+   large enough that an equal share of nine would clip it. */
+.podium-col[data-rank="1"] { flex: 1.24; }
 
-.standing-card__avatar {
-  font-size: clamp(22px, 2.6vw, 34px);
-}
+.podium-col[data-state="dropped"] { opacity: 0.55; }
+.podium-col[data-state="dropped"] .podium-col__avatar { filter: grayscale(1); }
 
-/* A team has no avatar of its own — a flat block of its accent stands in,
-   sized to match the avatar it replaces. */
-.standing-card__swatch {
-  width: clamp(22px, 2.6vw, 34px);
-  height: clamp(22px, 2.6vw, 34px);
-  border-radius: var(--radius);
-  background: var(--accent);
+.podium-col__avatar {
+  font-size: clamp(18px, 2.1vw, 28px);
+  line-height: 1;
   flex: 0 0 auto;
 }
 
-.standing-card__name {
-  flex: 1;
-  font-weight: 700;
+.podium-col[data-rank="1"] .podium-col__avatar { font-size: clamp(30px, 3.6vw, 48px); }
+.podium-col[data-rank="2"] .podium-col__avatar,
+.podium-col[data-rank="3"] .podium-col__avatar { font-size: clamp(22px, 2.6vw, 34px); }
+.podium-col[data-rank="4"] .podium-col__avatar,
+.podium-col[data-rank="5"] .podium-col__avatar,
+.podium-col[data-rank="6"] .podium-col__avatar { font-size: clamp(20px, 2.3vw, 30px); }
+
+/* A team has no avatar of its own, so its members' stand in — the same trail
+   that follows a team name everywhere else. Two lines at most: a team of nine
+   must not push the step off the bottom of the screen. */
+.podium-col__roster {
+  font-size: clamp(13px, 1.5vw, 20px);
+  line-height: 1.15;
+  text-align: center;
+  max-width: 100%;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.podium-col__name {
+  font-family: var(--display);
+  font-size: clamp(10px, 1.15vw, 15px);
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.podium-col[data-rank="1"] .podium-col__name { font-size: clamp(16px, 2vw, 26px); }
+.podium-col[data-rank="2"] .podium-col__name,
+.podium-col[data-rank="3"] .podium-col__name { font-size: clamp(12px, 1.3vw, 17px); }
+.podium-col[data-rank="4"] .podium-col__name,
+.podium-col[data-rank="5"] .podium-col__name,
+.podium-col[data-rank="6"] .podium-col__name { font-size: clamp(11px, 1.25vw, 16px); }
+
+/* --------------------------------------------------------------- ribbon */
+
+/* The top three wear one. Height, tint and ribbon all carry the same fact,
+   which is the point: this is read from a sofa, and the top of the board is
+   what the room is looking for. Ties share it — two 2nd places both get the
+   teal, and nobody stands on 3rd. */
+.podium-ribbon {
+  position: relative;
+  width: 46px;
+  height: 52px;
+  flex: 0 0 auto;
+}
+
+.podium-ribbon__tail {
+  position: absolute;
+  bottom: 0;
+  width: 12px;
+  height: 24px;
+  border: 3px solid var(--ink);
+  background: var(--ribbon, var(--cream));
+  transform-origin: top center;
+}
+
+.podium-ribbon__tail--l { left: 11px; transform: rotate(-16deg); }
+.podium-ribbon__tail--r { right: 11px; transform: rotate(16deg); }
+
+.podium-ribbon__medal {
+  position: absolute;
+  top: 0;
+  left: 2px;
+  width: 38px;
+  height: 38px;
+  border-radius: 99px;
+  border: 3px solid var(--ink);
+  background: var(--ribbon, var(--cream));
   color: var(--ink);
+  display: grid;
+  place-items: center;
+  font-family: var(--display);
+  font-size: 12px;
+}
+
+.podium-col[data-rank="1"] .podium-ribbon { --ribbon: var(--gold); width: 66px; height: 74px; }
+.podium-col[data-rank="1"] .podium-ribbon__tail { width: 16px; height: 34px; }
+.podium-col[data-rank="1"] .podium-ribbon__tail--l { left: 17px; }
+.podium-col[data-rank="1"] .podium-ribbon__tail--r { right: 17px; }
+.podium-col[data-rank="1"] .podium-ribbon__medal {
+  left: 3px;
+  width: 54px;
+  height: 54px;
+  border: var(--border-heavy);
+  box-shadow: 3px 3px 0 var(--ink);
+  font-size: 20px;
+}
+
+.podium-col[data-rank="2"] .podium-ribbon { --ribbon: var(--teal); }
+.podium-col[data-rank="2"] .podium-ribbon__medal { color: var(--cream); }
+
+/* ------------------------------------------------------------ podium chip */
+
+.podium-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 99px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+/* Ready is the filled one — the room is counting these, so the state that
+   moves the match forward is the state that reads from a distance. */
+.podium-chip--ready { background: var(--ink); color: var(--mint); }
+
+.podium-chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--mint-lit);
+  flex: 0 0 auto;
+}
+
+.podium-chip--waiting,
+.podium-chip--dropped {
+  border: 2px solid var(--cream-dim);
+  color: var(--cream-dim);
+  padding: 1px 8px;
+}
+
+/* --------------------------------------------------------------- plinth */
+
+/* The step itself. `height` is a percentage of the staircase, set inline per
+   *place* — which is what makes two tied players stand at exactly the same
+   height and the whole ramp rescale with the TV instead of being pinned to
+   the 675px the design was drawn at.
+
+   No `overflow: hidden`, and top padding to spare: a team's badge overhangs
+   this corner. */
+.podium-plinth {
+  position: relative;
+  width: 100%;
+  height: var(--plinth);
+  min-height: 52px;
+  border: var(--border-heavy);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  background: var(--plinth-fill, var(--cream));
+  box-shadow: inset 0 -8px 0 var(--plinth-lip, var(--plinth-lip-1));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 8px 6px 6px;
+}
+
+.podium-col[data-rank="1"] .podium-plinth {
+  --plinth-fill: var(--gold);
+  box-shadow: inset 0 -10px 0 var(--plinth-lip-gold);
+}
+
+.podium-col[data-rank="4"] .podium-plinth { --plinth-fill: var(--plinth-2); }
+
+.podium-col[data-rank="5"] .podium-plinth,
+.podium-col[data-rank="6"] .podium-plinth {
+  --plinth-fill: var(--plinth-3);
+  --plinth-lip: var(--plinth-lip-2);
+}
+
+.podium-col[data-rank="7"] .podium-plinth,
+.podium-col[data-rank="8"] .podium-plinth,
+.podium-col[data-rank="9"] .podium-plinth {
+  --plinth-fill: var(--plinth-4);
+  box-shadow: inset 0 -7px 0 var(--plinth-lip-3);
+}
+
+/* Nobody is standing on it. Dashed and hollow, so an empty step reads as
+   empty from the back of the room rather than as a very low score. */
+.podium-col[data-state="dropped"] .podium-plinth {
+  background: var(--cream-veil);
+  border-style: dashed dashed none;
+  box-shadow: none;
+}
+
+.podium-plinth__place {
+  font-family: var(--display);
+  font-size: clamp(12px, 1.4vw, 16px);
+  line-height: 1;
+  color: var(--ink);
+}
+
+.podium-col[data-rank="1"] .podium-plinth__place { font-size: clamp(24px, 3vw, 40px); color: var(--ink-gold); }
+.podium-col[data-rank="2"] .podium-plinth__place,
+.podium-col[data-rank="3"] .podium-plinth__place { font-size: clamp(17px, 2vw, 26px); }
+.podium-col[data-rank="4"] .podium-plinth__place { font-size: clamp(15px, 1.7vw, 22px); }
+.podium-col[data-rank="5"] .podium-plinth__place,
+.podium-col[data-rank="6"] .podium-plinth__place { font-size: clamp(14px, 1.6vw, 20px); }
+.podium-col[data-rank="7"] .podium-plinth__place { font-size: clamp(13px, 1.5vw, 18px); }
+.podium-col[data-rank="8"] .podium-plinth__place { font-size: clamp(12px, 1.45vw, 17px); }
+
+.podium-plinth__note,
+.podium-plinth__points {
+  font-size: clamp(9px, 0.9vw, 12px);
+  letter-spacing: 0.1em;
+  line-height: 1;
+  color: var(--ink-dim);
+  text-align: center;
+}
+
+.podium-plinth__points { font-family: var(--display); }
+
+/* Inside a gold card, secondary text is the gold-dim twin of `--ink-dim` —
+   `--ink-dim` on gold is the one pairing in this palette that goes muddy. */
+.podium-col[data-rank="1"] .podium-plinth__note,
+.podium-col[data-rank="1"] .podium-plinth__points { color: var(--gold-dim); }
+
+/* The strip has to survive a ten-round match on a ninth-place step, so it
+   shrinks rather than wraps — a wrapped second row would push the place off
+   the top of a short plinth. */
+.badge-strip--plinth {
+  gap: 4px;
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.badge-strip--plinth .badge {
+  min-width: 0;
+  height: 18px;
+  padding: 0 5px;
+  border-width: 2px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+/* A chip has to stay visible against whatever step it is standing on: cream
+   against the dirtier paper lower down, the darker paper against cream, and
+   plain cream on gold — where a gold "1st" chip would disappear into the
+   winner's own plinth. */
+.podium-col[data-rank="1"] .badge-strip--plinth .badge {
+  background: var(--cream);
+  color: var(--ink);
+}
+
+.podium-col[data-rank="2"] .badge-strip--plinth .badge,
+.podium-col[data-rank="3"] .badge-strip--plinth .badge { background: var(--plinth-3); }
+
+/* A team is named by its badge here as everywhere else, never by a second
+   copy of the name in the column above. The step drops away from the stack
+   above it to make room for the overhang — a solo column has nothing to
+   clear and stays tight to its name. */
+.podium-plinth .team-badge { top: -11px; }
+.podium-col[data-team] .podium-plinth { margin-top: 14px; }
+
+/* --------------------------------------------------------- host footer */
+
+.host-standings__rule {
+  height: 5px;
+  background: var(--ink);
+  flex: 0 0 auto;
+  margin-top: 10px;
+}
+
+.host-standings__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 26px 16px;
+  flex: 0 0 auto;
+}
+
+.host-standings__count {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.host-standings__count > span {
+  font-family: var(--display);
+  font-size: clamp(12px, 1.3vw, 16px);
+  white-space: nowrap;
+}
+
+.host-standings__hint {
+  color: var(--cream-dim);
+  font-size: clamp(11px, 1.1vw, 14px);
+}
+
+/* ------------------------------------------------------- host countdown */
+
+/* Posed over the dimmed staircase. Square-cornered and tilted off the grid so
+   it reads as something dropped onto the screen rather than another card in
+   the layout. */
+.host-standings__countdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 20%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.get-ready-card {
+  background: var(--gold);
+  color: var(--ink-gold);
+  border: 5px solid var(--ink);
+  box-shadow: 0 14px 0 rgba(0, 0, 0, 0.28);
+  transform: rotate(-1.6deg);
+  padding: 14px clamp(28px, 5vw, 56px) 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.get-ready-card__label {
+  font-family: var(--display);
+  font-size: clamp(18px, 2vw, 26px);
+  letter-spacing: 0.2em;
+}
+
+.get-ready-card__count {
+  font-family: var(--display);
+  font-size: clamp(90px, 11vw, 150px);
+  line-height: 1;
+}
+
+.get-ready-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--ink);
+  border-radius: 99px;
+  padding: 8px 20px;
+  font-size: clamp(12px, 1.1vw, 14px);
+  color: var(--cream-dim);
+}
+
+.get-ready-note__round {
+  font-family: var(--display);
+  font-size: clamp(13px, 1.2vw, 15px);
+  color: var(--mint);
+}
+
+.get-ready-note__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: var(--mint-lit);
+  flex: 0 0 auto;
+  animation: pulseDot var(--pulse, 1.1s) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .get-ready-note__dot { animation: none; opacity: 1; transform: none; }
+}
+
+/* --------------------------------------------------- standings list view */
+
+/* The alternate to the podium, chosen in Game settings. Trades the
+   staircase's across-the-room shape for detail: every row carries its own
+   round-by-round breakdown and its full points at any place, which the podium
+   can only afford near the top of its ramp. */
+
+.list-explainer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 26px 10px;
+  flex: 0 0 auto;
+  font-size: clamp(12px, 1.2vw, 15px);
+  color: var(--cream-dim);
+}
+
+/* Teal, not gold: it is a statement of the rules, and gold on this screen is
+   the button that starts the next round. */
+.list-explainer__pill {
+  background: var(--teal);
+  color: var(--cream);
+  border: var(--border);
+  border-radius: 99px;
+  padding: 4px 14px;
+  font-family: var(--display);
+  font-size: clamp(12px, 1.2vw, 15px);
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+/* Rows grow to fill a short board and hold a floor on a full one, at which
+   point this box — and never the screen — is what scrolls. */
+/* A grid rather than a column, because the two-column board has to align its
+   rows across both columns — and `grid-auto-flow: column` is what fills *down*
+   the first column before starting the second, so reading order stays 1st to
+   last. `--cols` and `--rows` come from the component, which is the only place
+   that knows how many scorers there are. */
+.standings-rows {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 1), minmax(0, 1fr));
+  grid-template-rows: var(--rows);
+  grid-auto-flow: column;
+  gap: 8px;
+  padding: 0 26px;
+}
+
+/* No `overflow: hidden`, even though the place block runs to the row's edge:
+   the block carries its own left-side radius instead. Clipping the row would
+   also shave a team's badge, which is the one thing that must survive. */
+.standings-row {
+  min-height: 0;
+  min-width: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding-right: 20px;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-btn);
+}
+
+/* The leader gets the gold. It gets the extra height too, but only in the
+   single-column board — see the `--rows` track list in `StandingsList`. */
+.standings-row--lead {
+  gap: 18px;
+  background: var(--gold);
+  color: var(--ink-gold);
+  border: var(--border-heavy);
+  border-radius: var(--radius);
+  box-shadow: 7px 7px 0 var(--ink);
+}
+
+/* Two columns halve the width every row has, so everything in one steps down a
+   size and the leader stops being a special case for type. The board is denser
+   by definition at six-plus players; what it must not do is overflow. */
+.standings-rows--split .standings-row { gap: 10px; padding-right: 12px; }
+
+.standings-rows--split .standings-row__place { width: clamp(58px, 5.5vw, 76px); }
+.standings-rows--split .standings-row__ordinal,
+.standings-rows--split .standings-row--lead .standings-row__ordinal {
+  font-size: clamp(15px, 1.5vw, 21px);
+}
+.standings-rows--split .standings-row__sub,
+.standings-rows--split .standings-row--lead .standings-row__sub {
+  font-size: clamp(8px, 0.7vw, 9px);
+  letter-spacing: 0.1em;
+}
+.standings-rows--split .standings-row__avatar,
+.standings-rows--split .standings-row--lead .standings-row__avatar {
+  font-size: clamp(20px, 2vw, 28px);
+}
+.standings-rows--split .standings-row__roster { font-size: clamp(13px, 1.3vw, 17px); }
+.standings-rows--split .standings-row__name,
+.standings-rows--split .standings-row--lead .standings-row__name {
+  font-size: clamp(14px, 1.4vw, 19px);
+}
+.standings-rows--split .standings-row__who { gap: 8px; }
+.standings-rows--split .standings-row--lead .standings-row__who { flex-wrap: nowrap; }
+.standings-rows--split .standings-row__score { width: clamp(58px, 6vw, 84px); gap: 5px; }
+.standings-rows--split .standings-row__points,
+.standings-rows--split .standings-row--lead .standings-row__points {
+  font-size: clamp(22px, 2.3vw, 32px);
+}
+.standings-rows--split .standings-row__unit,
+.standings-rows--split .standings-row--lead .standings-row__unit {
+  font-size: clamp(9px, 0.85vw, 11px);
+}
+.standings-rows--split .list-chip,
+.standings-rows--split .standings-row--lead .list-chip {
+  padding: 2px 8px;
+  font-size: clamp(9px, 0.85vw, 10px);
+  letter-spacing: 0.06em;
+}
+
+.standings-row__place {
+  width: clamp(78px, 9vw, 112px);
+  flex: 0 0 auto;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: var(--plinth-3);
+  border-right: var(--border);
+  border-radius: 9px 0 0 9px;
+}
+
+/* Inverted for the leader — ink block, gold numerals. The only place on the
+   screen where the palette flips, which is what makes 1st unmistakable at a
+   glance without a second colour entering the design. */
+.standings-row--lead .standings-row__place {
+  background: var(--ink);
+  color: var(--gold);
+  border-right: none;
+  border-radius: 10px 0 0 10px;
+}
+
+.standings-row__ordinal {
+  font-family: var(--display);
+  font-size: clamp(18px, 2vw, 26px);
+  line-height: 1;
+}
+
+.standings-row--lead .standings-row__ordinal { font-size: clamp(26px, 2.9vw, 38px); }
+
+.standings-row__sub {
+  font-size: clamp(9px, 0.85vw, 10px);
+  letter-spacing: 0.14em;
+  color: var(--ink-dim);
+}
+
+.standings-row--lead .standings-row__sub {
+  color: var(--gold);
+  letter-spacing: 0.16em;
+  font-size: clamp(9px, 0.9vw, 11px);
+}
+
+.standings-row__avatar {
+  font-size: clamp(24px, 2.6vw, 34px);
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.standings-row--lead .standings-row__avatar { font-size: clamp(34px, 4vw, 52px); }
+
+.standings-row__roster {
+  font-size: clamp(16px, 1.7vw, 22px);
+  line-height: 1.15;
+  max-width: 5em;
+  flex: 0 0 auto;
+}
+
+.standings-row__who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.standings-row--lead .standings-row__who { flex-wrap: wrap; }
+
+.standings-row__name {
+  font-family: var(--display);
+  font-size: clamp(16px, 1.8vw, 22px);
+  line-height: 1.05;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* The team's roster, trailing its name — dimmed and smaller so the name
-   itself still reads first. */
-.standing-card__members {
-  margin-left: 8px;
-  font-size: 15px;
-  font-weight: 400;
-  color: var(--ink-dim);
+.standings-row--lead .standings-row__name { font-size: clamp(22px, 2.6vw, 34px); }
+
+/* A row's top-left corner is the place block, so there is no card corner here
+   for the badge to overhang. It keeps the tilt, the accent and the shape —
+   the tab that identifies a team everywhere else — and sits in the name's
+   place rather than off it. */
+.standings-row__team {
+  position: relative;
+  min-width: 0;
+  flex: 0 1 auto;
 }
 
-.standing-card__points {
+.standings-row__team .team-badge {
+  position: relative;
+  top: 0;
+  left: 0;
+  max-width: 100%;
+}
+
+/* ------------------------------------------------------------ list chips */
+
+.list-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 99px;
+  padding: 3px 10px;
+  font-size: clamp(10px, 1vw, 11px);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+
+.list-chip--ready { background: var(--ink); color: var(--mint); }
+
+.list-chip__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 99px;
+  background: var(--mint-lit);
+  flex: 0 0 auto;
+}
+
+.standings-row--lead .list-chip { padding: 3px 11px; font-size: clamp(11px, 1.1vw, 12px); }
+.standings-row--lead .list-chip__dot { width: 8px; height: 8px; }
+
+/* Inside a cream row, "waiting" is drawn in the same de-emphasized ink the
+   struck words use — a cream outline would vanish. */
+.list-chip--waiting,
+.list-chip--dropped {
+  border: 2px solid var(--card-rule);
+  color: var(--struck);
+  padding: 2px 10px;
+}
+
+/* --------------------------------------------------------------- score */
+
+.standings-row__score {
+  width: clamp(90px, 11vw, 150px);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.standings-row__points {
   font-family: var(--display);
-  font-size: clamp(20px, 2.4vw, 30px);
+  font-size: clamp(28px, 3.1vw, 40px);
+  line-height: 0.95;
+}
+
+.standings-row--lead .standings-row__points {
+  font-size: clamp(40px, 4.8vw, 62px);
   color: var(--ink);
 }
 
-.host-standings__footer {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 0 28px 26px;
+.standings-row__unit {
+  font-size: clamp(11px, 1vw, 13px);
+  letter-spacing: 0.1em;
+  color: var(--ink-dim);
 }
 
-.host-standings__hint {
-  color: var(--cream-dim);
-  font-size: 14px;
+.standings-row--lead .standings-row__unit {
+  font-family: var(--display);
+  font-size: clamp(13px, 1.3vw, 17px);
+  color: var(--gold-dim);
+}
+
+/* ------------------------------------------------------------- dropped */
+
+/* Nobody is behind this row any more. It keeps its place and its points —
+   those are facts — and loses the ink outline and the shadow that make the
+   live rows sit up off the field. */
+.standings-row[data-dropped] {
+  background: var(--plinth-3);
+  border-color: var(--struck);
+  box-shadow: none;
+  color: var(--struck);
+}
+
+.standings-row[data-dropped] .standings-row__place {
+  background: var(--card-rule);
+  border-right-color: var(--struck);
+}
+
+.standings-row[data-dropped] .standings-row__ordinal,
+.standings-row[data-dropped] .standings-row__name { color: var(--struck); }
+
+.standings-row[data-dropped] .standings-row__avatar,
+.standings-row[data-dropped] .standings-row__roster {
+  filter: grayscale(1);
+  opacity: 0.65;
 }
 
 /* ------------------------------------------------------------- badges */
@@ -2434,76 +3158,382 @@ ul, ol { list-style: none; }
 
 /* ----------------------------------------------------- player standings */
 
-.player-standings {
-  gap: 16px;
+/* The pink field runs the whole way through, match over included. The room
+   has been on pink since the landing screen; switching grounds at the final
+   whistle would read as having left the game rather than having finished it. */
+.player-standings { gap: 14px; }
+
+/* Everything the countdown poses over. Carries the column layout the screen
+   itself used to, so the footer can sit outside it and stay lit. */
+.player-standings__stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-.player-standings__room {
-  color: var(--cream-dim);
-  font-size: 13px;
-  letter-spacing: 0.08em;
+.player-standings__stage--dimmed {
+  opacity: 0.3;
+  pointer-events: none;
 }
 
-.player-standings__me {
+/* Centred in the space above the footer rather than in the screen, so the card
+   never rides down over the button. `pointer-events: none` is load-bearing and
+   not decoration: this box spans the whole screen, and without it the overlay
+   would swallow the tap on the Not ready button underneath — the one control
+   that can still stop the round. */
+.player-standings__countdown {
+  position: absolute;
+  inset: 0;
+  padding-bottom: 108px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 18px;
+  justify-content: center;
+  gap: 14px;
+  pointer-events: none;
 }
 
-.player-standings__place {
+.player-standings__head h1 {
   font-family: var(--display);
-  font-size: 54px;
-  color: var(--ink);
+  font-size: 30px;
+  line-height: 1.05;
+  margin: 0;
+}
+
+.player-standings__head p {
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--cream-dim);
+  margin-top: 3px;
+}
+
+/* --------------------------------------------------------- round boxes */
+
+/* One box per round of the match — filled with the place you took and the
+   category it was, dashed and empty for the rounds still to come. This is
+   where the golf total stops being a bare number: the boxes visibly add up
+   to it, and the empty ones say how much of the match is left to fix it. */
+.round-boxes {
+  display: flex;
+  gap: 6px;
+}
+
+/* Every box is two centred lines — the number over what it was, played or not
+   — so a run of them reads as one row of the same thing at different stages
+   rather than as two kinds of box sitting together. */
+.round-box {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 3px 2px;
+  background: var(--cream);
+  border: var(--border);
+  border-radius: 8px;
+}
+
+.round-box__place {
+  font-family: var(--display);
+  font-size: 19px;
   line-height: 1;
-}
-
-.player-standings__name {
-  font-weight: 700;
   color: var(--ink);
 }
 
-.player-standings__points {
-  font-family: var(--display);
+.round-box__category {
+  font-size: 8px;
+  letter-spacing: 0.06em;
   color: var(--ink-dim);
+  text-transform: uppercase;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Scrolls inside its own box; the Ready button below must never be pushed
-   off a phone screen. */
-.player-standings__all {
+.round-box--todo {
+  background: transparent;
+  border: 3px dashed var(--ink-veil);
+  color: var(--ink-veil);
+  padding: 4px 0;
+}
+
+/* "Round" over the number, mirroring `__category` under `__place`. Ten rounds
+   on a 390px phone leaves each box about 28px of inner width, so the word sets
+   small and the numeral carries the line. */
+.round-box__word {
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+
+.round-box__n {
+  font-family: var(--display);
+  font-size: 15px;
+  line-height: 1.05;
+}
+
+/* ---------------------------------------------------- standings table */
+
+/* Scrolls inside its own box; the Ready button below must never be pushed off
+   a phone screen. */
+.standings-table {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 12px 16px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+/* A column, not a row: your own entry stacks its round boxes under its line,
+   and every other entry is the same box with nothing in the second slot. */
+.standings-table li {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--ink);
+  padding-bottom: 7px;
+  border-bottom: 2px solid var(--card-rule);
+}
+
+.standings-table__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The key is always the last child, so the row before it is the last standing
+   — and the rule under it would be a hairline separating the table from its
+   own legend. */
+.standings-table li:nth-last-child(2) { border-bottom: none; padding-bottom: 0; }
+
+/* Your own row, lit the same way your own card is lit everywhere else, and the
+   only one tall enough to hold anything: the highlight bleeds past the rules
+   either side of it so the block reads as one thing rather than as a row that
+   grew. */
+.standings-table li.is-you {
+  background: var(--paper-lit);
+  border-radius: 12px;
+  padding: 9px 8px;
+  margin: 0 -8px;
+  border-bottom: none;
+}
+
+/* The rule that would have sat under your block goes on the row after it
+   instead, so it keeps the inset every other rule has rather than running the
+   full width of the highlight.
+
+   The legend is excluded: when you are last it is the next sibling, and it is
+   pushed to the bottom of the card by `margin-top: auto` with nothing above it
+   to be separated from. */
+.standings-table li.is-you + li:not(.standings-table__key) {
+  border-top: 2px solid var(--card-rule);
+  padding-top: 7px;
+}
+
+/* Your own name reads a size up — it is the row you are looking for. */
+.standings-table li.is-you .standings-table__name { font-size: 18px; }
+.standings-table li.is-you .standings-table__points { font-size: 24px; }
+
+.standings-table li[data-dropped] { opacity: 0.55; }
+.standings-table li[data-dropped] .standings-table__avatar { filter: grayscale(1); }
+
+.standings-table__place {
+  font-family: var(--display);
+  font-size: 15px;
+  width: 38px;
+  flex: 0 0 auto;
+  color: var(--ink-dim);
+}
+
+/* Keyed off the place and not the row's position, so a tie for the lead
+   colours both leaders rather than whichever one sorted first. */
+.standings-table li[data-first] .standings-table__place { color: var(--pink); }
+
+.standings-table__avatar { font-size: 24px; line-height: 1; flex: 0 0 auto; }
+
+.standings-table__name {
+  font-family: var(--display);
+  font-size: 16px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.standings-table__name em {
+  font-family: var(--body);
+  font-style: normal;
+  font-size: 11px;
+  color: var(--ink-dim);
+}
+
+/* Who has readied up — the question everyone in the room is asking between
+   rounds, and the one thing neither screen used to answer. */
+.standings-table__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  border: 2px solid var(--scroll-thumb);
+  box-sizing: border-box;
+  flex: 0 0 auto;
+}
+
+.standings-table__dot--ready { background: var(--teal); border-color: var(--teal); }
+
+.standings-table__points {
+  font-family: var(--display);
+  font-size: 22px;
+  width: 36px;
+  text-align: right;
+  flex: 0 0 auto;
+}
+
+.standings-table__key {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--struck);
+  margin-top: auto;
+  padding-top: 6px;
+  border-bottom: none;
+  border-top: none;
+}
+
+/* ------------------------------------------------------------ win card */
+
+/* Square, deliberately. The design drew this card on a slight tilt, but it
+   sits directly under the MATCH OVER plaque — which has its own — and two
+   different angles stacked an inch apart read as a printing error rather than
+   as swagger. The plaque keeps the tilt because it is a tab; the card is the
+   result, and the result sits straight. */
+.win-card {
+  background: var(--gold);
+  color: var(--ink-gold);
+  border: 5px solid var(--ink);
+  border-radius: 16px;
+  box-shadow: 7px 7px 0 var(--ink);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.win-card__label {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.18em;
+  color: var(--gold-dim);
+}
+
+.win-card__who { display: flex; align-items: center; gap: 14px; min-width: 0; }
+.win-card__avatar { font-size: 54px; line-height: 1; flex: 0 0 auto; }
+
+.win-card__name {
+  font-family: var(--display);
+  font-size: 40px;
+  line-height: 1.05;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.win-card__score { display: flex; align-items: baseline; gap: 8px; }
+.win-card__points { font-family: var(--display); font-size: 34px; line-height: 1; }
+.win-card__unit { font-size: 12px; letter-spacing: 0.1em; color: var(--gold-dim); }
+.win-card .round-boxes { margin-top: 6px; }
+
+/* --------------------------------------------------------- final table */
+
+/* Outlined rather than filled: the win card above it is the result, and a
+   second cream slab under it would compete with the thing the player is
+   actually meant to look at. */
+.final-table {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+  border: 3px solid var(--ink-veil);
+  border-radius: var(--radius);
+  padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.player-standings__all li {
-  display: grid;
-  grid-template-columns: 2em 1fr auto;
-  gap: 10px;
-  align-items: center;
-  color: var(--ink);
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--card-rule);
+.final-table__label {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  color: var(--cream-dim);
 }
 
-.player-standings__all li:last-child {
-  border-bottom: none;
-  padding-bottom: 0;
+.final-table li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--cream);
 }
+
+.final-table li.is-you { font-weight: 700; }
+
+.final-table__place {
+  font-family: var(--display);
+  font-size: 14px;
+  width: 34px;
+  flex: 0 0 auto;
+  color: var(--cream-dim);
+}
+
+/* Gold for the win, keyed off the place — a shared 1st golds both rows. */
+.final-table li[data-first] .final-table__place { color: var(--gold); }
+
+.final-table__avatar { font-size: 22px; line-height: 1; flex: 0 0 auto; }
+
+.final-table__name {
+  font-family: var(--display);
+  font-size: 15px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.final-table__name em {
+  font-family: var(--body);
+  font-style: normal;
+  font-size: 11px;
+  color: var(--cream-dim);
+}
+
+.final-table__points { font-family: var(--display); font-size: 20px; flex: 0 0 auto; }
+
+/* ------------------------------------------------------- player footer */
 
 .player-standings__footer {
   margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
 }
+
 
 .player-standings__hint {
   color: var(--cream-dim);
   text-align: center;
-  font-size: 14px;
+  font-size: 13px;
+  margin-top: auto;
 }
 
 /* ------------------------------------------------------------ steppers */
