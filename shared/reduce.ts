@@ -1,4 +1,7 @@
 import { scoreRound, normalize } from "./scoring";
+import type { Results } from "./scoring";
+import { rowKey, withSelfStrikes } from "./reveal";
+import { NO_SELF_MARKS, toggleMark } from "./selfstrike";
 import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, MatchSettings, Player, PlayerId, Room, RoundSummary } from "./state";
@@ -73,6 +76,20 @@ export type RoomEvent =
    */
   | { t: "debugPause"; playerId: PlayerId; paused: boolean; now: number }
   | { t: "debugSkip"; playerId: PlayerId; now: number }
+  /**
+   * Host-only, `scoring` only: land every outstanding strike at once. In state
+   * rather than as a client-side control because the phones are watching the
+   * same reveal — a skip only the TV knew about would leave them crawling
+   * through lines the room has already been shown.
+   */
+  | { t: "fastForward"; playerId: PlayerId; now: number }
+  /**
+   * Self-validation, `scoring` only: the scorer strikes one of their own words
+   * out by hand, or takes it back. `index` addresses their own row in
+   * `phase.results`; anything else — somebody else's list, an index past the
+   * end, a word the round already struck — is ignored. See shared/selfstrike.ts.
+   */
+  | { t: "selfStrike"; playerId: PlayerId; index: number; struck: boolean; now: number }
   /**
    * `roll` is a uniform [0,1) supplied by the caller. Randomness is injected
    * at the edge so `reduce` stays a pure function and the draw is testable
@@ -164,6 +181,42 @@ function enterTeams(room: Room): Room {
 }
 
 /**
+ * Banks the round on screen into history and moves the room to standings.
+ *
+ * Two things reach this now — the host's Standings button and everyone readying
+ * up on the results screen — so it is a function rather than a branch of
+ * `showStandings`. `party/server.ts` keys the archive write off the resulting
+ * `scoring -> standings` transition rather than off either trigger, for the
+ * same reason.
+ *
+ * Clearing `ready` is not optional: everyone is still flagged ready from the
+ * results screen they just left, and `settle` would fire the next countdown
+ * instantly, skipping the standings screen entirely.
+ *
+ * Clearing `entries` here is the single place the raw word store is emptied —
+ * the round is banked into history and the words have already been shown, so
+ * nothing reads it again.
+ *
+ * `results` is what both callers must pass through `withSelfStrikes` first: the
+ * places banked into history are the ones the room was shown, self-validation
+ * included. The marks themselves need no clearing — they live on the phase this
+ * leaves behind.
+ */
+function bankRound(room: Room, results: Results): Room {
+  const summary: RoundSummary = {
+    category: room.category,
+    places: placeRound(results),
+  };
+  return {
+    ...room,
+    phase: { name: "standings" },
+    history: [...room.history, summary],
+    entries: {},
+    players: room.players.map((p) => ({ ...p, ready: false })),
+  };
+}
+
+/**
  * The pre-round <-> countdown edge is derived, not commanded: any event that
  * changes readiness re-evaluates it, so un-readying mid-countdown backs out
  * without needing its own case.
@@ -195,6 +248,15 @@ function settle(room: Room, now: number): Room {
 
   if (phase.name === "voting") {
     return everyoneReady(room, 1) ? openCountdown(room, now, "playing") : room;
+  }
+
+  if (phase.name === "scoring") {
+    // The results screen is the one place `ready` means "seen enough" rather
+    // than "waiting". It advances the room the host's Standings button does, so
+    // a room that has finished reading does not sit waiting on the TV.
+    return everyoneReady(room, MIN_PLAYERS)
+      ? bankRound(room, withSelfStrikes(phase.results, phase.selfMarks))
+      : room;
   }
 
   if (phase.name === "standings") {
@@ -307,7 +369,11 @@ function apply(room: Room, ev: RoomEvent): Room {
       if (
         room.phase.name !== "lobby" &&
         room.phase.name !== "countdown" &&
-        room.phase.name !== "standings"
+        room.phase.name !== "standings" &&
+        // Readying on the results screen is what advances it to standings with
+        // no host action — see `settle`. Unlike `teams` and `voting`, nothing
+        // else here derives the flag, so the plain event owns it.
+        room.phase.name !== "scoring"
       ) {
         return room;
       }
@@ -560,24 +626,54 @@ function apply(room: Room, ev: RoomEvent): Room {
     case "showStandings": {
       if (ev.playerId !== room.hostId) return room;
       if (room.phase.name !== "scoring") return room;
-      const summary: RoundSummary = {
-        category: room.category,
-        places: placeRound(room.phase.results),
-      };
-      // Clearing `ready` is not optional: everyone is still flagged ready from
-      // the round that just ended, and `settle` would fire the next countdown
-      // instantly, skipping the standings screen entirely.
-      //
-      // Clearing `entries` here is the single place the raw word store is
-      // emptied — the round is banked into history and the words have already
-      // been shown, so nothing reads it again.
-      return {
-        ...room,
-        phase: { name: "standings" },
-        history: [...room.history, summary],
-        entries: {},
-        players: room.players.map((p) => ({ ...p, ready: false })),
-      };
+      return bankRound(
+        room,
+        withSelfStrikes(room.phase.results, room.phase.selfMarks),
+      );
+    }
+
+    /**
+     * Lands every outstanding strike at once, on the TV and on the phones
+     * together. Sets a flag rather than jumping a stored line count, because
+     * there is no stored line count to jump — the reveal is derived from
+     * `startedAt`, and this is the one thing that derivation cannot know.
+     */
+    case "fastForward": {
+      if (ev.playerId !== room.hostId) return room;
+      if (room.phase.name !== "scoring") return room;
+      if (room.phase.skipped) return room;
+      return { ...room, phase: { ...room.phase, skipped: true } };
+    }
+
+    /**
+     * Self-validation: a scorer disowning one of their own words, or taking it
+     * back. Not host-only — it is the *player's* judgement on the player's own
+     * list, and in team play any member may mark the list the team shares.
+     *
+     * A duplicate is refused rather than toggled. It is already struck by the
+     * round's own rule, so striking it would change nothing and restoring it
+     * would award back a point nobody had — which is why the phones render those
+     * rows inert, and why that is not the boundary.
+     */
+    case "selfStrike": {
+      if (room.phase.name !== "scoring") return room;
+      const scorer = room.phase.results.scorers.find((s) =>
+        s.members.includes(ev.playerId),
+      );
+      if (!scorer) return room;
+      const entry = scorer.entries[ev.index];
+      if (entry === undefined) return room;
+      if (entry.alsoBy.length > 0) return room;
+      const marks = toggleMark(
+        room.phase.selfMarks,
+        rowKey(scorer.id, ev.index),
+        ev.struck,
+        ev.now,
+      );
+      // `toggleMark` hands back the identical object when the row is already
+      // the way it was asked for — the no-op contract, not an optimisation.
+      if (marks === room.phase.selfMarks) return room;
+      return { ...room, phase: { ...room.phase, selfMarks: marks } };
     }
 
     case "backToLobby": {
@@ -728,7 +824,16 @@ function tick(room: Room, now: number, roll: number): Room {
       phase: {
         name: "scoring",
         results: scoreRound({ scorers: rosterOf(room), entries: room.entries }),
+        // The reveal's zero. Every client counts its own lines from here.
+        startedAt: now,
+        skipped: false,
+        selfMarks: NO_SELF_MARKS,
       },
+      // Load-bearing, exactly as the clear at the voting edge is: `ready` means
+      // "typing this round" on this side of the edge and "seen enough of the
+      // results" on the other. Carried across, `settle` would bank the round
+      // and skip the whole reveal before anyone had read a word of it.
+      players: room.players.map((p) => ({ ...p, ready: false })),
     };
   }
   return room;

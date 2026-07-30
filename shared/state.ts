@@ -2,6 +2,7 @@ import type { Results } from "./scoring";
 import { DEFAULT_CATEGORY } from "./categories";
 import { DEFAULT_MODE, defaultSettings } from "./gamemodes";
 import type { GameModeId } from "./gamemodes";
+import type { SelfMarks } from "./selfstrike";
 import type { VoteMap } from "./voting";
 import type { ScorerId, Team, TeamId } from "./teams";
 import { teamsEnabled } from "./teams";
@@ -88,7 +89,32 @@ export type Phase =
   | { name: "countdown"; endsAt: number; to: "voting" | "playing" }
   | { name: "playing"; endsAt: number }
   | { name: "timesup"; endsAt: number }
-  | { name: "scoring"; results: Results }
+  /**
+   * The round's results, played to the room as a reveal.
+   *
+   * `startedAt` is server time and is the *only* thing the reveal is driven by:
+   * the TV and every phone derive the same line count from it against the same
+   * schedule (`shared/reveal.ts`), so nothing has to be ticked over the wire.
+   * Same principle as a phase deadline — broadcast the absolute moment once and
+   * let each client count locally.
+   *
+   * `skipped` is the host's FAST FORWARD. A flag rather than a moment, because
+   * skipping means "every outstanding strike lands now", which has no schedule
+   * left to sit on.
+   *
+   * `selfMarks` is self-validation — the words scorers struck out by hand. It
+   * rides here rather than on `Results` because it is a *choice made during this
+   * screen*, not an output of `scoreRound`: the phase owns it, so abandoning the
+   * round or banking it takes the marks with it and nothing has to clear them.
+   * Like `votes`, it is no secret — the TV renders it to the room by design.
+   */
+  | {
+      name: "scoring";
+      results: Results;
+      startedAt: number;
+      skipped: boolean;
+      selfMarks: SelfMarks;
+    }
   /** Match standings between rounds and at the end. Untimed; the host advances it. */
   | { name: "standings" };
 

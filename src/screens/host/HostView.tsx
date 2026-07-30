@@ -56,7 +56,15 @@ export function HostView({ state, onLeave }: { state: ClientState; onLeave: () =
     case "timesup":
       return <TimesUp />;
     case "scoring":
-      return <HostScoring room={room} results={room.phase.results} />;
+      return (
+        <HostScoring
+          room={room}
+          results={room.phase.results}
+          startedAt={room.phase.startedAt}
+          skipped={room.phase.skipped}
+          marks={room.phase.selfMarks}
+        />
+      );
     case "standings":
       return <HostStandings room={room} />;
     case "teams":

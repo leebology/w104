@@ -1,0 +1,997 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Bungee&display=swap" rel="stylesheet">
+<style>
+body { margin:0; background:#E9E7E2; }
+a { color:#1A0710; }
+a:hover { color:#7A6A5C; }
+@keyframes rowIn { from { opacity:0; transform:translateY(-6px) } to { opacity:1; transform:none } }
+@keyframes strikeIn {
+  0% { color:#1A0710; text-decoration-color:rgba(156,139,121,0) }
+  55% { color:#8E0B24; text-decoration-color:#8E0B24 }
+  100% { color:#9C8B79; text-decoration-color:#9C8B79 }
+}
+@keyframes popIn { 0% { opacity:0; transform:scale(.4) } 62% { transform:scale(1.18) } 100% { opacity:1; transform:scale(1) } }
+@keyframes penaltyBlink { 0% { background:#FFF7E8 } 22% { background:#F2DEC6 } 60% { background:#F2DEC6 } 100% { background:#FFF7E8 } }
+@keyframes statBlink { 0% { color:#E62E5C; transform:none } 24% { color:#8E0B24; transform:scale(1.16) } 100% { color:#E62E5C; transform:none } }
+@keyframes plaquePop { 0% { opacity:0; transform:rotate(-2.5deg) scale(.5) } 65% { transform:rotate(-2.5deg) scale(1.12) } 100% { opacity:1; transform:rotate(-2.5deg) scale(1) } }
+@keyframes medalGold { from { box-shadow:6px 6px 0 #1A0710 } to { box-shadow:6px 6px 0 #FFD400 } }
+@keyframes medalSilver { from { box-shadow:6px 6px 0 #1A0710 } to { box-shadow:6px 6px 0 #C9CDD4 } }
+@keyframes medalBronze { from { box-shadow:6px 6px 0 #1A0710 } to { box-shadow:6px 6px 0 #C08457 } }
+@keyframes penaltyBlinkA { 0% { opacity:0 } 18% { opacity:1 } 52% { opacity:.82 } 100% { opacity:0 } }
+@keyframes penaltyBlinkB { 0% { opacity:0 } 18% { opacity:1 } 52% { opacity:.82 } 100% { opacity:0 } }
+@keyframes dipA { 0% { transform:none } 26% { transform:translateY(var(--dip,7px)) } 62% { transform:translateY(calc(var(--dip,7px) * -.28)) } 100% { transform:none } }
+@keyframes dipB { 0% { transform:none } 26% { transform:translateY(var(--dip,7px)) } 62% { transform:translateY(calc(var(--dip,7px) * -.28)) } 100% { transform:none } }
+@keyframes statBlinkA { 0% { color:#E62E5C; transform:none } 24% { color:var(--flash,#8E0B24); transform:scale(var(--flash-scale,1.16)) } 100% { color:#E62E5C; transform:none } }
+@keyframes statBlinkB { 0% { color:#E62E5C; transform:none } 24% { color:var(--flash,#8E0B24); transform:scale(var(--flash-scale,1.16)) } 100% { color:#E62E5C; transform:none } }
+@keyframes popInA { 0% { opacity:0; transform:scale(.4) } 62% { transform:scale(1.18) } 100% { opacity:1; transform:scale(1) } }
+@keyframes popInB { 0% { opacity:0; transform:scale(.4) } 62% { transform:scale(1.18) } 100% { opacity:1; transform:scale(1) } }
+@keyframes shakeCue {
+  0%, 100% { transform:none }
+  10% { transform:translateX(-5px) rotate(-.7deg) }
+  25% { transform:translateX(5px) rotate(.7deg) }
+  40% { transform:translateX(-4px) rotate(-.5deg) }
+  55% { transform:translateX(4px) rotate(.5deg) }
+  70% { transform:translateX(-2px) }
+  85% { transform:translateX(2px) }
+}
+/* Cut off, then travel back and forth. --travel is measured per element after
+   render (clip width − text width, clamped at 0), so a badge or a name that
+   fits keeps its shrink-to-fit width and simply never moves. */
+@keyframes marqueeX { from { transform:translateX(0) } to { transform:translateX(var(--travel,0px)) } }
+@keyframes ffOut { from { opacity:1; transform:none } to { opacity:0; transform:translateY(14px) } }
+@keyframes stdIn { 0% { opacity:0; transform:translateY(16px) scale(.92) } 70% { transform:translateY(0) scale(1.04) } 100% { opacity:1; transform:none } }
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important }
+}
+</style>
+</helmet>
+<div ref="{{ rootRef }}" style="min-height:100vh;box-sizing:border-box;background:#E9E7E2;font-family:'Archivo',sans-serif;display:flex;flex-direction:column;gap:34px;padding:44px">
+
+  <div style="display:flex;flex-direction:column;gap:10px;max-width:1180px">
+    <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+      <span style="background:#E62E5C;color:#FFF7E8;padding:6px 14px;border-radius:999px;font-size:14px;font-weight:700;letter-spacing:.06em">MOTION SPEC</span>
+      <span style="font-family:'Bungee',cursive;font-size:30px;color:#1A0710">Host scoring — the reveal</span>
+    </div>
+    <div style="font-size:15px;color:#5C5A55;line-height:1.5;max-width:900px">Three frames of one continuous sequence over the shipped 1200×675 host scoring screen. Motion only — no restyle. Every frame replays on its own; all content and timing controls in the Tweaks panel apply live to all three. The timing table at the bottom is the deliverable that ports into <span style="font-weight:600">src/style.css</span>.</div>
+    <div style="display:flex;gap:22px;flex-wrap:wrap;font-size:13px;color:#1A0710;line-height:1.5">
+      <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:700;letter-spacing:.08em">1 · ENTRY ORDER</span><span style="color:#5C5A55">round 1 random (seeded); later rounds match standings, best first</span></div>
+      <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:700;letter-spacing:.08em">2 · REVEAL ORDER</span><span style="color:#5C5A55">two controls, unrelated to entry order — <span style="font-weight:600">playerOrderMode</span> picks which list goes next (random / shortest / longest), <span style="font-weight:600">revealOrderMode</span> picks the line order within every list (entry / duplicates)</span></div>
+      <div style="display:flex;flex-direction:column;gap:2px"><span style="font-weight:700;letter-spacing:.08em">3 · FINAL ORDER</span><span style="color:#5C5A55">unique desc, then total desc — what the screen ships in today</span></div>
+    </div>
+  </div>
+
+  <sc-for list="{{ frames }}" as="f" hint-placeholder-count="5">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:baseline;gap:12px;flex-wrap:wrap">
+        <span style="font-family:'Bungee',cursive;font-size:15px;letter-spacing:.06em;color:#1A0710">{{ f.label }}</span>
+        <span style="font-size:12px;letter-spacing:.06em;color:#8A877F">{{ f.note }}</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <div onClick="{{ f.onPlay }}" style="cursor:pointer;user-select:none;font-family:'Bungee',cursive;font-size:12px;padding:8px 14px;border:3px solid #1A0710;border-radius:99px;background:#1A0710;color:#FFF7E8;box-shadow:3px 3px 0 rgba(26,7,16,.25)">{{ f.playLabel }}</div>
+        <div onClick="{{ f.onReplay }}" style="cursor:pointer;user-select:none;font-family:'Bungee',cursive;font-size:12px;padding:8px 14px;border:3px solid #1A0710;border-radius:99px;background:#FFF7E8;color:#1A0710">REPLAY</div>
+        <div onClick="{{ f.onStep }}" style="cursor:pointer;user-select:none;font-family:'Bungee',cursive;font-size:12px;padding:8px 14px;border:3px solid #1A0710;border-radius:99px;background:#FFF7E8;color:#1A0710">STEP +1</div>
+        <div onClick="{{ f.onStart }}" style="cursor:pointer;user-select:none;font-size:12px;letter-spacing:.08em;padding:8px 12px;border:2px solid #C6C2B8;border-radius:99px;color:#5C5A55">START</div>
+        <div onClick="{{ f.onMid }}" style="cursor:pointer;user-select:none;font-size:12px;letter-spacing:.08em;padding:8px 12px;border:2px solid #C6C2B8;border-radius:99px;color:#5C5A55">MID</div>
+        <div onClick="{{ f.onEnd }}" style="cursor:pointer;user-select:none;font-size:12px;letter-spacing:.08em;padding:8px 12px;border:2px solid #C6C2B8;border-radius:99px;color:#5C5A55">END</div>
+        <span style="font-size:12px;letter-spacing:.06em;color:#8A877F;padding-left:6px">{{ f.readout }}</span>
+      </div>
+
+      <div style="width:1200px;height:675px;border-radius:14px;overflow:hidden;position:relative;box-shadow:0 18px 50px rgba(0,0,0,.16)">
+        <div data-screen-label="{{ f.screenLabel }}" style="box-sizing:border-box;width:1200px;height:675px;overflow:hidden;background:#E62E5C;color:#FFF7E8;font-family:'Archivo',sans-serif;display:flex;flex-direction:column;padding:24px 26px 18px;position:relative">
+          <div style="position:relative;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 34px;flex:0 0 auto">
+            <div style="display:flex;align-items:center;gap:14px;background:#FFF7E8;color:#1A0710;padding:7px 18px;border-radius:99px;border:3px solid #1A0710">
+              <span style="font-size:14px;color:#7A6A5C;letter-spacing:.16em;white-space:nowrap">JOIN AT OKAYNAMEONE.APP</span>
+              <span style="font-family:'Bungee',cursive;font-size:28px;line-height:1.06;color:#1A0710;letter-spacing:.1em">PLUM</span>
+            </div>
+            <span style="position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-family:'Bungee',cursive;font-size:18px;letter-spacing:.14em;color:#FFF7E8;pointer-events:none">ROUND 1 / 3</span>
+            <span style="font-family:'Bungee',cursive;font-size:32px;line-height:1.06;color:#FFF7E8">Results · woman</span>
+          </div>
+
+          <div style="flex:1;min-height:0;display:grid;grid-auto-rows:minmax(0,1fr);gap:12px;width:100%;margin:0 auto;transition:grid-template-columns 260ms cubic-bezier(.34,1.28,.64,1);grid-template-columns:{{ f.gridCols }};max-width:{{ f.gridMax }}">
+            <sc-for list="{{ f.players }}" as="p" hint-placeholder-count="5">
+              <div style="min-width:0;min-height:0;display:flex;transform:{{ p.wrapT }};transition:{{ p.wrapTrans }};z-index:{{ p.z }}">
+                <div style="box-sizing:border-box;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;padding:10px;display:flex;flex-direction:column;min-width:0;min-height:0;flex:1;position:relative;--dip:{{ p.dip }};box-shadow:{{ p.cardShadow }};transform:{{ p.cardT }};transition:{{ p.cardTrans }};opacity:{{ p.cardOpacity }};animation:{{ p.cardAnim }}">
+                  <span style="position:absolute;inset:0;border-radius:11px;pointer-events:none;opacity:0;box-shadow:{{ p.ringShadow }};animation:{{ p.ringAnim }}"></span>
+                  <sc-if value="{{ p.isTeam }}" hint-placeholder-val="{{ false }}">
+                    <span style="position:absolute;top:-12px;left:10px;max-width:calc(100% - 20px);font-family:'Bungee',cursive;font-size:13px;line-height:1.06;color:#1A0710;border:3px solid #1A0710;border-radius:8px;padding:4px 10px;transform:rotate(-2.5deg);box-shadow:3px 3px 0 #1A0710;overflow:hidden;white-space:nowrap;background:{{ p.teamColor }}"><span data-marquee="1" style="display:inline-block;white-space:nowrap;animation:{{ p.nameAnim }}">{{ p.name }}</span></span>
+                  </sc-if>
+                  <sc-if value="{{ p.medal }}" hint-placeholder-val="{{ false }}">
+                    <span style="position:absolute;top:-13px;right:10px;font-family:'Bungee',cursive;font-size:13px;line-height:1.06;color:#2A1400;border:3px solid #1A0710;border-radius:8px;padding:4px 10px;box-shadow:4px 4px 0 #1A0710;white-space:nowrap;background:{{ p.medalColor }};animation:{{ p.plaqueAnim }};transform:rotate(-2.5deg)">{{ p.medal }}</span>
+                  </sc-if>
+                  <div style="flex:0 0 auto;padding-top:{{ p.headPad }};display:flex;flex-direction:column;gap:4px;min-width:0">
+                    <sc-if value="{{ p.isTeam }}" hint-placeholder-val="{{ false }}">
+                      <div style="display:flex;gap:5px;font-size:19px;line-height:1;margin-bottom:-2px">
+                        <sc-for list="{{ p.members }}" as="m" hint-placeholder-count="2">
+                          <span>{{ m }}</span>
+                        </sc-for>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{ p.showName }}" hint-placeholder-val="{{ true }}">
+                      <div style="display:flex;align-items:center;gap:10px;min-width:0">
+                        <span style="font-size:30px;line-height:1;flex:0 0 auto">{{ p.emoji }}</span>
+                        <span style="flex:1;min-width:0;display:block;overflow:hidden;font-family:'Bungee',cursive;font-size:17px;line-height:1.06"><span data-marquee="1" style="display:inline-block;white-space:nowrap;animation:{{ p.nameAnim }}">{{ p.name }}</span></span>
+                      </div>
+                    </sc-if>
+                    <div style="display:flex;align-items:flex-end;gap:10px;min-width:0">
+                      <span style="flex:1;min-width:0;font-size:11px;color:#7A6A5C;letter-spacing:.08em;white-space:nowrap">{{ p.meta }}</span>
+                      <div style="display:flex;gap:10px;text-align:center;flex:0 0 auto">
+                        <div style="display:flex;flex-direction:column;gap:2px">
+                          <span style="font-family:'Bungee',cursive;font-size:24px;line-height:1.06;color:#E62E5C;font-variant-numeric:tabular-nums;--flash:{{ p.flash }};--flash-scale:{{ p.flashScale }};animation:{{ p.statAnim }}">{{ p.unique }}</span>
+                          <span style="font-size:9px;color:#7A6A5C;letter-spacing:.1em">UNIQUE</span>
+                        </div>
+                        <div style="display:flex;flex-direction:column;gap:2px">
+                          <span style="font-family:'Bungee',cursive;font-size:24px;line-height:1.06;color:#7A6A5C;font-variant-numeric:tabular-nums">{{ p.total }}</span>
+                          <span style="font-size:9px;color:#7A6A5C;letter-spacing:.1em">TOTAL</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div style="height:1px;background:#E7D3BE;margin:7px 0;flex:0 0 auto"></div>
+                  <div style="display:flex;flex-direction:column;min-width:0;flex:1;min-height:0">
+                    <div data-follow="{{ p.follow }}" style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#C9B8A2 transparent;padding-right:8px;display:flex;flex-direction:column;gap:5px">
+                      <sc-if value="{{ p.isEmpty }}" hint-placeholder-val="{{ false }}">
+                        <span style="font-size:15px;color:#7A6A5C">Nothing written.</span>
+                      </sc-if>
+                      <sc-for list="{{ p.entries }}" as="e" hint-placeholder-count="6">
+                        <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;line-height:1.35;animation:{{ e.rowAnim }}">
+                          <sc-if value="{{ e.author }}" hint-placeholder-val="{{ false }}">
+                            <span style="font-size:11px;color:#7A6A5C;flex:0 0 auto">{{ e.author }}</span>
+                          </sc-if>
+                          <sc-if value="{{ e.dup }}" hint-placeholder-val="{{ true }}">
+                            <span style="flex:1 1 0;min-width:60%;display:block;overflow:hidden"><span data-marquee="1" style="display:inline-block;white-space:nowrap;font-size:15px;font-weight:400;color:#9C8B79;text-decoration:line-through;text-decoration-color:#9C8B79;animation:{{ e.wordAnim }}">{{ e.w }}</span></span>
+                            <span style="flex:0 1 auto;min-width:0;max-width:40%;display:block;overflow:hidden;animation:{{ e.trailAnim }}"><span data-marquee="1" style="display:inline-block;font-size:11px;line-height:1;color:#9C8B79;white-space:nowrap;letter-spacing:-.16em;padding-right:.16em;animation:{{ e.byAnim }}">{{ e.by }}</span></span>
+                          </sc-if>
+                          <sc-if value="{{ e.uniq }}" hint-placeholder-val="{{ false }}">
+                            <span style="flex:1 1 0;min-width:60%;display:block;overflow:hidden"><span data-marquee="1" style="display:inline-block;white-space:nowrap;font-size:15px;font-weight:600;color:#1A0710;animation:{{ e.wordAnim }}">{{ e.w }}</span></span>
+                          </sc-if>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="flex:0 0 auto;display:flex;justify-content:center;align-items:center;padding-top:16px;position:relative;min-height:57px">
+            <sc-if value="{{ f.showFF }}" hint-placeholder-val="{{ true }}">
+              <div onClick="{{ f.onEnd }}" style="position:absolute;left:34px;top:16px;cursor:pointer;user-select:none;font-family:'Bungee',cursive;font-size:14px;line-height:1.06;padding:12px 22px;border:3px solid #1A0710;border-radius:99px;background:#FFF7E8;color:#1A0710;box-shadow:3px 3px 0 #1A0710;text-transform:uppercase;animation:{{ f.ffAnim }}">Fast forward</div>
+            </sc-if>
+            <sc-if value="{{ f.showStandings }}" hint-placeholder-val="{{ false }}">
+              <div style="font-family:'Bungee',cursive;font-size:16px;line-height:1.06;padding:16px 30px;border:4px solid #1A0710;border-radius:99px;background:#FFD400;color:#2A1400;box-shadow:5px 5px 0 #1A0710;text-align:center;text-transform:uppercase;animation:{{ f.stdAnim }};pointer-events:{{ f.stdPointer }}">Standings</div>
+            </sc-if>
+          </div>
+        </div>
+      </div>
+    </div>
+  </sc-for>
+
+  <div style="display:flex;flex-direction:column;gap:16px;max-width:1200px">
+    <span style="font-family:'Bungee',cursive;font-size:22px;color:#1A0710">Timing table</span>
+    <span style="font-size:14px;color:#5C5A55;line-height:1.5">Durations are the defaults; every value marked <span style="font-weight:600">tweak</span> is exposed live. A global speed multiplier divides all of them. Delays are relative to the phase start unless stated.</span>
+
+    <div style="background:#FFF7E8;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710;padding:20px;display:flex;flex-direction:column;gap:14px">
+      <span style="font-family:'Bungee',cursive;font-size:15px;color:#1A0710">Frame 1 · deal in</span>
+      <sc-for list="{{ t1 }}" as="r" hint-placeholder-count="6">
+        <div style="display:grid;grid-template-columns:190px 96px 96px 200px 1fr;gap:12px;font-size:13px;color:#1A0710;line-height:1.4;padding-bottom:10px;border-bottom:1px solid #E7D3BE">
+          <span style="font-weight:700">{{ r.el }}</span>
+          <span style="color:#7A6A5C">{{ r.delay }}</span>
+          <span style="color:#7A6A5C">{{ r.dur }}</span>
+          <span style="color:#7A6A5C">{{ r.ease }}</span>
+          <span>{{ r.what }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="background:#FFF7E8;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710;padding:20px;display:flex;flex-direction:column;gap:14px">
+      <span style="font-family:'Bungee',cursive;font-size:15px;color:#1A0710">Frame 2 · reveal and strike</span>
+      <sc-for list="{{ t2 }}" as="r" hint-placeholder-count="8">
+        <div style="display:grid;grid-template-columns:190px 96px 96px 200px 1fr;gap:12px;font-size:13px;color:#1A0710;line-height:1.4;padding-bottom:10px;border-bottom:1px solid #E7D3BE">
+          <span style="font-weight:700">{{ r.el }}</span>
+          <span style="color:#7A6A5C">{{ r.delay }}</span>
+          <span style="color:#7A6A5C">{{ r.dur }}</span>
+          <span style="color:#7A6A5C">{{ r.ease }}</span>
+          <span>{{ r.what }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="background:#FFF7E8;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710;padding:20px;display:flex;flex-direction:column;gap:14px">
+      <span style="font-family:'Bungee',cursive;font-size:15px;color:#1A0710">Frame 3 · rank and podium, and the footer swap</span>
+      <sc-for list="{{ t3 }}" as="r" hint-placeholder-count="8">
+        <div style="display:grid;grid-template-columns:190px 96px 96px 200px 1fr;gap:12px;font-size:13px;color:#1A0710;line-height:1.4;padding-bottom:10px;border-bottom:1px solid #E7D3BE">
+          <span style="font-weight:700">{{ r.el }}</span>
+          <span style="color:#7A6A5C">{{ r.delay }}</span>
+          <span style="color:#7A6A5C">{{ r.dur }}</span>
+          <span style="color:#7A6A5C">{{ r.ease }}</span>
+          <span>{{ r.what }}</span>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="display:flex;gap:16px;flex-wrap:wrap;align-items:stretch">
+      <div style="flex:1 1 340px;background:#FFF7E8;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710;padding:20px;display:flex;flex-direction:column;gap:10px">
+        <span style="font-family:'Bungee',cursive;font-size:15px">New tokens</span>
+        <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:1.45">
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:22px;height:22px;border:3px solid #1A0710;background:#8E0B24;flex:0 0 auto"></span><span><span style="font-weight:700">--penalty</span> #8E0B24 — the strike moment. Darker and less saturated than the pink field, so it never reads as brand pink; used only <span style="font-weight:600">inside cream cards</span> (word mid-strike, UNIQUE numeral), never on the pink field.</span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:22px;height:22px;border:3px solid #1A0710;background:#BA1B40;flex:0 0 auto"></span><span><span style="font-weight:700">--penalty-soft</span> #BA1B40 — the feathered ring bleeding in from inside the card's edge on a strike. Only ever used feathered and only ever inside a card, so it never competes with the pink field; a flat fill at card scale would strobe when three cards react at once.</span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:22px;height:22px;border:3px solid #1A0710;background:#C9CDD4;flex:0 0 auto"></span><span><span style="font-weight:700">--silver</span> #C9CDD4 — 2nd place plaque + card offset shadow.</span></div>
+          <div style="display:flex;align-items:center;gap:10px"><span style="width:22px;height:22px;border:3px solid #1A0710;background:#C08457;flex:0 0 auto"></span><span><span style="font-weight:700">--bronze</span> #C08457 — 3rd place. Warm enough to sit beside cream, dark enough to hold ink text.</span></div>
+        </div>
+      </div>
+      <div style="flex:1 1 340px;background:#FFF7E8;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710;padding:20px;display:flex;flex-direction:column;gap:10px">
+        <span style="font-family:'Bungee',cursive;font-size:15px">Decisions</span>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:13px;line-height:1.45">
+          <span><span style="font-weight:700">Empty lists in Frame 1.</span> Blank list area, no "Nothing written." — that string means the player wrote nothing, and using it here would lie for four seconds.</span>
+          <span><span style="font-weight:700">Vertical budget goes to the lists.</span> Card padding 14 → 10px, head block gap 4px, hairline margin 7px, and in team play the member avatars sit above RANK n at 15px rather than below the stats. Roughly 22px per card returned to the word list — a line and a half at 15px.</span>
+          <span><span style="font-weight:700">Team badge sizes to its name.</span> Shrink-to-fit up to the card width minus its 10px insets, then it clips and the name travels. That needs a measured travel distance rather than a container query — `container-type` zeroes the badge's intrinsic width, which is what was collapsing it — so every clipped run gets `--travel` (clip width − text width, clamped at 0) written after render. Anything that fits keeps its natural width and never moves.</span>
+          <span><span style="font-weight:700">The avatar trail scrolls too.</span> Four or five attributions overflow the 40% of the row the trail can spare, and a clipped emoji is a missing attribution. The clip box carries the pop, the inner run carries the travel — one transform each, so they never fight.</span>
+          <span><span style="font-weight:700">Room for the name.</span> A name longer than five characters was colliding with the stats, because name, RANK and both stat pairs shared one row inside a 220px track. The identity block is now two lines: avatar + name across the full card width, then RANK n and the stat pair beneath it. The name gets ~4× the room, nothing else moves, and the card grows by 6px.</span>
+          <span><span style="font-weight:700">RANK in Frame 1.</span> Reads "—". Entry order is not rank, hiding the line would shift the row's height, and a placeholder number would be read as a standing.</span>
+          <span><span style="font-weight:700">Inter-column beat.</span> Yes, one — 420ms default, a separate tweak from the line interval. Flat cadence within a column, one breath between them, so the room can see attention move sideways.</span>
+          <span><span style="font-weight:700">Strike duration is independent.</span> A strike owns its 300ms regardless of the interval: at 900ms there is no dead air (the strike finishes, the beat continues), and at 90ms strikes simply overlap on different rows rather than truncating.</span>
+          <span><span style="font-weight:700">The strike reaction is a flinch, not a fill.</span> A feathered penalty ring bleeding in from inside the card's edge, plus a weighted dip down with a small overshoot back — the card reacts physically instead of changing colour. It sits on an overlay child so the hard offset shadow is untouched, and the feathering is the one place blur is allowed: it is a light effect inside the card, never a shadow under it.</span>
+          <span><span style="font-weight:700">Podium, flat-graphic.</span> A tilted plaque on the house −2.5° angle over the card's top-right, plus the card's hard offset shadow recolouring ink → medal. No glow, no blur, no sparkle.</span>
+          <span><span style="font-weight:700">Ties share a place.</span> Equal unique <span style="font-style:italic">and</span> equal total ⇒ same RANK n, and the next place skips (1, 2, 2, 4). Two firsts means two gold plaques and no silver.</span>
+          <span><span style="font-weight:700">Crossing paths.</span> The wrapper travels in Y, the card in X with a 180ms delay — vertical first, then across — and the moving card lifts (z-index, 1.5° tilt, scale 1.03). Cards therefore never swap through each other at the same height.</span>
+          <span><span style="font-weight:700">Reduced motion end state.</span> Final order, real RANK n, all lists fully revealed, all strikes applied with final UNIQUE counts, podium plaques and medal shadows present, footer showing STANDINGS. No transform, no blink, no pop — everything at its end value on first paint.</span>
+        </div>
+      </div>
+      <div style="flex:1 1 340px;background:#FFF7E8;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710;padding:20px;display:flex;flex-direction:column;gap:10px">
+        <span style="font-family:'Bungee',cursive;font-size:15px">Runtime arithmetic</span>
+        <div style="display:flex;flex-direction:column;gap:9px;font-size:13px;line-height:1.45">
+          <span>Runtime = (total lines × line interval) + (scorers × inter-column pause). Nothing is batched or accelerated.</span>
+          <span><span style="font-weight:700">3 × 10 words</span> — 30 lines × 260ms + 3 × 420ms = <span style="font-weight:700">9.1s</span></span>
+          <span><span style="font-weight:700">10 × 35 words</span> — 350 lines × 260ms + 10 × 420ms = <span style="font-weight:700">95.2s</span></span>
+          <span>Recommended default interval <span style="font-weight:700">260ms</span>: fast enough that a 30-line round is under ten seconds, slow enough that a strike and its emoji trail land as one readable beat. 95s for a ten-player wall is acceptable — FAST FORWARD is the escape valve, not compression.</span>
+          <span><span style="font-weight:700">Current settings:</span> {{ runtimeNow }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="background:#FFF7E8;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710;padding:20px;display:flex;flex-direction:column;gap:14px">
+      <span style="font-family:'Bungee',cursive;font-size:15px">What each tweak does</span>
+      <sc-for list="{{ glossary }}" as="g" hint-placeholder-count="4">
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <span style="font-family:'Bungee',cursive;font-size:12px;letter-spacing:.06em;color:#7A6A5C">{{ g.group }}</span>
+          <sc-for list="{{ g.items }}" as="it" hint-placeholder-count="5">
+            <div style="display:grid;grid-template-columns:190px 120px 1fr;gap:12px;font-size:13px;color:#1A0710;line-height:1.45;padding-bottom:9px;border-bottom:1px solid #E7D3BE">
+              <span style="font-weight:700;font-family:ui-monospace,monospace">{{ it.name }}</span>
+              <span style="color:#7A6A5C">{{ it.range }}</span>
+              <span>{{ it.what }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="background:#FFF7E8;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710;padding:20px;display:flex;flex-direction:column;gap:10px">
+      <span style="font-family:'Bungee',cursive;font-size:15px">Keyframes, as they go into style.css</span>
+      <div style="font-family:ui-monospace,monospace;font-size:12px;line-height:1.6;color:#1A0710;white-space:pre-wrap">{{ keyframeSrc }}</div>
+    </div>
+
+    <div style="background:#FFF7E8;border:3px solid #1A0710;border-radius:14px;box-shadow:6px 6px 0 #1A0710;padding:20px;display:flex;flex-direction:column;gap:10px">
+      <span style="font-family:'Bungee',cursive;font-size:15px">Footer: FAST FORWARD → STANDINGS</span>
+      <div style="display:flex;flex-direction:column;gap:9px;font-size:13px;line-height:1.45;max-width:900px">
+        <span><span style="font-weight:700">Two identities, never two golds.</span> During the sequence the footer holds FAST FORWARD as a cream secondary: cream fill, ink text, 3px ink border, 3px offset shadow, 14px Bungee — the app's "sideways" vocabulary. Gold with a 4px border and a 5px shadow stays reserved for STANDINGS, the forward action.</span>
+        <span><span style="font-weight:700">Fast forward is a compressed run, not a hard cut.</span> Press → every outstanding strike lands on the same frame, and the whole grid takes one 320ms penalty wash together as the acknowledgement, then Frame 3 runs at 1.6× speed. The room sees "that all happened" instead of a jump cut, and the podium still arrives as a moment.</span>
+        <span><span style="font-weight:700">The double-press guard is three things at once.</span> (1) Position: FAST FORWARD sits at the footer's left inset, STANDINGS is centred — they never share a hit target. (2) FAST FORWARD exits over 160ms and STANDINGS only begins entering after a 480ms hold, so the footer is deliberately empty in between. (3) STANDINGS carries <span style="font-family:ui-monospace,monospace">pointer-events:none</span> for its 280ms entry. Total dead window ≈ 920ms — longer than a mash interval, and the empty footer is what tells the host to stop pressing.</span>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;scorers&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:10,&quot;min&quot;:2,&quot;max&quot;:10,&quot;step&quot;:1,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;wordsPerList&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:40,&quot;min&quot;:3,&quot;max&quot;:40,&quot;step&quot;:1,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;overlap&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;medium&quot;,&quot;options&quot;:[&quot;low&quot;,&quot;medium&quot;,&quot;high&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;mode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;team&quot;,&quot;options&quot;:[&quot;solo&quot;,&quot;team&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;revealOrderMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;entry&quot;,&quot;options&quot;:[&quot;entry&quot;,&quot;duplicates&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;playerOrderMode&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;shortest&quot;,&quot;options&quot;:[&quot;random&quot;,&quot;shortest&quot;,&quot;longest&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;splitStrike&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Content&quot;},&quot;dealDirection&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;right&quot;,&quot;options&quot;:[&quot;left&quot;,&quot;right&quot;,&quot;top&quot;,&quot;bottom&quot;,&quot;alternate&quot;],&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Deal in&quot;},&quot;dealRandomOrder&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Deal in&quot;},&quot;dealStagger&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:150,&quot;min&quot;:20,&quot;max&quot;:400,&quot;step&quot;:5,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Deal in&quot;},&quot;dealDistance&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:900,&quot;min&quot;:40,&quot;max&quot;:900,&quot;step&quot;:10,&quot;unit&quot;:&quot;px&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Deal in&quot;},&quot;dealDuration&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:920,&quot;min&quot;:120,&quot;max&quot;:1600,&quot;step&quot;:20,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Deal in&quot;},&quot;lineInterval&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:660,&quot;min&quot;:60,&quot;max&quot;:1200,&quot;step&quot;:10,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Timing&quot;},&quot;columnPause&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1000,&quot;min&quot;:0,&quot;max&quot;:2000,&quot;step&quot;:20,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Timing&quot;},&quot;strikeDuration&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:300,&quot;min&quot;:60,&quot;max&quot;:1200,&quot;step&quot;:10,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Timing&quot;},&quot;popDuration&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:260,&quot;min&quot;:60,&quot;max&quot;:1200,&quot;step&quot;:10,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Timing&quot;},&quot;blinkDuration&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:420,&quot;min&quot;:60,&quot;max&quot;:1600,&quot;step&quot;:10,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Timing&quot;},&quot;cardFlash&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:60,&quot;min&quot;:0,&quot;max&quot;:100,&quot;step&quot;:5,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Timing&quot;},&quot;statFlash&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:60,&quot;min&quot;:0,&quot;max&quot;:100,&quot;step&quot;:5,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Timing&quot;},&quot;swapDuration&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1600,&quot;min&quot;:120,&quot;max&quot;:2000,&quot;step&quot;:20,&quot;unit&quot;:&quot;ms&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Timing&quot;},&quot;speed&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:1,&quot;min&quot;:0.25,&quot;max&quot;:8,&quot;step&quot;:0.25,&quot;unit&quot;:&quot;×&quot;,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Timing&quot;},&quot;edgeTie&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Edge cases&quot;},&quot;edgeZeroUnique&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Edge cases&quot;},&quot;edgeEmptyList&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Edge cases&quot;},&quot;edgeLongStrings&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Edge cases&quot;},&quot;reducedMotion&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:false,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Edge cases&quot;}}">
+const SOLO = [
+  { emoji: "🦩", name: "Nia" }, { emoji: "🐙", name: "Dev" }, { emoji: "🦊", name: "Mara" },
+  { emoji: "🍄", name: "Kit" }, { emoji: "👾", name: "Bo" }, { emoji: "🐸", name: "Ines" },
+  { emoji: "🦉", name: "Tomas" }, { emoji: "🦀", name: "Yui" }, { emoji: "🐬", name: "Odile" },
+  { emoji: "🦄", name: "Priya" },
+];
+// Team names + the ten fixed accents from :root, in TEAM_COLORS order.
+const TEAMS = ["Flamingos", "Deep Six", "Foxtrot", "Spore Squad", "Pixels", "Ribbit", "Night Owls", "Pincers", "Deep End", "Unicorns"];
+const TEAM_HEX = ["#e5484d", "#3e63dd", "#30a46c", "#ffb224", "#8e4ec6", "#f76b15", "#d6409f", "#05a2c2", "#99d52a", "#ad7f58"];
+
+// The obvious answers — the head of this pool is what collides.
+const SHARED = ["Beyoncé", "Rihanna", "Michelle Obama", "Taylor Swift", "Madonna", "Oprah", "Marilyn Monroe", "Jane Austen", "Rosa Parks", "Lady Gaga", "Cleopatra", "Marie Curie", "Adele", "Whitney Houston", "Malala", "Cher", "Mother Teresa", "Serena Williams", "Frida Kahlo", "Dolly Parton"];
+const OWN = [
+  ["my nan", "Björk", "Ada Lovelace", "Hypatia", "Grace Hopper", "Nefertiti", "Sappho", "Boudica", "my old boss", "Artemisia", "Hildegard", "Mary Anning"],
+  ["Grace Jones", "Angela Merkel", "Wangari Maathai", "Kamala Harris", "Anna Wintour", "Greta Thunberg", "Nina Simone", "Ida B. Wells", "Vera Rubin", "Zora Neale Hurston", "Junko Tabei", "Bessie Coleman"],
+  ["my mum", "Zaha Hadid", "Simone Biles", "Tracy Chapman", "Agnès Varda", "Hedy Lamarr", "Ruth Bader Ginsburg", "Rosalind Franklin", "Käthe Kollwitz", "Fanny Blankers-Koen", "Noor Inayat Khan", "Leymah Gbowee"],
+  ["Yayoi Kusama", "Patti Smith", "Katherine Johnson", "Anne Boleyn", "Chimamanda Adichie", "Emmeline Pankhurst", "Nellie Bly", "Barbara Hepworth", "Wu Zetian", "Tove Jansson", "Lise Meitner", "Amrita Sher-Gil"],
+  ["Ripley", "Xena", "Sailor Moon", "Miss Piggy", "Furiosa", "Leia", "Buffy", "Storm", "Mulan", "Trinity", "Arya", "Okoye"],
+  ["Hilma af Klint", "Toni Morrison", "Mary Shelley", "Nan Shepherd", "Clara Schumann", "Sofonisba", "Eileen Gray", "Beatrix Potter", "Alice Coltrane", "Doris Lessing", "Lee Krasner", "Anna Akhmatova"],
+  ["Simone de Beauvoir", "Édith Piaf", "Coco Chanel", "Camille Claudel", "Marie Duplessis", "Colette", "Louise Bourgeois", "Sophie Germain", "Niki de Saint Phalle", "Olympe de Gouges", "Berthe Morisot", "Sarah Bernhardt"],
+  ["Murasaki Shikibu", "Yoko Ono", "Chiyo Uno", "Hokusai's daughter", "Naomi Osaka", "Michiko Ishimure", "Sadako Sasaki", "Rei Kawakubo", "Yoshiko Uchida", "Mitsuko Uchida", "Fumiko Enchi", "Hideko Takamine"],
+  ["Simone Veil", "Josephine Baker", "Marguerite Duras", "Christine de Pizan", "Sonia Delaunay", "Gisèle Halimi", "Nathalie Sarraute", "Jeanne Moreau", "Suzanne Valadon", "Anne Hidalgo", "Marion Cotillard", "Amélie Nothomb"],
+  ["Indira Gandhi", "Lata Mangeshkar", "Savitribai Phule", "Mary Kom", "M.S. Subbulakshmi", "Kalpana Chawla", "Amrita Pritam", "Rani Lakshmibai", "Kiran Bedi", "Ela Bhatt", "Bhanu Athaiya", "Anandi Gopal"],
+];
+const LONG_WORD = "Wolfeschlegelsteinhausenbergerdorff";
+const LONG_NAME = "Bartholomeworth";
+const LONG_TEAM = "The Marauding Marmosets";
+
+const MARQUEE = "marqueeX 5200ms ease-in-out 700ms infinite alternate";
+const EASE_DEAL = "cubic-bezier(.34,1.42,.64,1)";
+const EASE_SWAP = "cubic-bezier(.34,1.28,.64,1)";
+const GRID_W = 1148, GRID_H = 466, GAP = 12, TRACK_MAX = 240;
+
+// Straight numeric mix of two hexes — JS arithmetic, so no color-mix() lands
+// in the CSS. The ramps run cream → deeper paper, and pink → --penalty.
+function mixHex(a, b, k) {
+  const p = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+  const [ar, ag, ab] = p(a), [br, bg, bb] = p(b);
+  const c = (x, y) => Math.round(x + (y - x) * k).toString(16).padStart(2, "0");
+  return "#" + c(ar, br) + c(ag, bg) + c(ab, bb);
+}
+
+const norm = (w) => w.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, "").trim();
+const columnsFor = (n) => (n <= 5 ? Math.max(n, 1) : Math.ceil(n / 2));
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// Seeded shuffle, so "random" entry order is stable across the three frames.
+function shuffled(n, seed) {
+  const a = [...Array(n).keys()];
+  let s = seed;
+  for (let i = n - 1; i > 0; i--) {
+    s = (s * 1103515245 + 12345) % 2147483648;
+    const j = s % (i + 1);
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+
+const FRAME_DEFS = [
+  { key: "f1", phase: 1, label: "FRAME 1 · DEAL IN", note: "entry order · lists empty · UNIQUE and rank both unresolved", screenLabel: "Reveal · Frame 1 deal in" },
+  { key: "f1b", phase: 1, scorers: 8, label: "FRAME 1 · DEAL IN · 8 SCORERS, TWO ROWS", note: "two rows of four · UNIQUE and rank both unresolved", screenLabel: "Reveal · Frame 1, 8 scorers" },
+  { key: "f2", phase: 2, label: "FRAME 2 · REVEAL AND STRIKE", note: "reveal order per tweak · one line at a time, flat cadence", screenLabel: "Reveal · Frame 2 reveal and strike" },
+  { key: "f3", phase: 3, label: "FRAME 3 · RANK AND PODIUM", note: "final order · ranks resolve · gold / silver / bronze plaques", screenLabel: "Reveal · Frame 3 rank and podium" },
+  { key: "f3b", phase: 3, scorers: 8, label: "FRAME 3 · RANK AND PODIUM · 8 SCORERS", note: "cards cross rows: wrapper travels in Y, card in X 180ms later", screenLabel: "Reveal · Frame 3, 8 scorers" },
+];
+
+class Component extends DCLogic {
+  state = { step: { f1: 0, f1b: 0, f2: 0, f3: 0, f3b: 0 }, playing: {}, ff: {} };
+  timers = {};
+
+  rootRef = React.createRef();
+
+  componentWillUnmount() {
+    Object.values(this.timers).forEach(clearTimeout);
+    if (this.ro) this.ro.disconnect();
+  }
+
+  // Measure each clipped run once per render: travel = clip width − text width,
+  // clamped at 0 so anything that fits keeps its natural width and stays still.
+  measure = () => {
+    const root = this.rootRef.current;
+    if (!root) return;
+    root.querySelectorAll("[data-marquee]").forEach((el) => {
+      const room = el.parentElement.clientWidth - el.scrollWidth;
+      el.style.setProperty("--travel", (room < -2 ? room : 0) + "px");
+    });
+    // The revealing list follows its newest line. Only the active column
+    // follows — a back-check landing elsewhere must not yank that column away
+    // from wherever the room is looking.
+    root.querySelectorAll('[data-follow="1"]').forEach((el) => {
+      const top = el.scrollHeight - el.clientHeight;
+      if (top > 0) el.scrollTo({ top, behavior: this.timing().rm ? "auto" : "smooth" });
+    });
+  };
+
+  // Fonts land after first paint; Bungee is much wider than the fallback, so
+  // measuring only on mount reports "it fits" for runs that will not.
+  componentDidMount() {
+    this.measure();
+    if (document.fonts) document.fonts.ready.then(this.measure);
+    this.ro = new ResizeObserver(this.measure);
+    if (this.rootRef.current) this.ro.observe(this.rootRef.current);
+  }
+
+  componentDidUpdate() { this.measure(); }
+
+  // ---- content -----------------------------------------------------------
+  data(n) {
+    const p = this.props;
+    const words = clamp(p.wordsPerList ?? 12, 3, 40);
+    const frac = { low: 0.3, medium: 0.55, high: 0.85 }[p.overlap ?? "medium"];
+    const team = (p.mode ?? "solo") === "team";
+    const tie = p.edgeTie ?? true, zero = p.edgeZeroUnique ?? true;
+    const empty = p.edgeEmptyList ?? false, longs = p.edgeLongStrings ?? false;
+
+    // Sample fan: at 5 scorers and 12 words this is exactly 4 / 6 / 8 / 9 / 12.
+    const fan = n === 5 ? [4 / 12, 6 / 12, 8 / 12, 9 / 12, 1] : [...Array(n).keys()].map((i) => 0.34 + (0.66 * i) / Math.max(1, n - 1));
+    const lens = fan.map((f) => clamp(Math.round(words * f), 1, 40));
+    if (tie && n >= 3) lens[2] = lens[1];
+
+    const scorers = [...Array(n).keys()].map((i) => {
+      let len = lens[i];
+      let shared = Math.round(len * frac);
+      if (zero && i === 0) shared = len;
+      if (tie && n >= 3 && i === 2) shared = Math.round(lens[1] * frac);
+      const ws = [];
+      for (let k = 0; k < Math.min(shared, len); k++) ws.push(SHARED[k % SHARED.length]);
+      for (let k = ws.length; k < len; k++) ws.push(OWN[i % OWN.length][k % 12]);
+      // The long word is planted in two lists, so the clipping test also
+      // exercises the strike and the avatar trail rather than sitting unique.
+      if (longs && i <= 1 && ws.length) ws[Math.min(1, ws.length - 1)] = LONG_WORD;
+      // Shuffled per player: built as "obvious answers then own answers", a
+      // typed list is nothing like that, and unshuffled it parks every unique
+      // word at the bottom of the column.
+      const order = shuffled(ws.length, 101 + i * 17);
+      const mixed = order.map((k) => ws[k]);
+      const list = empty && i === n - 1 ? [] : mixed;
+      const nm = team ? (longs && i === 0 ? LONG_TEAM : TEAMS[i]) : longs && i === 0 ? LONG_NAME : SOLO[i].name;
+      return {
+        i, emoji: SOLO[i].emoji, name: nm, isTeam: team, teamColor: TEAM_HEX[i],
+        members: [SOLO[i].emoji, SOLO[(i + 5) % 10].emoji],
+        words: list,
+      };
+    });
+
+    // alsoBy, derived — never diffed by hand.
+    const derive = () => scorers.forEach((s) => {
+      s.also = s.words.map((w) => scorers.filter((o) => o !== s && o.words.some((x) => norm(x) === norm(w))).map((o) => o.i));
+    });
+    derive();
+
+    // The tie has to be an assertion on the OUTCOME, not on the inputs: equal
+    // list lengths and equal shared counts still derive different unique totals,
+    // because collisions depend on what everyone else wrote. So swap words in
+    // and out of scorer 2's list — one duplicate for one novel word, or the
+    // reverse — until its derived unique matches scorer 1's. Length never
+    // changes, so TOTAL stays equal, and every count stays derived.
+    if (tie && n >= 3) {
+      const a = scorers[1], b = scorers[2];
+      const uq = (s) => s.also.filter((x) => x.length === 0).length;
+      const has = (s, w) => s.words.some((x) => norm(x) === norm(w));
+      for (let guard = 0; guard < 60 && uq(b) !== uq(a); guard++) {
+        if (uq(b) > uq(a)) {
+          // Too many uniques: overwrite one with a word scorer 0 already has.
+          const j = b.also.findIndex((x) => x.length === 0);
+          const w = scorers[0].words.find((x) => !has(b, x));
+          if (j === -1 || !w) break;
+          b.words[j] = w;
+        } else {
+          // Too few: overwrite a duplicate with a word nobody else wrote.
+          const j = b.also.findIndex((x) => x.length > 0);
+          const w = OWN[2 % OWN.length].find((x) => !scorers.some((o) => has(o, x)));
+          if (j === -1 || !w) break;
+          b.words[j] = w;
+        }
+        derive();
+      }
+    }
+
+    const entryOrder = shuffled(n, 7);
+
+    // Which player's list goes next.
+    const pm = p.playerOrderMode ?? "shortest";
+    const revealOrder = pm === "random"
+      ? shuffled(n, 53)
+      : [...scorers]
+          .sort((a, b) =>
+            (pm === "longest" ? b.words.length - a.words.length : a.words.length - b.words.length) ||
+            entryOrder.indexOf(a.i) - entryOrder.indexOf(b.i),
+          )
+          .map((s) => s.i);
+
+    // Which line inside a list goes next: typed order, or every duplicate
+    // first and the uniques held back for the end.
+    const em = p.revealOrderMode ?? "entry";
+    const seqOf = {};
+    scorers.forEach((s) => {
+      const idx = [...s.words.keys()];
+      seqOf[s.i] = em === "duplicates"
+        ? idx.slice().sort((a, b) => (s.also[b].length > 0) - (s.also[a].length > 0) || a - b)
+        : idx;
+    });
+
+    // One flat schedule: one step per line, in player order then line order.
+    const stepOf = {}; const colStart = {}; let step = 0;
+    revealOrder.forEach((ci) => {
+      colStart[ci] = step + 1;
+      seqOf[ci].forEach((j) => { step += 1; stepOf[ci + ":" + j] = step; });
+    });
+    const totalSteps = step;
+
+    const finals = scorers.map((s) => {
+      const struck = s.words.filter((w, j) => s.also[j].length > 0).length;
+      return { i: s.i, unique: s.words.length - struck, total: s.words.length };
+    });
+    const ranked = [...finals].sort((a, b) => b.unique - a.unique || b.total - a.total);
+    const place = {}; let prev = null, pl = 0;
+    ranked.forEach((r, idx) => {
+      if (prev && prev.unique === r.unique && prev.total === r.total) place[r.i] = pl;
+      else { pl = idx + 1; place[r.i] = pl; }
+      prev = r;
+    });
+    return { n, scorers, entryOrder, revealOrder, seqOf, stepOf, colStart, totalSteps, finals, place, ranked };
+  }
+
+  timing() {
+    const p = this.props, sp = clamp(p.speed ?? 1, 0.25, 8);
+    return {
+      sp,
+      line: clamp(p.lineInterval ?? 260, 60, 1200),
+      colPause: clamp(p.columnPause ?? 420, 0, 2000),
+      stagger: clamp(p.dealStagger ?? 90, 20, 400),
+      dealDist: clamp(p.dealDistance ?? 420, 40, 900),
+      dealDur: clamp(p.dealDuration ?? 520, 120, 1600),
+      strike: clamp(p.strikeDuration ?? 300, 60, 1200),
+      pop: clamp(p.popDuration ?? 260, 60, 1200),
+      blink: clamp(p.blinkDuration ?? 420, 60, 1600),
+      swap: clamp(p.swapDuration ?? 620, 120, 2000),
+      cardFlash: clamp(p.cardFlash ?? 60, 0, 100) / 100,
+      statFlash: clamp(p.statFlash ?? 60, 0, 100) / 100,
+      rm: p.reducedMotion ?? false,
+    };
+  }
+
+  maxStep(def, d) {
+    if (def.phase === 1) return d.n;
+    if (def.phase === 2) return d.totalSteps;
+    return 2;
+  }
+
+  // ---- playback ----------------------------------------------------------
+  delayFor(def, d, next) {
+    const t = this.timing();
+    if (def.phase === 1) return t.stagger / t.sp;
+    if (def.phase === 3) return (next === 1 ? 140 : t.swap) / t.sp;
+    const startsCol = Object.values(d.colStart).indexOf(next) !== -1;
+    return (t.line + (startsCol && next > 1 ? t.colPause : 0)) / t.sp;
+  }
+
+  tick = (key) => {
+    const def = FRAME_DEFS.find((f) => f.key === key);
+    const d = this.data(def.scorers ?? clamp(this.props.scorers ?? 5, 2, 10));
+    const cur = this.state.step[key], max = this.maxStep(def, d);
+    if (cur >= max) { this.setPlaying(key, false); return; }
+    const next = cur + 1;
+    this.timers[key] = setTimeout(() => {
+      this.setState((s) => ({ step: { ...s.step, [key]: next } }), () => {
+        if (this.state.playing[key]) this.tick(key);
+      });
+    }, this.delayFor(def, d, next));
+  };
+
+  setPlaying(key, on) {
+    clearTimeout(this.timers[key]);
+    this.setState((s) => ({ playing: { ...s.playing, [key]: on } }), () => { if (on) this.tick(key); });
+  }
+
+  toggle = (key) => {
+    const def = FRAME_DEFS.find((f) => f.key === key);
+    const d = this.data(def.scorers ?? clamp(this.props.scorers ?? 5, 2, 10));
+    if (this.state.playing[key]) { this.setPlaying(key, false); return; }
+    if (this.state.step[key] >= this.maxStep(def, d)) {
+      this.setState((s) => ({ step: { ...s.step, [key]: 0 } }), () => this.setPlaying(key, true));
+    } else this.setPlaying(key, true);
+  };
+
+  jump = (key, where) => {
+    const def = FRAME_DEFS.find((f) => f.key === key);
+    const d = this.data(def.scorers ?? clamp(this.props.scorers ?? 5, 2, 10));
+    const max = this.maxStep(def, d);
+    const to = where === "start" ? 0 : where === "mid" ? Math.round(max / 2) : max;
+    clearTimeout(this.timers[key]);
+    this.setState((s) => ({
+      step: { ...s.step, [key]: to },
+      playing: { ...s.playing, [key]: false },
+      // Fast forward acknowledges itself: one wash across every card.
+      ff: { ...s.ff, [key]: where === "end" && s.step[key] < max },
+    }));
+    if (where === "end") setTimeout(() => this.setState((s) => ({ ff: { ...s.ff, [key]: false } })), 340);
+  };
+
+  step1 = (key) => {
+    const def = FRAME_DEFS.find((f) => f.key === key);
+    const d = this.data(def.scorers ?? clamp(this.props.scorers ?? 5, 2, 10));
+    clearTimeout(this.timers[key]);
+    this.setState((s) => ({
+      step: { ...s.step, [key]: Math.min(this.maxStep(def, d), s.step[key] + 1) },
+      playing: { ...s.playing, [key]: false },
+    }));
+  };
+
+  replay = (key) => {
+    clearTimeout(this.timers[key]);
+    this.setState((s) => ({ step: { ...s.step, [key]: 0 }, playing: { ...s.playing, [key]: false } }),
+      () => setTimeout(() => this.setPlaying(key, true), 60));
+  };
+
+  // ---- per-frame view ----------------------------------------------------
+  buildFrame(def) {
+    const t = this.timing();
+    const n = def.scorers ?? clamp(this.props.scorers ?? 5, 2, 10);
+    const d = this.data(n);
+    const p = t.rm ? this.maxStep(def, d) : this.state.step[def.key];
+    const max = this.maxStep(def, d);
+    const cols = columnsFor(n), rows = Math.ceil(n / cols);
+    const gridW = Math.min(GRID_W, cols * TRACK_MAX);
+    const trackW = (gridW - GAP * (cols - 1)) / cols;
+    const rowH = (GRID_H - GAP * (rows - 1)) / rows;
+    const washing = this.state.ff[def.key] && !t.rm;
+
+    // Deal sequence: left-to-right through the slots, or a seeded scatter.
+    const dealSeq = (this.props.dealRandomOrder ?? false) ? shuffled(n, 31) : [...Array(n).keys()];
+    const dealRank = {};
+    dealSeq.forEach((slot, k) => { dealRank[slot] = k; });
+
+    // Which list is revealing, and which is next — the cue the room follows.
+    let activeCol = -1, nextCol = -1;
+    if (def.phase === 2) {
+      d.revealOrder.forEach((ci) => {
+        const start = d.colStart[ci], end = start + d.scorers[ci].words.length - 1;
+        if (p >= start && p <= end) activeCol = ci;
+      });
+      if (p === 0) nextCol = d.revealOrder[0];
+      else {
+        const ci = activeCol;
+        if (ci !== -1) {
+          const end = d.colStart[ci] + d.scorers[ci].words.length - 1;
+          const at = d.revealOrder.indexOf(ci);
+          if (p === end && at < d.revealOrder.length - 1) nextCol = d.revealOrder[at + 1];
+        }
+      }
+    }
+
+    const activeSlot = activeCol === -1 ? -1 : d.entryOrder.indexOf(activeCol);
+
+    const players = d.entryOrder.map((si, slot) => {
+      const s = d.scorers[si];
+      const fin = d.finals.find((x) => x.i === si);
+      const entryCol = slot % cols, entryRow = Math.floor(slot / cols);
+      const finalSlot = d.ranked.findIndex((x) => x.i === si);
+      const finalCol = finalSlot % cols, finalRow = Math.floor(finalSlot / cols);
+      const place = d.place[si];
+
+      // Rank belongs to FINAL ORDER: it stays unresolved until Frame 3's swap.
+      let entries = [], unique = fin.unique, meta = def.phase === 3 ? "RANK " + place : "—";
+      let wrapT = "none", cardT = "none", wrapTrans = "none", cardTrans = "none", cardOpacity = 1, z = 1;
+      let medal = "", medalColor = "", plaqueAnim = "none", statAnim = "none", cardAnim = "none";
+      let cardShadow = "6px 6px 0 #1A0710", ringAnim = "none";
+      const nameAnim = t.rm ? "none" : MARQUEE;
+      if (def.phase === 2) cardTrans = "box-shadow 180ms ease-out, transform 260ms " + EASE_SWAP;
+
+      if (def.phase === 1) {
+        // Lists arrive empty; every word is provisionally unique.
+        // Nothing is known yet — not the rank, and not the score.
+        unique = "—"; meta = "—";
+        const rank = dealRank[slot];
+        const dealt = rank < p;
+        const side = this.props.dealDirection ?? "alternate";
+        const sgn = side === "alternate" ? (slot % 2 === 0 ? -1 : 1) : side === "left" || side === "top" ? -1 : 1;
+        const vertical = side === "top" || side === "bottom";
+        const off = vertical
+          ? "translateY(" + sgn * t.dealDist + "px) rotate(" + sgn * 1.5 + "deg)"
+          : "translateX(" + sgn * t.dealDist + "px) rotate(" + sgn * 2 + "deg)";
+        cardT = dealt ? "none" : off;
+        cardOpacity = dealt || rank === p ? 1 : 0;
+        cardTrans = "transform " + t.dealDur / t.sp + "ms " + EASE_DEAL + ", opacity " + (t.dealDur / t.sp) * 0.5 + "ms linear";
+      } else {
+        // Frames 2 and 3 read the same derived state; Frame 3 starts fully revealed.
+        const full = def.phase === 3;
+        let struckCount = 0;
+        const rowDur = Math.min(180, t.line * 0.6) / t.sp;
+        // Alternating keyframe names, so two strikes on consecutive steps both
+        // flash: an identical animation string would not restart.
+        const ab = p % 2 === 0 ? "A" : "B";
+        const split = this.props.splitStrike ?? false;
+        let blinkDelay = -1;
+        s.words.forEach((w, j) => {
+          const my = d.stepOf[si + ":" + j];
+          if (!full && my > p) return;
+          const others = s.also[j].map((oi) => {
+            const oj = d.scorers[oi].words.findIndex((x) => norm(x) === norm(w));
+            return { oi, st: d.stepOf[oi + ":" + oj] };
+          });
+          const seen = full ? others : others.filter((o) => o.st <= p);
+          const collides = seen.length > 0;
+          const raw = collides ? Math.max(my, Math.min(...seen.map((o) => o.st))) : 0;
+          // Split mode gives a word its own beat: the line lands on its step and
+          // is struck on the next one. A back-check strike is always immediate —
+          // it belongs to the colliding line's beat, not its own.
+          const strikeStep = collides && split && raw === my ? my + 1 : raw;
+          const struck = collides && (full || p >= strikeStep);
+          if (struck) struckCount += 1;
+          const trailStep = struck ? Math.max(...seen.map((o) => o.st), strikeStep) : 0;
+          // Without split, the line still lands in plain ink first and is struck
+          // after, inside the same beat.
+          const onReveal = struck && strikeStep === my;
+          const dly = onReveal ? rowDur : 0;
+          const strikeNow = !full && struck && strikeStep === p && !t.rm;
+          const strikeAnim = strikeNow
+            ? "strikeIn " + t.strike / t.sp + "ms cubic-bezier(.2,.7,.3,1) " + dly + "ms both"
+            : "none";
+          if (strikeNow && (blinkDelay === -1 || dly < blinkDelay)) blinkDelay = dly;
+          entries.push({
+            step: my, w, dup: struck, uniq: !struck,
+            by: seen.map((o) => d.scorers[o.oi].emoji).join(""),
+            author: s.isTeam ? s.members[j % s.members.length] : "",
+            rowAnim: !full && my === p && !t.rm ? "rowIn " + rowDur + "ms ease-out both" : "none",
+            // Unconditional: marqueeX is already a no-op when the text fits, and
+            // whether a row clips depends on the rendered track, not its length.
+            wordAnim: [strikeAnim === "none" ? "" : strikeAnim, t.rm ? "" : MARQUEE].filter(Boolean).join(",") || "none",
+            trailAnim: !full && trailStep === p && !t.rm
+              ? "popIn" + ab + " " + t.pop / t.sp + "ms " + EASE_DEAL + " " + dly + "ms both"
+              : "none",
+            // The trail scrolls too: four or five avatars overflow the 40% the
+            // row can spare, and a clipped emoji is a missing attribution.
+            byAnim: t.rm ? "none" : MARQUEE,
+          });
+        });
+        // Rows sit in reveal order — with duplicates-first that means the list
+        // grows downward as it is revealed rather than filling gaps.
+        entries.sort((a, b) => a.step - b.step);
+        unique = s.words.length - struckCount;
+        const blinking = blinkDelay !== -1;
+        // The card takes the hit physically: a feathered penalty ring inside its
+        // own edge (an overlay child, so it never touches the hard offset
+        // shadow) plus a weighted dip down and a small overshoot back up.
+        ringAnim = washing
+          ? "penaltyBlink" + ab + " 320ms ease-out both"
+          : blinking
+            ? "penaltyBlink" + ab + " " + t.blink / t.sp + "ms ease-out " + blinkDelay + "ms both"
+            : "none";
+        cardAnim = blinking && !washing
+          ? "dip" + ab + " " + (t.blink * 1.15) / t.sp + "ms cubic-bezier(.3,1.5,.5,1) " + blinkDelay + "ms both"
+          : "none";
+        // The card holding the floor doesn't flinch at its own words — it is
+        // lifted, and the penalty belongs to the cards being caught out.
+        if (def.phase === 2 && si === activeCol) { ringAnim = "none"; cardAnim = "none"; }
+        statAnim = blinking ? "statBlink" + ab + " " + t.blink / t.sp + "ms ease-in-out " + blinkDelay + "ms both" : "none";
+        if (def.phase === 2) {
+          if (si === activeCol) {
+          cardShadow = "6px 6px 0 #00A6A6";
+          z = 4;
+        }
+          if (si === nextCol && !t.rm) {
+            const cue = "shakeCue " + Math.max(600, t.colPause / t.sp) + "ms ease-in-out both";
+            cardAnim = cardAnim === "none" ? cue : cardAnim + "," + cue;
+          }
+        }
+
+        if (def.phase === 3) {
+          if (p === 0) {
+            meta = "—";
+          } else {
+            const dx = (finalCol - entryCol) * (trackW + GAP);
+            const dy = (finalRow - entryRow) * (rowH + GAP);
+            const moving = dx !== 0 || dy !== 0;
+            wrapT = "translateY(" + dy + "px)";
+            cardT = "translateX(" + dx + "px)" + (moving && p === 1 ? " rotate(1.5deg) scale(1.03)" : "");
+            wrapTrans = "transform " + t.swap / t.sp + "ms " + EASE_SWAP;
+            cardTrans = "transform " + t.swap / t.sp + "ms " + EASE_SWAP + " " + (dy !== 0 ? 180 / t.sp : 0) + "ms";
+            z = moving ? 3 : 1;
+            if (place <= 3) {
+              medal = place === 1 ? "1ST" : place === 2 ? "2ND" : "3RD";
+              medalColor = place === 1 ? "#FFD400" : place === 2 ? "#C9CDD4" : "#C08457";
+              if (p >= 2) {
+                plaqueAnim = t.rm ? "none" : "plaquePop " + 280 / t.sp + "ms " + EASE_DEAL + " both";
+                cardAnim = t.rm ? "none" : (place === 1 ? "medalGold " : place === 2 ? "medalSilver " : "medalBronze ") + 260 / t.sp + "ms ease-out both";
+              } else {
+                medal = "";
+              }
+            }
+          }
+        }
+      }
+
+      return {
+        emoji: s.emoji, name: s.name, meta, unique, total: s.words.length,
+        isTeam: s.isTeam, teamColor: s.teamColor, members: s.members,
+        // Clearance for the badge overhang: it sits at -12px and stands ~12px
+        // proud of the card's top edge, so team content starts below that.
+        showAvatar: !s.isTeam, showName: !s.isTeam, headPad: s.isTeam ? "15px" : "0px",
+        isEmpty: s.words.length === 0 && def.phase !== 1,
+        entries, wrapT, cardT, wrapTrans, cardTrans, cardOpacity, z,
+        medal, medalColor, plaqueAnim, statAnim, cardAnim, cardShadow, nameAnim,
+        follow: def.phase === 2 && si === activeCol ? "1" : "0",
+        // Flash intensity, as inline custom properties the keyframes read.
+        ringAnim,
+        ringShadow: "inset 0 0 " + (7 + 17 * t.cardFlash) + "px " + (1 + 3 * t.cardFlash) + "px " + mixHex("#E62E5C", "#8E0B24", 0.45),
+        dip: (3 + 7 * t.cardFlash).toFixed(1) + "px",
+        flash: mixHex("#E62E5C", "#8E0B24", t.statFlash),
+        flashScale: 1 + 0.26 * t.statFlash,
+      };
+    });
+
+    const done = p >= max;
+    const readout = def.phase === 2
+      ? "line " + p + " / " + max + "  ·  reveal order " + d.revealOrder.map((i) => d.scorers[i].emoji).join(" ")
+      : def.phase === 1
+        ? "dealt " + p + " / " + max + "  ·  entry order " + d.entryOrder.map((i) => d.scorers[i].emoji).join(" ")
+        : ["pre-swap", "swapping", "settled"][p] + "  ·  final order " + d.ranked.map((r) => d.scorers[r.i].emoji).join(" ");
+
+    return {
+      key: def.key, label: def.label, note: def.note, screenLabel: def.screenLabel,
+      gridCols: "repeat(" + cols + ",minmax(0,1fr))",
+      gridMax: gridW + "px",
+      players, readout,
+      playLabel: this.state.playing[def.key] ? "PAUSE" : "PLAY",
+      showFF: !done, showStandings: done,
+      ffAnim: "none",
+      stdAnim: t.rm ? "none" : "stdIn " + 280 / t.sp + "ms " + EASE_DEAL + " 480ms both",
+      stdPointer: "auto",
+      onPlay: () => this.toggle(def.key),
+      onReplay: () => this.replay(def.key),
+      onStep: () => this.step1(def.key),
+      onStart: () => this.jump(def.key, "start"),
+      onMid: () => this.jump(def.key, "mid"),
+      onEnd: () => this.jump(def.key, "end"),
+    };
+  }
+
+  renderVals() {
+    const t = this.timing();
+    const n = clamp(this.props.scorers ?? 5, 2, 10);
+    const d = this.data(n);
+    const secs = (d.totalSteps * t.line + n * t.colPause) / 1000;
+
+    const t1 = [
+      { el: ".result-col wrapper", delay: "deal rank × " + t.stagger + "ms", dur: t.dealDur + "ms", ease: EASE_DEAL, what: "Offset → none, from the direction tweak: left/right = translateX(∓" + t.dealDist + "px) rotate(∓2°), top/bottom = translateY(∓" + t.dealDist + "px) rotate(∓1.5°), alternate = sides by slot parity. Deal order is left-to-right through the slots, or a seeded scatter with the random-order toggle. KEY MOMENT ~62% of the duration: the bezier's 1.42 overshoot carries the card past its slot." },
+      { el: "card opacity", delay: "with transform", dur: t.dealDur / 2 + "ms", ease: "linear", what: "0 → 1, half the transform duration, so the card is solid before it overshoots." },
+      { el: ".id-card + .list-card", delay: "—", dur: "—", ease: "—", what: "One unit per column: both cards live in the same travelling wrapper and never separate." },
+      { el: ".word-list", delay: "—", dur: "—", ease: "—", what: "Blank, not the empty state — see Decisions." },
+      { el: ".stat__num--unique", delay: "—", dur: "—", ease: "—", what: "Reads “—” for every scorer. Nothing has been revealed, so there is no provisional score to show yet; it resolves to the scorer's TOTAL as Frame 2 opens, and only ever counts down from there." },
+      { el: ".id-card__meta", delay: "—", dur: "—", ease: "—", what: "Reads “—”. No rank exists in entry order." },
+    ];
+    const t2 = [
+      { el: ".word-row (enter)", delay: "step × " + t.line + "ms", dur: Math.min(180, Math.round(t.line * 0.6)) + "ms", ease: "ease-out", what: "rowIn: opacity 0→1, translateY(-6px)→0. One line at a time, flat cadence, never batched." },
+      { el: "inter-column beat", delay: "+" + t.colPause + "ms", dur: "—", ease: "—", what: "Added once at each column's first line. Separate tweak from the line interval — and it is not dead time: it is the cue below." },
+      { el: "next card (cue)", delay: "on the last line of the previous column", dur: Math.max(600, t.colPause) + "ms", ease: "ease-in-out", what: "shakeCue: ±5px / ±0.7° settling to ±2px over the full pause, so the room's eye is on the next list before its first word lands. Fires before the first column too." },
+      { el: "active .word-list", delay: "each line", dur: "smooth scroll", ease: "native", what: "The revealing list scrolls to its newest line, so the latest entry is always visible once the list is longer than the card. Only the active column follows — a back-check strike landing in another column must not yank that column away from wherever the room is looking." },
+      { el: "active card", delay: "on its first line", dur: "180ms", ease: "ease-out", what: "Card offset shadow ink → --teal, plus z-index 4, for as long as that list is revealing — no scale, the card does not change size. Teal is already the app's liveness signal (activity dots, timer fill), so “this one is talking” needs no new colour. The active card also does NOT flinch at its own words — the penalty belongs to the cards being caught out." },
+      { el: "long name / long word", delay: "700ms", dur: "5200ms", ease: "ease-in-out", what: "marqueeX, infinite alternate: cut off at the clip edge — the avatar edge for a word — then travels back and forth. 100cqw vs 100% means it is a no-op when the text fits, so it costs nothing on normal rows." },
+      { el: ".word → .word--struck", delay: Math.min(180, Math.round(t.line * 0.6)) + "ms on its own reveal, 0ms on back-check", dur: t.strike + "ms", ease: "cubic-bezier(.2,.7,.3,1)", what: "strikeIn: color ink → --penalty at 55% → --struck; text-decoration-color transparent → --struck. The line always lands in plain ink first and is struck after — a word never appears pre-struck. Owns its duration independent of the interval. KEY MOMENT: the 55% frame is the only time --penalty is on a word." },
+      { el: ".word-row__also", delay: "at collision step", dur: t.pop + "ms", ease: EASE_DEAL, what: "popIn: scale .4 → 1.18 → 1. Fires again each time the trail grows, so a word shared by four pops four times across the phase." },
+      { el: ".card__penalty (overlay)", delay: "with the strike", dur: t.blink + "ms", ease: "ease-out", what: "penaltyBlink: opacity 0 → 1 → 0 on an inset feathered ring — inset 0 0 " + Math.round(7 + 17 * t.cardFlash) + "px " + Math.round(1 + 3 * t.cardFlash) + "px --penalty-soft, drawn on an absolutely-positioned child so the card's own hard offset shadow is never touched. The penalty reads as light bleeding in from the card's edge rather than the whole panel changing colour." },
+      { el: ".card.id-card (dip)", delay: "with the strike", dur: Math.round(t.blink * 1.15) + "ms", ease: "cubic-bezier(.3,1.5,.5,1)", what: "dip: translateY 0 → +" + (3 + 7 * t.cardFlash).toFixed(1) + "px at 26% → −28% of that at 62% → 0. The card takes the hit physically, with weight on the way down and a small overshoot coming back. KEY MOMENT: the 26% frame, deepest point. Both this and the ring fire on EVERY strike with no cooldown — the keyframe name alternates A/B per line so consecutive strikes restart instead of coalescing." },
+      { el: ".stat__num--unique", delay: "with the strike", dur: t.blink + "ms", ease: "ease-in-out", what: "statBlink (also A/B alternating): --pink → --penalty, scale 1.16 → 1, decremented value already committed on the first frame. Card and numeral always flash together." },
+      { el: "back-check", delay: "same frame", dur: "—", ease: "—", what: "Derived, not diffed: a row is struck once ANY scorer in its alsoBy has been revealed, so already-revealed columns flip at the moment a later column lands. KEY MOMENT: the last column strikes a wall of rows at once; the first strikes nothing." },
+      { el: "runtime", delay: "—", dur: "—", ease: "—", what: "(lines × interval) + (scorers × column pause). No acceleration, no length-scaling, no batching." },
+    ];
+    const t3 = [
+      { el: "wrapper (Y travel)", delay: "0ms", dur: t.swap + "ms", ease: EASE_SWAP, what: "translateY to the final row. Vertical first — this is what stops an 8-player two-row swap reading as a shuffle." },
+      { el: "card (X travel)", delay: "180ms when changing rows", dur: t.swap + "ms", ease: EASE_SWAP, what: "translateX to the final column, plus rotate(1.5°) scale(1.03) and z-index 3 while in flight, so a travelling card visibly passes over a stationary one." },
+      { el: ".id-card__meta", delay: "0ms", dur: "—", ease: "—", what: "“—” resolves to the real RANK n on the swap frame. Ties share a place; the next place skips." },
+      { el: "medal plaque", delay: "after swap settles", dur: "280ms", ease: EASE_DEAL, what: "plaquePop: scale .5 → 1.12 → 1, held at rotate(-2.5deg) — the house angle. Tab overhangs the card's top-right, opposite the team badge. KEY MOMENT: the 65% overshoot frame." },
+      { el: ".card box-shadow", delay: "after swap settles", dur: "260ms", ease: "ease-out", what: "medalGold / medalSilver / medalBronze: 6px 6px 0 ink → 6px 6px 0 medal. Hard offset only; border width and radius never animate." },
+      { el: "FAST FORWARD", delay: "on completion", dur: "160ms", ease: "ease-in", what: "ffOut: opacity → 0, translateY(14px). Footer then deliberately empty for 480ms." },
+      { el: "STANDINGS", delay: "480ms", dur: "280ms", ease: EASE_DEAL, what: "stdIn: translateY(16px) scale(.92) → overshoot 1.04 → rest; pointer-events:none throughout. ≈920ms total dead window absorbs a mashed second press." },
+      { el: "fast-forward press", delay: "immediate", dur: "320ms", ease: "ease-in-out", what: "All outstanding strikes commit on one frame; the whole grid takes a single penaltyBlink together, then Frame 3 runs at 1.6× speed. Compressed run, not a hard cut." },
+    ];
+
+    const keyframeSrc = [
+      "@keyframes rowIn { from { opacity:0; transform:translateY(-6px) } to { opacity:1; transform:none } }",
+      "",
+      "@keyframes strikeIn {",
+      "  0%   { color:var(--ink);     text-decoration-color:transparent }",
+      "  55%  { color:var(--penalty); text-decoration-color:var(--penalty) }",
+      "  100% { color:var(--struck);  text-decoration-color:var(--struck) }",
+      "}",
+      "",
+      "@keyframes popIn { 0% { opacity:0; transform:scale(.4) } 62% { transform:scale(1.18) } 100% { opacity:1; transform:scale(1) } }",
+      "",
+      "/* The penalty ring lives on .card__penalty — position:absolute; inset:0;",
+      "   border-radius:calc(var(--radius) - 3px); pointer-events:none; opacity:0;",
+      "   box-shadow: inset 0 0 24px 4px var(--penalty-soft);  — never on .card",
+      "   itself, or it would fight the hard offset shadow. */",
+      "@keyframes penaltyBlink { 0%,100% { opacity:0 } 18% { opacity:1 } 52% { opacity:.82 } }",
+      "",
+      "@keyframes dip {",
+      "  0%,100% { transform:none }",
+      "  26%  { transform:translateY(var(--dip)) }",
+      "  62%  { transform:translateY(calc(var(--dip) * -.28)) }",
+      "}",
+      "",
+      "@keyframes statBlink {",
+      "  0%,100% { color:var(--pink); transform:none }",
+      "  24%     { color:var(--penalty); transform:scale(1.16) }",
+      "}",
+      "",
+      "@keyframes plaquePop {",
+      "  0%   { opacity:0; transform:rotate(-2.5deg) scale(.5) }",
+      "  65%  { transform:rotate(-2.5deg) scale(1.12) }",
+      "  100% { opacity:1; transform:rotate(-2.5deg) scale(1) }",
+      "}",
+      "",
+      "@keyframes medalGold   { from { box-shadow:var(--shadow-card) } to { box-shadow:6px 6px 0 var(--gold) } }",
+      "@keyframes medalSilver { from { box-shadow:var(--shadow-card) } to { box-shadow:6px 6px 0 var(--silver) } }",
+      "@keyframes medalBronze { from { box-shadow:var(--shadow-card) } to { box-shadow:6px 6px 0 var(--bronze) } }",
+      "",
+      "",
+      "/* The cue during the inter-column pause. */",
+      "@keyframes shakeCue {",
+      "  0%,100% { transform:none }",
+      "  10% { transform:translateX(-5px) rotate(-.7deg) }  25% { transform:translateX(5px) rotate(.7deg) }",
+      "  40% { transform:translateX(-4px) rotate(-.5deg) }  55% { transform:translateX(4px) rotate(.5deg) }",
+      "  70% { transform:translateX(-2px) }                 85% { transform:translateX(2px) }",
+      "}",
+      "",
+      "/* Cut off, then travel. The clip box sets container-type:inline-size; no JS",
+      "   measurement, and min() makes it a no-op when the text already fits. */",
+      "@keyframes marqueeX { from { transform:translateX(0) } to { transform:translateX(min(0px, calc(100cqw - 100%))) } }",
+      ".id-card__name, .word { animation: marqueeX 5200ms ease-in-out 700ms infinite alternate }",
+      "",
+      "/* penaltyBlink / statBlink / popIn each need an A and a B copy, identical",
+      "   bodies: strikes on consecutive lines must restart, not coalesce. */",
+      "",
+      "@keyframes ffOut { to { opacity:0; transform:translateY(14px) } }",
+      "@keyframes stdIn {",
+      "  0%   { opacity:0; transform:translateY(16px) scale(.92) }",
+      "  70%  { transform:translateY(0) scale(1.04) }",
+      "  100% { opacity:1; transform:none }",
+      "}",
+      "",
+      "/* Tokens to add to :root */",
+      "--penalty: #8E0B24;  --paper-sunk: #F2DEC6;  --silver: #C9CDD4;  --bronze: #C08457;",
+      "",
+      "@media (prefers-reduced-motion: reduce) {",
+      "  .result-col, .card, .word, .word-row, .word-row__also,",
+      "  .stat__num, .medal-plaque, .host-scoring__footer .btn {",
+      "    animation: none !important; transition: none !important; transform: none !important;",
+      "  }",
+      "}",
+    ].join("\n");
+
+    const glossary = [
+      { group: "CONTENT — DOES THE LAYOUT HOLD?", items: [
+        { name: "scorers", range: "2–10", what: "Players (or teams) in the room. Drives --cols: 2–5 is one row of N, 6–10 splits into two balanced rows of ceil(n/2). Crossing 5 is the layout's real stress point." },
+        { name: "wordsPerList", range: "3–40", what: "Longest list in the round; the others fan down from it (at 5 scorers and 12 the sample is exactly 4 / 6 / 8 / 9 / 12). Drives in-card scrolling and total runtime." },
+        { name: "overlap", range: "low · medium · high", what: "How much of each list is drawn from the obvious answers, so how many strikes land. The single most informative control: it decides whether the last column is a trickle or a wall." },
+        { name: "mode", range: "solo · team", what: "Team play swaps the avatar and name for the TeamBadge tab overhanging the card, adds the member strip, and puts a per-word author emoji on every row. The tighter of the two layouts." },
+        { name: "revealOrderMode", range: "entry · duplicates", what: "The order lines come out WITHIN every list. entry = the order that player typed them. duplicates = every word somebody else also had first, uniques held back for the end, so a column ends on its own points." },
+        { name: "playerOrderMode", range: "random · shortest · longest", what: "Which player's list reveals next. shortest = the quiet lists first and the wall last; longest inverts it; random is the least predictable and the hardest case for the next-up cue." },
+        { name: "splitStrike", range: "off · on", what: "Off, a word lands and is struck within one beat. On, it gets two: the line appears on its own step and is struck on the next, so the room reads the word before losing it. Doubles the felt runtime of a heavily duplicated list without changing the interval. Back-check strikes stay immediate either way — they belong to the colliding line's beat." },
+      ] },
+      { group: "DEAL IN — FRAME 1", items: [
+        { name: "dealDirection", range: "left · right · top · bottom · alternate", what: "Which edge cards fly in from. alternate splits them by slot parity, which reads as a shuffle being dealt out." },
+        { name: "dealRandomOrder", range: "off · on", what: "Off deals left-to-right through the slots; on scatters the deal order (seeded, so it is the same scatter every replay)." },
+        { name: "dealStagger", range: "20–400ms", what: "Gap between one card leaving and the next. Small values read as a single sweep, large ones as individual cards." },
+        { name: "dealDistance", range: "40–900px", what: "How far off-screen a card starts. Bigger means faster apparent entry speed for the same duration." },
+        { name: "dealDuration", range: "120–1600ms", what: "Travel time per card. The overshoot comes from the easing, not this — the curve carries the card past its slot at ~62%." },
+      ] },
+      { group: "TIMING — FRAME 2 AND 3", items: [
+        { name: "lineInterval", range: "60–1200ms", what: "The primary control. Time between two revealed lines, flat across the whole phase — never accelerated, never batched. Runtime is (lines × this) + (scorers × columnPause)." },
+        { name: "columnPause", range: "0–2000ms", what: "The beat between one list finishing and the next starting. It is not dead time: the next card shakes for its full duration as the cue." },
+        { name: "strikeDuration", range: "60–1200ms", what: "How long a word takes to go ink → penalty → struck. Owns its duration independently of the line interval, so a slow interval leaves no dead air and a fast one does not truncate it." },
+        { name: "popDuration", range: "60–1200ms", what: "The avatar trail popping in beside a struck word — and re-popping each time the trail grows." },
+        { name: "blinkDuration", range: "60–1600ms", what: "Length of the card wash and the UNIQUE numeral flash. Both fire on every strike with no cooldown." },
+        { name: "cardFlash", range: "0–100", what: "Weight of the card's reaction to a strike — drives both the feathered penalty ring's spread (7–24px) and how far the card dips (3–10px). At 0 it is a hairline flinch; at 100 the card visibly takes the hit. Watch it at high overlap, where several cards react at once." },
+        { name: "statFlash", range: "0–100", what: "Intensity of the UNIQUE numeral's flash — how far it travels from --pink toward --penalty, and how much it scales up (1.00 → 1.26)." },
+        { name: "swapDuration", range: "120–2000ms", what: "Frame 3's FLIP travel time. The card's X leg starts 180ms after the wrapper's Y leg, so a card changing rows moves vertically first." },
+        { name: "speed", range: "0.25–8×", what: "Divides every duration and delay above without touching their ratios — the only way a two-minute reveal is reviewable. Relative feel is preserved at 4×." },
+      ] },
+      { group: "EDGE CASES", items: [
+        { name: "edgeTie", range: "off · on", what: "Lands two scorers on identical unique AND total. Asserted on the outcome, not the inputs — equal list lengths still derive different uniques, so words are swapped in and out of one list until its derived unique matches its neighbour's. They then share a place, the next place skips, and a tie for first means two gold plaques and no silver." },
+        { name: "edgeZeroUnique", range: "off · on", what: "Forces one scorer's whole list to be words other people also wrote — a full column of strikes ending on UNIQUE 0." },
+        { name: "edgeEmptyList", range: "off · on", what: "Empties the last scorer's list, so the “Nothing written.” state gets reviewed with everything else running." },
+        { name: "edgeLongStrings", range: "off · on", what: "A very long scorer/team name and a 35-character word, both planted so they clip and travel. The long word is always in two lists, so it also strikes and grows a trail." },
+        { name: "reducedMotion", range: "off · on", what: "Renders every frame at its settled end state with no motion — the same result prefers-reduced-motion gives, reviewable without changing OS settings." },
+      ] },
+    ];
+
+    return {
+      frames: FRAME_DEFS.map((def) => this.buildFrame(def)),
+      rootRef: this.rootRef,
+      t1, t2, t3, keyframeSrc, glossary,
+      runtimeNow: n + " scorers · " + d.totalSteps + " lines × " + t.line + "ms + " + n + " × " + t.colPause + "ms = " + secs.toFixed(1) + "s at 1× (" + (secs / t.sp).toFixed(1) + "s at " + t.sp + "×)",
+    };
+  }
+}
+</script>
+</body>
+</html>

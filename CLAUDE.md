@@ -121,7 +121,8 @@ replaced wholesale on each `state` push; every client action is a *request*.
 - **Opening `voting` clears every ready flag.** `ready` means "waiting in the
   room" before that edge and "votes spent" after it; carried across, the next
   `settle` closes voting before anyone has voted. It happens in exactly one
-  place — the tick that opens `voting`.
+  place — the tick that opens `voting`. **Opening `scoring` clears them for the
+  same reason** — see "The scoring reveal" — as does banking a round.
 - The post-voting countdown is not readiness-cancellable. `everyoneReady` needs
   `MIN_PLAYERS`, so after a host solo-start that branch would tear it down on
   the next event.
@@ -378,6 +379,65 @@ only chance to have a keyboard up when `playing` begins off a timer. Do not
 move that input into a phase-specific screen, and keep it out of a `<form>`
 (triggers Safari's AutoFill bar).
 
+### The scoring reveal
+
+`HostScoring` plays a round's results as three frames — deal in, reveal line by
+line, swap into final order. Every visible thing derives from **one integer**,
+`step`, against a schedule built once in `shared/reveal.ts`: which words are out,
+which are struck, whose emoji trails them, what each UNIQUE reads, what rank each
+card ends on. Rules to keep:
+
+- **`step` is derived from `scoring.startedAt`, not from a chain of timers.**
+  `useRevealStep` (`src/reveal.ts`) counts lines off the server clock, the same
+  arrangement the round timer uses and for the same reason. That is what lets
+  **`PlayerScoring` run the identical reveal on every phone** — it builds the
+  same schedule from the same arguments and strikes each word on the beat the TV
+  does. Nothing about the reveal is ticked over the wire, and the two schedules
+  must not drift: `playerOrder`/`lineOrder`/seed are the same in both screens.
+- **FAST FORWARD is room state (`scoring.skipped`), not a local jump.** A skip
+  the TV kept to itself would leave the phones crawling through lines the room
+  has already been shown.
+- **The phone shows the whole list from the first frame; only the *bad news*
+  arrives over time.** It is your own list and you know what is on it. So
+  `PlayerScoring` ignores `RowView.revealed` and reads only `struck`/`alsoShown`,
+  and its strike delay is zero — the hold exists so a word on the TV never
+  *appears* pre-struck, and here it has been on screen all along.
+- **Readying up on the results screen banks the round.** `settle` treats
+  `scoring` like `standings`: everyone ready advances with no host action, and
+  the host's Standings button still overrides a half-ready room. This is why the
+  `timesup -> scoring` tick clears every ready flag — carried over from the round
+  just played, `settle` would bank the round before anyone read a word of it. The
+  archive write is therefore keyed off the `scoring -> standings` *transition*
+  (`maybeArchiveBank`), never off one trigger.
+- **Every flash's alternating parity comes from an ordinal, never from a step.**
+  `cardView` reports `strikeCount`/`flinchCount` and `rowView` reports
+  `popCount` for exactly this: two strikes an even number of steps apart share a
+  step parity, so a class keyed on the step does not change, the animation never
+  re-fires and the flash is silently missed. The UNIQUE stat skips the trick
+  altogether — it is **keyed on `strikeCount` so React remounts it**, which
+  restarts the blink by definition. The card's dip cannot do that (a remount
+  would drop its scroll position and its measured rect), so it keeps the A/B
+  pair.
+
+- **Nothing is stored per row and nothing is diffed.** A rule that needs its own
+  piece of state belongs in `shared/reveal.ts` as a derivation.
+- **A row is struck once any partner is already on screen.** Back-checking falls
+  out of that with nothing watching for it, and `struckAt` is never earlier than
+  the row's own step, so a word never appears pre-struck.
+- **`flinchAt` is back-check strikes only** — the active card does not flinch at
+  its own words.
+- **The strike partners are re-derived here, not carried on `ScoredEntry`.**
+  `alsoBy` keeps scorer ids, and the reveal needs the matching *rows*, because a
+  word strikes at the step another column lands it. Re-clustering with the same
+  `normalize`/`isMatch` leaves the wire format and the stored `Room` alone.
+- **The frame-3 swap is measured, never calculated.** The DOM stays in deal
+  order; columns are translated by `getBoundingClientRect` deltas, so the grid's
+  arithmetic is not duplicated in the driver.
+- **The marquee is measured too, and must not use `container-type`** — that
+  zeroes an element's intrinsic width and collapses a shrink-to-fit team badge.
+  `src/marquee.ts` re-measures on `document.fonts.ready`, because Bungee lands
+  after first paint and a mount-only measurement says "it fits".
+
 ## Docs
 
 - `docs/superpowers/specs/2026-07-25-w104-mvp-design.md` — the design spec:
@@ -411,6 +471,11 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
   GraphQL request per metric, the per-account Workers allowance, why Vercel is
   a link rather than a bar. **§12 is the round controls** — pause, skip,
   auto-fill, experiment flags, and why each is host-only. Implemented.
+- `docs/superpowers/specs/2026-07-29-host-scoring-reveal-design.md` — the host
+  results screen and its three-frame reveal: the merged card, the derive-from-one-
+  integer schedule, the strike/back-check rule, the measured swap, the podium and
+  the guarded footer swap. Read with `design_handoff_host_scoring_reveal/README.md`,
+  which is the brief it answers. Implemented.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.

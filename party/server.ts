@@ -10,6 +10,8 @@ import { DEFAULT_DURATION_SEC } from "../shared/categories";
 import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes";
 import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
 import { SCORING_VERSION, scoreRound } from "../shared/scoring";
+import { withSelfStrikes } from "../shared/reveal";
+import { NO_SELF_MARKS } from "../shared/selfstrike";
 import { placeRound } from "../shared/standings";
 import {
   gameId as makeGameId, gameResultRows, gameStartRows, playedCategories,
@@ -223,9 +225,26 @@ export class W104 extends Server<Env> {
           endsAt: number;
           to?: "voting" | "playing";
         };
-        return phase?.name === "countdown" && !("to" in phase)
-          ? { ...phase, to: "playing" as const }
-          : rest.phase;
+        if (phase?.name === "countdown" && !("to" in phase)) {
+          return { ...phase, to: "playing" as const };
+        }
+        // A room persisted mid-scoring before the reveal was driven by the
+        // clock has no `startedAt`, and every client would derive its line
+        // count from `undefined`. Restarting the reveal from now is the only
+        // honest answer — the moment it originally began is not recorded
+        // anywhere else.
+        if (rest.phase?.name === "scoring") {
+          const scoring = rest.phase as Extract<Room["phase"], { name: "scoring" }>;
+          return {
+            ...scoring,
+            startedAt: scoring.startedAt ?? Date.now(),
+            skipped: scoring.skipped ?? false,
+            // Stored before self-validation existed: no marks, and every
+            // derivation reads the empty set as "nothing disowned".
+            selfMarks: scoring.selfMarks ?? NO_SELF_MARKS,
+          };
+        }
+        return rest.phase;
       })(),
     };
   }
@@ -424,6 +443,11 @@ export class W104 extends Server<Env> {
       return;
     }
 
+    // Captured BEFORE the reduce: banking the round is the single place
+    // `entries` is emptied, so a room read afterwards has no words left to
+    // archive. See `maybeArchiveBank`.
+    const before = this.room;
+
     switch (msg.type) {
       case "setProfile":
         this.room = reduce(this.room, {
@@ -498,14 +522,24 @@ export class W104 extends Server<Env> {
           t: "setConfiguring", playerId, open: msg.open === true, now,
         });
         break;
-      case "showStandings": {
-        // Captured BEFORE the reduce: `showStandings` is the single place
-        // `entries` is emptied, so a room read afterwards has no words left.
-        const banked = this.room;
+      case "showStandings":
         this.room = reduce(this.room, { t: "showStandings", playerId, now });
-        if (this.room !== banked) this.archiveBankedRound(banked, this.room, now);
         break;
-      }
+      case "fastForward":
+        this.room = reduce(this.room, { t: "fastForward", playerId, now });
+        break;
+      case "selfStrike":
+        this.room = reduce(this.room, {
+          t: "selfStrike",
+          playerId,
+          // A hand-rolled message can send anything at all here; `reduce`
+          // rejects an index that is not one of this scorer's rows, and
+          // `Number` keeps a string or a null from indexing the array at all.
+          index: Number(msg.index),
+          struck: msg.struck === true,
+          now,
+        });
+        break;
       case "backToLobby":
         this.room = reduce(this.room, { t: "backToLobby", playerId, now });
         break;
@@ -548,6 +582,7 @@ export class W104 extends Server<Env> {
         break;
     }
 
+    this.maybeArchiveBank(before, now);
     await this.persist();
     this.broadcastState();
   }
@@ -558,11 +593,16 @@ export class W104 extends Server<Env> {
     // A second tab for the same player must not mark them gone.
     if (this.hasOtherConnection(state.playerId, conn)) return;
 
+    const now = Date.now();
+    const before = this.room;
     this.room = reduce(this.room, {
       t: "disconnect",
       playerId: state.playerId,
-      now: Date.now(),
+      now,
     });
+    // Readiness counts only *connected* players, so the last unready player
+    // leaving the results screen can bank the round from here.
+    this.maybeArchiveBank(before, now);
     await this.persist();
     this.broadcastState();
   }
@@ -646,10 +686,25 @@ export class W104 extends Server<Env> {
   }
 
   /**
+   * Writes the round if this event banked one.
+   *
+   * Keyed off the `scoring -> standings` transition rather than off any one
+   * trigger, because there are two now — the host's Standings button and
+   * everyone readying up on the results screen — and a third would otherwise
+   * silently archive nothing.
+   */
+  private maybeArchiveBank(before: Room, now: number): void {
+    if (!this.room) return;
+    if (before.phase.name !== "scoring") return;
+    if (this.room.phase.name !== "standings") return;
+    this.archiveBankedRound(before, this.room, now);
+  }
+
+  /**
    * Writes one banked round, and the match's final rows when that round was
-   * the last. `banked` is the room as it stood before `showStandings`, which
-   * is the only copy that still has the words; `after` is the room with the
-   * round pushed onto history, which is what says whether the match is over.
+   * the last. `banked` is the room as it stood before the round was banked,
+   * which is the only copy that still has the words; `after` is the room with
+   * the round pushed onto history, which says whether the match is over.
    *
    * Per round rather than per match on purpose: rooms are abandoned far more
    * often than they are finished, and the reap takes everything with it.
@@ -658,7 +713,10 @@ export class W104 extends Server<Env> {
     const state = this.archive;
     if (!state?.gameId || banked.phase.name !== "scoring") return;
     const window = state.round ?? { startedAt: now, endedAt: now };
-    const results = banked.phase.results;
+    // The self-validated round, which is the one that was scored and placed.
+    // A disowned word archives as not-unique and alone in its collision group —
+    // see `withSelfStrikes`.
+    const results = withSelfStrikes(banked.phase.results, banked.phase.selfMarks);
 
     this.archiveInBackground((async () => {
       await archiveRound(

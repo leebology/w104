@@ -147,7 +147,14 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
       return <TimesUp />;
     case "scoring":
       return (
-        <PlayerScoring room={room} results={room.phase.results} playerId={getPlayerId()} />
+        <PlayerScoring
+          room={room}
+          results={room.phase.results}
+          playerId={getPlayerId()}
+          startedAt={room.phase.startedAt}
+          skipped={room.phase.skipped}
+          marks={room.phase.selfMarks}
+        />
       );
     case "standings":
       return <PlayerStandings room={room} playerId={getPlayerId()} />;
