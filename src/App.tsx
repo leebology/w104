@@ -280,7 +280,10 @@ export default function App() {
     return (
       <>
         {banner}
-        <Connecting />
+        {/* `leave` clears the saved session as well as the socket, so a phone
+            that cannot reach the Worker at all is not sent straight back to
+            this screen by the resume on its next load. */}
+        <Connecting onBack={leave} />
       </>
     );
   }
