@@ -18,6 +18,33 @@ import type { ScorerId } from "./teams";
  * `step` — and it is why this file has no DOM in it and tests in milliseconds.
  */
 
+/**
+ * The pacing of frames 1 and 2, in milliseconds.
+ *
+ * Here rather than in the host screen because the reveal is no longer only the
+ * host's: every phone derives the same `step` from the same schedule and the
+ * same `scoring.startedAt`, so a second copy of these numbers would put the TV
+ * and the phones on visibly different lines.
+ */
+export const REVEAL_TIMING = {
+  /** Frame 1: per-card deal delay, and how long one card's swing lasts. */
+  DEAL_STAGGER: 150,
+  DEAL_DURATION: 920,
+  /**
+   * Frame 2: one line, every time, whatever the list length. No accelerating
+   * stagger, no length-scaled timing, no batching past a threshold — the single
+   * cadence is what pulls the whole room to the same word at the same moment.
+   */
+  LINE_INTERVAL: 260,
+  /**
+   * The extra beat before a column's first line. Not dead time: the next card
+   * shakes through it, so the room's eye is already on the list about to fill.
+   */
+  COLUMN_PAUSE: 1_000,
+  /** How long a word holds in plain ink before its own strike draws through. */
+  STRIKE_HOLD: 180,
+} as const;
+
 /** Which scorer's list reveals next. */
 export type PlayerOrderMode = "random" | "shortest" | "longest";
 
@@ -85,6 +112,18 @@ export type RevealSchedule = {
   partners: Record<RowKey, RowRef[]>;
   /** The last step in the schedule; 0 when nobody wrote anything. */
   lastStep: number;
+  /** How long frame 1 runs for, from `scoring.startedAt`. */
+  dealMs: number;
+  /**
+   * Milliseconds after `scoring.startedAt` at which each step lands. Index 0 is
+   * `dealMs` — the moment step 0 (nothing revealed, cards dealt) is reached.
+   *
+   * Precomputed so the whole reveal is a function of *elapsed time* rather than
+   * of a chain of `setTimeout`s. That is what keeps the TV and every phone on
+   * the same line: a chain accumulates each timer's lateness, and after sixty
+   * lines the two have visibly drifted.
+   */
+  timeOf: number[];
 };
 
 /**
@@ -185,7 +224,41 @@ export function buildSchedule(
     }
   }
 
-  return { order, colStart, stepOf, partners, lastStep: step };
+  // Frame 1 runs entirely on CSS delays; this is only how long the last card's
+  // swing takes to finish.
+  const dealMs =
+    Math.max(0, results.scorers.length - 1) * REVEAL_TIMING.DEAL_STAGGER +
+    REVEAL_TIMING.DEAL_DURATION;
+  const timeOf = [dealMs];
+  for (let s = 1; s <= step; s++) {
+    const opensColumn = order.some((id) => colStart[id] === s);
+    timeOf[s] =
+      timeOf[s - 1] +
+      REVEAL_TIMING.LINE_INTERVAL +
+      (opensColumn ? REVEAL_TIMING.COLUMN_PAUSE : 0);
+  }
+
+  return { order, colStart, stepOf, partners, lastStep: step, dealMs, timeOf };
+}
+
+/** How many lines are out `elapsed` ms after `scoring.startedAt`. */
+export function stepAt(schedule: RevealSchedule, elapsed: number): number {
+  let step = 0;
+  while (step < schedule.lastStep && schedule.timeOf[step + 1] <= elapsed) step++;
+  return step;
+}
+
+/**
+ * When the next visible change is due, in ms after `scoring.startedAt`, or null
+ * once the reveal is over. The one thing a client has to set a timer for.
+ */
+export function nextChangeAt(
+  schedule: RevealSchedule,
+  elapsed: number,
+): number | null {
+  if (elapsed < schedule.dealMs) return schedule.dealMs;
+  const next = stepAt(schedule, elapsed) + 1;
+  return next <= schedule.lastStep ? schedule.timeOf[next] : null;
 }
 
 /**
@@ -226,6 +299,13 @@ export type RowView = {
   alsoShown: ScorerId[];
   /** The step the trail last grew on; null when there is no trail. */
   poppedAt: number | null;
+  /**
+   * How many times the trail has grown — which is `alsoShown.length`, named for
+   * what it is used for. The pop animation's alternating parity is taken from
+   * this rather than from `poppedAt`, because two arrivals two steps apart share
+   * a step parity, and an identical animation string does not restart.
+   */
+  popCount: number;
 };
 
 const HIDDEN: RowView = {
@@ -235,6 +315,7 @@ const HIDDEN: RowView = {
   struckAt: null,
   alsoShown: [],
   poppedAt: null,
+  popCount: 0,
 };
 
 /**
@@ -286,6 +367,7 @@ export function rowView(
     // The trail appears with the row when the partners got there first, and
     // grows at each later partner — so it pops once per arrival, not once ever.
     poppedAt: shown.length === 0 ? null : Math.max(own, shown[shown.length - 1][1]),
+    popCount: shown.length,
   };
 }
 
@@ -298,13 +380,22 @@ export type CardView = {
    * counted, and once struck a row stays struck.
    */
   unique: number;
-  /** The latest step any of this card's rows struck on. Drives the stat blink. */
+  /** The latest step any of this card's rows struck on. */
   struckAt: number | null;
   /**
    * The latest *back-check* strike. Drives the penalty ring and the dip — the
    * active card does not flinch at its own words.
    */
   flinchAt: number | null;
+  /**
+   * Rows struck so far, and of those, how many were back-checks. These are the
+   * *ordinals* the stat blink and the card's dip key their restart off, not
+   * `struckAt`/`flinchAt`: those are step numbers, and two strikes two steps
+   * apart share a parity, so an animation keyed on the step silently fails to
+   * re-fire and the flash is simply missed.
+   */
+  strikeCount: number;
+  flinchCount: number;
 };
 
 export function cardView(
@@ -314,6 +405,7 @@ export function cardView(
 ): CardView {
   let shown = 0;
   let struck = 0;
+  let flinched = 0;
   let struckAt: number | null = null;
   let flinchAt: number | null = null;
 
@@ -324,12 +416,20 @@ export function cardView(
     if (!row.struck) return;
     struck++;
     if (struckAt === null || row.struckAt! > struckAt) struckAt = row.struckAt;
-    if (row.backCheck && (flinchAt === null || row.struckAt! > flinchAt)) {
-      flinchAt = row.struckAt;
+    if (row.backCheck) {
+      flinched++;
+      if (flinchAt === null || row.struckAt! > flinchAt) flinchAt = row.struckAt;
     }
   });
 
-  return { shown, unique: scorer.entries.length - struck, struckAt, flinchAt };
+  return {
+    shown,
+    unique: scorer.entries.length - struck,
+    struckAt,
+    flinchAt,
+    strikeCount: struck,
+    flinchCount: flinched,
+  };
 }
 
 /** Final order: unique descending, then total descending. Stable beyond that. */

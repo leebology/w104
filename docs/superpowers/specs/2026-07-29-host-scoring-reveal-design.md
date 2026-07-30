@@ -9,11 +9,17 @@ room watches together: the cards deal in, every list fills a line at a time with
 duplicates striking through as they collide, and then the cards swap into final
 order and the top three take medals.
 
+> **Amended after first play.** Three changes, all recorded in "Decisions" below
+> and marked *(amended)*: the columns reveal shortest list first rather than in a
+> seeded scatter; the reveal is driven by the clock rather than by a chain of
+> timers, which is what lets the **players' phones run the same reveal**; and the
+> results screen carries a ready-up that advances the room with no host action.
+
 ## The shape of it
 
-All of the state is `phase` plus **one integer**, `step` — the number of lines
-revealed so far. Everything visible is derived from that integer against a
-schedule built once:
+All of the state is **one integer**, `step` — the number of lines revealed so
+far — and `step` is itself a function of elapsed time. Everything visible is
+derived from that integer against a schedule built once:
 
 - which words are on screen (`stepOf`)
 - which are struck, and whether the strike was a back-check (`rowView`)
@@ -26,9 +32,8 @@ in milliseconds — `shared/reveal.test.ts` covers back-checking, the cascade, t
 count-down, the tie rule and the seeded orders. `HostScoring.tsx` owns the
 timers, the classes and the FLIP measurement, and nothing else.
 
-**Nothing is stored per row and nothing is diffed.** That is the whole design.
-FAST FORWARD is `setStep(lastStep)`, and a dev step-through would be `step + 1`
-— neither is a second code path.
+**Nothing is stored per row and nothing is diffed.** That is the whole design. A
+dev step-through would be `step + 1`, not a second code path.
 
 ## Decisions
 
@@ -59,6 +64,37 @@ FAST FORWARD is `setStep(lastStep)`, and a dev step-through would be `step + 1`
   would be read as one.
 - **RANK reads `—` until the swap frame.** Deal order is not rank. Hiding the
   line would shift the row's height when the real one arrives.
+- ***(amended)* The columns reveal shortest list first.** It was a seeded
+  scatter. Shortest-first makes the reveal build: each column has more to say
+  than the one before it, and the longest list — most likely to hold the round's
+  winner — lands last. Equal-length lists keep scoring order, so the sort is
+  stable and nothing shuffles between renders. `entryOrder` is untouched: the
+  cards still *deal* in match standings.
+- ***(amended)* The reveal is driven by the clock, not by a chain of timers.**
+  `scoring` carries `startedAt`, and `stepAt(schedule, elapsed)` answers how many
+  lines are out. Two reasons. A chain accumulates each timer's lateness, so after
+  sixty lines it has visibly drifted; and, decisively, **every phone can now run
+  the same reveal** by deriving from the same absolute moment. This is the
+  invariant the round timer already lives by — broadcast the moment once, count
+  locally — rather than a new one.
+  `skipped` rides on the phase for the one thing the derivation cannot know:
+  FAST FORWARD. It is room state, not a local jump, so the TV and the phones land
+  every outstanding strike on the same frame.
+- ***(amended)* The player's phone shows the whole list from the first frame.**
+  It is your own list; you know what is on it. What arrives on the beat is the
+  bad news — a word going through, UNIQUE dropping — which is why `PlayerScoring`
+  reads `struck`/`alsoShown` from the shared derivation and ignores `revealed`,
+  with a zero strike delay (the hold exists so a word on the TV never *appears*
+  pre-struck, and here it has been on screen throughout). Reading a strike ahead
+  of the room would give the reveal away.
+- ***(amended)* The results screen has a ready-up, and everyone ready banks the
+  round.** `settle` treats `scoring` exactly as it treats `standings`, so nobody
+  waits on a host who has put the remote down; the host's Standings button still
+  overrides a half-ready room. Two consequences: the `timesup -> scoring` tick has
+  to clear every ready flag, or `settle` banks the round before a word is read;
+  and the archive write moves off the `showStandings` handler onto the
+  `scoring -> standings` transition, so a third trigger cannot silently archive
+  nothing.
 - **Pacing is uniform and never batched.** One line, identical interval,
   whatever the list length. No accelerating stagger, no length-scaled timing, no
   threshold past which lines batch. A ten-player wall taking 95 seconds is
@@ -69,10 +105,18 @@ FAST FORWARD is `setStep(lastStep)`, and a dev step-through would be `step + 1`
 - **Only the active column auto-scrolls.** A back-check landing elsewhere must
   not yank a column away from where the room is looking.
 - **Consecutive strikes must restart, not coalesce.** An identical `animation`
-  string does not re-trigger, so the ring, the dip, the stat blink and the trail
-  pop each exist as two identical copies (`…A` / `…B`) alternated by the parity
-  of the step they fired on. Without this, back-to-back strikes read as a
-  deliberate cooldown. The parity is derived, not stored.
+  string does not re-trigger, so the ring, the dip and the trail pop each exist
+  as two identical copies (`…A` / `…B`) alternated between. Without this,
+  back-to-back strikes read as a deliberate cooldown. *(amended)* The alternation
+  is keyed on an **ordinal** — `strikeCount`, `flinchCount`, `popCount` — and not,
+  as first shipped, on the step the strike landed on. Two strikes an even number
+  of steps apart share a step parity, so the class string did not change, the
+  animation did not re-fire, and the flash was simply missed. Counting the events
+  flips the parity on every one of them.
+  The UNIQUE stat sidesteps the trick entirely: it is **keyed on `strikeCount`,
+  so React remounts it** and the blink restarts by definition. The card's dip
+  cannot be remounted — that would drop its list's scroll position and the rect
+  frame 3 measures — so it keeps the A/B pair.
 - **The penalty ring lives on an overlay child**, `.card__penalty`. On `.card`
   itself it fights the card's hard offset shadow. Its feathering is the single
   blur in the design system, and it is a light effect *inside* a card rather
@@ -126,10 +170,10 @@ pink, and both penalty colours live only inside cream cards, never on the field.
   jumps, and the whole Tweaks panel. They are scaffolding for dialling in
   timings, not product UI. Every timing they expose is shipped at its
   recommended value as a constant in `HostScoring.tsx`.
-- `splitStrike`, and the `shortest`/`longest`/`duplicates` orders. The
-  machinery for them is in `shared/reveal.ts` and unit-tested, because it costs
-  nothing there and picking a different order later is then a one-word change;
-  the screen ships `random` columns and `entry` lines.
+- `splitStrike`, and the `random`/`longest`/`duplicates` orders. The machinery
+  for them is in `shared/reveal.ts` and unit-tested, because it costs nothing
+  there and picking a different order is then a one-word change; the screen ships
+  `shortest` columns and `entry` lines.
 - The prototype's room-chip trim to `JOIN AT OKAYNAMEONE.APP`. That is an
   artefact of the 1200px design basis, where the full label collides with the
   centred round marker. On a real TV viewport it fits.

@@ -1665,3 +1665,55 @@ describe("debug skip", () => {
     expect(reduce(room, { t: "debugSkip", playerId: "host", now: 2000 })).toBe(room);
   });
 });
+
+describe("the results screen", () => {
+  test("entering it clears readiness, so nothing skips the reveal", () => {
+    const room = scored();
+    expect(room.phase.name).toBe("scoring");
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("it records when the reveal began, unskipped", () => {
+    const room = scored();
+    const phase = room.phase as { name: string; startedAt: number; skipped: boolean };
+    // The reveal's zero is the moment the times-up screen ran out, which is
+    // what `scored()` ticks it on.
+    expect(phase.startedAt).toBe(45_000);
+    expect(phase.skipped).toBe(false);
+  });
+
+  test("everyone readying up banks the round with no host action", () => {
+    const room = readyAll(scored(), 51_000);
+    expect(room.phase.name).toBe("standings");
+    expect(room.history).toHaveLength(1);
+    expect(room.entries).toEqual({});
+    // Cleared again on the far side, or the next countdown opens immediately.
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("one of two players is not enough", () => {
+    const room = reduce(scored(), { t: "ready", playerId: "p0", ready: true, now: 51_000 });
+    expect(room.phase.name).toBe("scoring");
+    expect(room.history).toHaveLength(0);
+  });
+
+  test("the host's button still moves a half-ready room on", () => {
+    let room = reduce(scored(), { t: "ready", playerId: "p0", ready: true, now: 51_000 });
+    room = reduce(room, { t: "showStandings", playerId: "host", now: 51_500 });
+    expect(room.phase.name).toBe("standings");
+    expect(room.history).toHaveLength(1);
+  });
+
+  test("fast forward is host-only, once, and only here", () => {
+    const room = scored();
+    expect(reduce(room, { t: "fastForward", playerId: "p0", now: 51_000 })).toBe(room);
+
+    const skipped = reduce(room, { t: "fastForward", playerId: "host", now: 51_000 });
+    expect((skipped.phase as { skipped: boolean }).skipped).toBe(true);
+    // Already skipped is a genuine no-op, per the identity contract.
+    expect(reduce(skipped, { t: "fastForward", playerId: "host", now: 52_000 })).toBe(skipped);
+
+    const mid = playing();
+    expect(reduce(mid, { t: "fastForward", playerId: "host", now: 51_000 })).toBe(mid);
+  });
+});

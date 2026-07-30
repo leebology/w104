@@ -14,6 +14,8 @@ export type ClientMessage =
   | { type: "setMode"; mode: string }
   | { type: "setConfiguring"; open: boolean }
   | { type: "showStandings" }
+  /** Host-only, `scoring` only: land every outstanding strike of the reveal. */
+  | { type: "fastForward" }
   | { type: "backToLobby" }
   | { type: "castVote"; category: string }
   | { type: "resetVotes" }

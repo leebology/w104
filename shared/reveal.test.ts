@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  REVEAL_TIMING,
   activeColumn,
   buildSchedule,
   cardView,
@@ -7,9 +8,11 @@ import {
   entryOrder,
   finalOrder,
   finalRanks,
+  nextChangeAt,
   rowKey,
   rowView,
   seededRng,
+  stepAt,
 } from "./reveal";
 import { scoreRound } from "./scoring";
 import type { Results } from "./scoring";
@@ -337,6 +340,8 @@ describe("cardView", () => {
       unique: 0,
       struckAt: null,
       flinchAt: null,
+      strikeCount: 0,
+      flinchCount: 0,
     });
   });
 
@@ -455,5 +460,138 @@ describe("entryOrder", () => {
   test("a scorer missing from the standings deals last rather than vanishing", () => {
     const order = entryOrder(scorers, { p2: 1, p3: 2 }, seededRng("x"));
     expect(order).toEqual(["p2", "p3", "p1"]);
+  });
+});
+
+describe("the clock-driven schedule", () => {
+  const timing = REVEAL_TIMING;
+
+  test("frame 1 lasts one swing plus a stagger per card", () => {
+    const schedule = buildSchedule(score([["a"], ["b"], ["c"]]), inEntryOrder());
+    expect(schedule.dealMs).toBe(2 * timing.DEAL_STAGGER + timing.DEAL_DURATION);
+    expect(schedule.timeOf[0]).toBe(schedule.dealMs);
+  });
+
+  test("a column's first line waits the extra beat; the rest do not", () => {
+    const schedule = buildSchedule(
+      score([
+        ["adele", "cher"],
+        ["pink"],
+      ]),
+      { playerOrder: "shortest", lineOrder: "entry", rng: seededRng("x") },
+    );
+    // Shortest first: p2's single line opens, then p1's two.
+    const [first, second, third] = [1, 2, 3].map((s) => schedule.timeOf[s]);
+    expect(first - schedule.dealMs).toBe(timing.LINE_INTERVAL + timing.COLUMN_PAUSE);
+    expect(second - first).toBe(timing.LINE_INTERVAL + timing.COLUMN_PAUSE);
+    expect(third - second).toBe(timing.LINE_INTERVAL);
+  });
+
+  test("stepAt holds at zero through frame 1 and then follows the clock", () => {
+    const schedule = buildSchedule(score([["adele", "cher"]]), inEntryOrder());
+    expect(stepAt(schedule, 0)).toBe(0);
+    expect(stepAt(schedule, schedule.dealMs)).toBe(0);
+    expect(stepAt(schedule, schedule.timeOf[1] - 1)).toBe(0);
+    expect(stepAt(schedule, schedule.timeOf[1])).toBe(1);
+    expect(stepAt(schedule, schedule.timeOf[2])).toBe(2);
+  });
+
+  test("stepAt never runs past the last line, however late the client is", () => {
+    const schedule = buildSchedule(score([["adele", "cher"]]), inEntryOrder());
+    expect(stepAt(schedule, 10 * 60 * 1000)).toBe(schedule.lastStep);
+  });
+
+  test("nextChangeAt names the deal edge, then each line, then nothing", () => {
+    const schedule = buildSchedule(score([["adele"]]), inEntryOrder());
+    expect(nextChangeAt(schedule, 0)).toBe(schedule.dealMs);
+    expect(nextChangeAt(schedule, schedule.dealMs)).toBe(schedule.timeOf[1]);
+    expect(nextChangeAt(schedule, schedule.timeOf[1])).toBeNull();
+  });
+
+  test("a round nobody wrote in has one edge and then nothing", () => {
+    const schedule = buildSchedule(score([[], []]), inEntryOrder());
+    expect(schedule.lastStep).toBe(0);
+    expect(nextChangeAt(schedule, 0)).toBe(schedule.dealMs);
+    expect(nextChangeAt(schedule, schedule.dealMs)).toBeNull();
+  });
+});
+
+describe("flash ordinals", () => {
+  /**
+   * The bug these exist for: keying a flash off the *step* a strike landed on
+   * means two strikes an even number of steps apart share a parity, the class
+   * string does not change, the CSS animation never re-fires and the flash is
+   * silently skipped. Counting strikes instead alternates on every one.
+   */
+  test("the strike count rises by one per strike, so its parity alternates", () => {
+    // p1 is caught out on cher and pink, two steps apart — same step parity.
+    const results = score([
+      ["adele", "cher", "pink"],
+      ["cher", "sia", "pink"],
+    ]);
+    const schedule = buildSchedule(results, {
+      playerOrder: "shortest",
+      lineOrder: "entry",
+      rng: seededRng("x"),
+    });
+    const p1 = results.scorers[0];
+    const counts = Array.from(
+      { length: schedule.lastStep + 1 },
+      (_, step) => cardView(schedule, p1, step).strikeCount,
+    );
+    // Monotone, and never jumps — every strike gets its own parity flip.
+    for (let i = 1; i < counts.length; i++) {
+      expect(counts[i] - counts[i - 1]).toBeGreaterThanOrEqual(0);
+      expect(counts[i] - counts[i - 1]).toBeLessThanOrEqual(1);
+    }
+    expect(counts[counts.length - 1]).toBe(2);
+    // The steps those two strikes landed on share a parity: the old bug.
+    const struckSteps = [0, 1, 2].map(
+      (i) => rowView(schedule, p1.id, i, schedule.lastStep).struckAt,
+    );
+    const landed = struckSteps.filter((s): s is number => s !== null);
+    expect(landed).toHaveLength(2);
+    expect(landed[0] % 2).toBe(landed[1] % 2);
+  });
+
+  test("strikeCount and unique are two views of the same number", () => {
+    const results = score([
+      ["adele", "cher"],
+      ["cher", "pink"],
+    ]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    for (const scorer of results.scorers) {
+      for (let step = 0; step <= schedule.lastStep; step++) {
+        const card = cardView(schedule, scorer, step);
+        expect(card.unique).toBe(scorer.entries.length - card.strikeCount);
+      }
+    }
+  });
+
+  test("flinchCount counts back-checks only, never the active card's own", () => {
+    const results = score([
+      ["adele", "cher"],
+      ["cher"],
+    ]);
+    const schedule = buildSchedule(results, {
+      playerOrder: "longest",
+      lineOrder: "entry",
+      rng: seededRng("x"),
+    });
+    // p1 reveals first, so its cher is struck later, from behind: a flinch.
+    expect(cardView(schedule, results.scorers[0], schedule.lastStep).flinchCount).toBe(1);
+    // p2's own cher lands already duplicated, which is not a flinch.
+    expect(cardView(schedule, results.scorers[1], schedule.lastStep).flinchCount).toBe(0);
+  });
+
+  test("popCount grows once per arrival in the trail", () => {
+    const results = score([["adele"], ["adele"], ["adele"]]);
+    const schedule = buildSchedule(results, inEntryOrder());
+    const first = schedule.order[0];
+    const counts = Array.from(
+      { length: schedule.lastStep + 1 },
+      (_, step) => rowView(schedule, first, 0, step).popCount,
+    );
+    expect(counts).toEqual([0, 0, 1, 2]);
   });
 });

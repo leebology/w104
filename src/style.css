@@ -1165,10 +1165,11 @@ ul, ol { list-style: none; }
 /* The one number that matters is the only pink thing inside a cream card. */
 .stat__num--unique { color: var(--pink); }
 
-/* Blinks on every strike this card took, consecutive ones included — which is
-   why there are two copies of the animation to alternate between. */
-.stat__num--flash-a { animation: statBlinkA 420ms ease-in-out; }
-.stat__num--flash-b { animation: statBlinkB 420ms ease-in-out; }
+/* Blinks on every strike this card took, consecutive ones included. One copy,
+   not the alternating pair the card's dip needs: the element is remounted on
+   each strike (keyed on the count), so the animation restarts by definition and
+   no parity trick can fail to re-fire it. */
+.stat__num--flash { animation: statBlink 420ms ease-in-out; }
 
 .stat__label { font-size: 9px; color: var(--ink-dim); letter-spacing: 0.1em; }
 
@@ -1598,12 +1599,7 @@ ul, ol { list-style: none; }
 
 /* The decremented value is already committed on the first frame — the blink is
    the acknowledgement, not the change. */
-@keyframes statBlinkA {
-  0%, 100% { color: var(--pink); transform: none; }
-  24% { color: var(--penalty); transform: scale(1.16); }
-}
-
-@keyframes statBlinkB {
+@keyframes statBlink {
   0%, 100% { color: var(--pink); transform: none; }
   24% { color: var(--penalty); transform: scale(1.16); }
 }

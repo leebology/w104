@@ -88,7 +88,20 @@ export type Phase =
   | { name: "countdown"; endsAt: number; to: "voting" | "playing" }
   | { name: "playing"; endsAt: number }
   | { name: "timesup"; endsAt: number }
-  | { name: "scoring"; results: Results }
+  /**
+   * The round's results, played to the room as a reveal.
+   *
+   * `startedAt` is server time and is the *only* thing the reveal is driven by:
+   * the TV and every phone derive the same line count from it against the same
+   * schedule (`shared/reveal.ts`), so nothing has to be ticked over the wire.
+   * Same principle as a phase deadline — broadcast the absolute moment once and
+   * let each client count locally.
+   *
+   * `skipped` is the host's FAST FORWARD. A flag rather than a moment, because
+   * skipping means "every outstanding strike lands now", which has no schedule
+   * left to sit on.
+   */
+  | { name: "scoring"; results: Results; startedAt: number; skipped: boolean }
   /** Match standings between rounds and at the end. Untimed; the host advances it. */
   | { name: "standings" };
 

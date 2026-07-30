@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import { prefersReducedMotion, useRevealStep } from "../../reveal";
 import { RoomChip } from "../../components/RoomChip";
 import { TeamBadge } from "../../components/TeamBadge";
 import { WordList } from "../../components/WordList";
@@ -7,6 +8,7 @@ import type { RowReveal } from "../../components/WordList";
 import { useMarquee } from "../../marquee";
 import { roomStore } from "../../net/room";
 import {
+  REVEAL_TIMING,
   activeColumn,
   buildSchedule,
   cardView,
@@ -35,28 +37,9 @@ function columnsFor(n: number): number {
 }
 
 /* Timings. Every one of these is in the design handoff's timing table; the CSS
-   side of each pairing lives in style.css under the same name. */
-
-/** Frame 1: per-card deal delay, and how long one card's swing lasts. */
-const DEAL_STAGGER = 150;
-const DEAL_DURATION = 920;
-
-/**
- * Frame 2: one line, every time, whatever the list length. No accelerating
- * stagger, no length-scaled timing, no batching past a threshold — the single
- * cadence is what pulls the whole room to the same word at the same moment. A
- * long reveal is acceptable; FAST FORWARD is the escape valve.
- */
-const LINE_INTERVAL = 260;
-
-/**
- * The extra beat before a column's first line. Not dead time: the next card
- * shakes through it, so the room's eye is already on the list about to fill.
- */
-const COLUMN_PAUSE = 1000;
-
-/** How long a word holds in plain ink before its own strike draws through. */
-const STRIKE_HOLD = 180;
+   side of each pairing lives in style.css under the same name. Frames 1 and 2
+   are paced from `REVEAL_TIMING` in shared/reveal.ts, because the phones run
+   them too; everything below is the host's alone. */
 
 /** Frame 3: the swap, and the beat the X travel trails the Y travel by. */
 const SWAP_DURATION = 1600;
@@ -84,6 +67,9 @@ const FOOTER_IN = 280;
 /**
  * Frame 1 deals in, frame 2 reveals, frame 3 ranks. `ack` is the single beat
  * FAST FORWARD spends acknowledging the strikes it just landed.
+ *
+ * Derived, not stored: frames 1 and 2 are a function of elapsed time, so the
+ * only state behind this is "frame 3 has begun" and "we are mid-ack".
  */
 type Phase = "deal" | "reveal" | "ack" | "rank";
 
@@ -102,19 +88,24 @@ const FOOTER_NEXT: Partial<Record<Footer, { to: Footer; after: number }>> = {
 const MEDALS = ["gold", "silver", "bronze"] as const;
 const PLACES = ["1ST", "2ND", "3RD"] as const;
 
-function prefersReducedMotion(): boolean {
-  return (
-    typeof matchMedia !== "undefined" &&
-    matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
+/**
+ * Alternating class suffix. See RowReveal.pop for why every flash needs one.
+ *
+ * Fed an *ordinal* — how many strikes or trail arrivals there have been — never
+ * a step number. Two strikes two steps apart share a step parity, so the class
+ * string would not change and the flash would simply be skipped.
+ */
+function parity(ordinal: number): "a" | "b" {
+  return ordinal % 2 === 1 ? "a" : "b";
 }
 
-/** Alternating class suffix. See RowReveal.pop for why every flash needs one. */
-function parity(step: number): "a" | "b" {
-  return step % 2 === 1 ? "a" : "b";
-}
-
-type Props = { room: RoomState; results: Results };
+type Props = {
+  room: RoomState;
+  results: Results;
+  /** Server time the reveal began; every client counts its lines from here. */
+  startedAt: number;
+  skipped: boolean;
+};
 
 /**
  * The round's results, played to the room as three frames.
@@ -125,7 +116,7 @@ type Props = { room: RoomState; results: Results };
  * and nothing is diffed — which is exactly why FAST FORWARD is a one-line
  * assignment rather than a second code path.
  */
-export function HostScoring({ room, results }: Props) {
+export function HostScoring({ room, results, startedAt, skipped }: Props) {
   // Read once. A host changing their OS motion setting mid-round is not a case
   // worth a subscription, and re-deriving the phase from it would restart the
   // sequence under them.
@@ -134,10 +125,14 @@ export function HostScoring({ room, results }: Props) {
   const round = currentRound(room);
   const seed = `${room.code}:${round}`;
 
+  // Shortest list first, so the reveal builds: each column has more to say than
+  // the one before it, and the longest list — the one most likely to hold the
+  // round's winner — lands last. `PlayerScoring` builds the identical schedule
+  // from the identical arguments; the two must not drift.
   const schedule = useMemo(
     () =>
       buildSchedule(results, {
-        playerOrder: "random",
+        playerOrder: "shortest",
         lineOrder: "entry",
         rng: seededRng(`${seed}:reveal`),
       }),
@@ -163,8 +158,14 @@ export function HostScoring({ room, results }: Props) {
     [results],
   );
 
-  const [phase, setPhase] = useState<Phase>(() => (reduced ? "rank" : "deal"));
-  const [step, setStep] = useState(() => (reduced ? schedule.lastStep : 0));
+  // Frames 1 and 2, off the clock rather than off a chain of timers — the same
+  // derivation every phone is running. See src/reveal.ts.
+  const { step, dealt } = useRevealStep(schedule, startedAt, skipped, reduced);
+
+  /** Frame 3 has begun. */
+  const [ranked, setRanked] = useState(reduced);
+  /** Mid-acknowledgement of a FAST FORWARD. */
+  const [acking, setAcking] = useState(false);
   /** 0 pre-swap, 1 in flight, 2 settled — the plaques and medals land on 2. */
   const [rankStage, setRankStage] = useState(() => (reduced ? 2 : 0));
   const [speed, setSpeed] = useState(1);
@@ -173,34 +174,35 @@ export function HostScoring({ room, results }: Props) {
 
   const columns = useRef(new Map<ScorerId, HTMLElement | null>());
   const lists = useRef(new Map<ScorerId, HTMLDivElement | null>());
+  /** The ack fires once per screen; see the effect below. */
+  const acked = useRef(reduced);
 
-  // Frame 1 runs entirely on CSS delays, so this only has to wait for the last
-  // card to finish its swing.
-  useEffect(() => {
-    if (phase !== "deal") return;
-    const runtime = (dealOrder.length - 1) * DEAL_STAGGER + DEAL_DURATION;
-    const id = setTimeout(() => setPhase("reveal"), runtime / speed);
-    return () => clearTimeout(id);
-  }, [phase, dealOrder.length, speed]);
+  const phase: Phase = ranked ? "rank" : acking ? "ack" : dealt ? "reveal" : "deal";
 
+  // The reveal ran out on its own: two beats of the ordinary cadence, then the
+  // swap. FAST FORWARD takes the `acked` path below instead.
   useEffect(() => {
-    if (phase !== "reveal") return;
-    if (step >= schedule.lastStep) {
-      const id = setTimeout(() => setPhase("rank"), (LINE_INTERVAL * 2) / speed);
-      return () => clearTimeout(id);
-    }
-    const next = step + 1;
-    const opensColumn = schedule.order.some((id) => schedule.colStart[id] === next);
-    const wait = (LINE_INTERVAL + (opensColumn ? COLUMN_PAUSE : 0)) / speed;
-    const id = setTimeout(() => setStep(next), wait);
+    if (ranked || acking || !dealt) return;
+    if (step < schedule.lastStep) return;
+    const id = setTimeout(() => setRanked(true), REVEAL_TIMING.LINE_INTERVAL * 2);
     return () => clearTimeout(id);
-  }, [phase, step, schedule, speed]);
+  }, [ranked, acking, dealt, step, schedule.lastStep]);
 
+  // FAST FORWARD, arriving as room state so the TV and the phones land every
+  // outstanding strike on the same frame. Depends on `skipped` alone and guards
+  // on a ref: with `acking` in the dep array, setting it would immediately
+  // re-run this effect's cleanup and clear the timer that ends the ack.
   useEffect(() => {
-    if (phase !== "ack") return;
-    const id = setTimeout(() => setPhase("rank"), ACK_RING);
+    if (!skipped || acked.current) return;
+    acked.current = true;
+    setAcking(true);
+    setSpeed(FF_SPEED);
+    const id = setTimeout(() => {
+      setAcking(false);
+      setRanked(true);
+    }, ACK_RING);
     return () => clearTimeout(id);
-  }, [phase]);
+  }, [skipped]);
 
   /**
    * The swap is measured, not calculated: the DOM stays in deal order for the
@@ -273,11 +275,12 @@ export function HostScoring({ room, results }: Props) {
     return s.colorIndex === null ? s.emoji : ` ${s.name}`;
   };
 
+  // Asks the server rather than jumping locally: the phones are watching the
+  // same reveal, and a skip the TV kept to itself would leave them crawling
+  // through lines the room has already seen. The round trip is one hop.
   const skip = () => {
     if (phase !== "deal" && phase !== "reveal") return;
-    setStep(schedule.lastStep);
-    setSpeed(FF_SPEED);
-    setPhase("ack");
+    roomStore.send({ type: "fastForward" });
   };
 
   // Reduced motion renders the settled end state on first paint, which includes
@@ -320,7 +323,7 @@ export function HostScoring({ room, results }: Props) {
           const face = ["card", "result-card"];
           if (scorer.colorIndex !== null) face.push("result-card--team");
           if (active === id) face.push("result-card--live");
-          if (card.flinchAt !== null) face.push(`result-card--hit-${parity(card.flinchAt)}`);
+          if (card.flinchCount > 0) face.push(`result-card--hit-${parity(card.flinchCount)}`);
           if (phase === "ack") face.push("result-card--ack");
           if (rankStage === 2 && medal) face.push(`result-card--${medal}`);
 
@@ -329,9 +332,9 @@ export function HostScoring({ room, results }: Props) {
             if (!row.revealed) return null;
             return {
               struck: row.struck,
-              strikeDelayMs: row.backCheck ? 0 : STRIKE_HOLD,
+              strikeDelayMs: row.backCheck ? 0 : REVEAL_TIMING.STRIKE_HOLD,
               alsoShown: row.alsoShown,
-              pop: row.poppedAt === null ? null : parity(row.poppedAt),
+              pop: row.popCount === 0 ? null : parity(row.popCount),
             };
           };
 
@@ -414,12 +417,20 @@ export function HostScoring({ room, results }: Props) {
                     </span>
                     <div className="id-card__stats">
                       <div className="stat">
+                        {/* Keyed on the strike count, which remounts the
+                            element on every strike and so restarts the blink
+                            unconditionally. A class alternated by parity — what
+                            the card's own dip has to use, since remounting a
+                            card would drop its scroll position and its
+                            measured rect — cannot survive two strikes landing
+                            an even number of steps apart: the class string is
+                            unchanged, the animation never re-fires, and the
+                            count silently drops with no flash at all. */}
                         <span
+                          key={card.strikeCount}
                           className={
                             "stat__num stat__num--unique" +
-                            (card.struckAt !== null
-                              ? ` stat__num--flash-${parity(card.struckAt)}`
-                              : "")
+                            (card.strikeCount > 0 ? " stat__num--flash" : "")
                           }
                         >
                           {/* Nothing is revealed yet, so there is no
