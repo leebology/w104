@@ -1,13 +1,13 @@
-import type { CSSProperties } from "react";
 import { useRemaining } from "../../net/clock";
 import { computeStandings } from "../../../shared/standings";
 import { currentRound, matchComplete } from "../../../shared/state";
-import { BadgeStrip } from "../../components/BadgeStrip";
+import { Podium } from "../../components/Podium";
 import { RoomChip } from "../../components/RoomChip";
+import { StandingsList } from "../../components/StandingsList";
 import { roomStore } from "../../net/room";
 import type { RoomState } from "../../../shared/state";
-import { TEAM_COLORS, rosterOf } from "../../../shared/teams";
-import { HostHeader } from "./HostHeader";
+import { rosterOf } from "../../../shared/teams";
+import { HostExit, HostHeader, HostHeaderRight } from "./HostHeader";
 
 type Props = {
   room: RoomState;
@@ -21,54 +21,121 @@ export function HostStandings({ room, countdown }: Props) {
   const done = matchComplete(room);
   // On the final screen the round marker would otherwise read one past the
   // last round played, because `currentRound` names the round about to start.
-  const marker = done ? room.settings.roundCount : currentRound(room) - 1;
+  const played = done ? room.settings.roundCount : currentRound(room) - 1;
+
+  // Readiness counts the connected, because that is what `everyoneReady`
+  // gates the countdown on — a denominator that includes someone who cannot
+  // possibly ready up is a counter that never finishes.
+  const here = room.players.filter((p) => p.connected);
+  const ready = here.filter((p) => p.ready).length;
 
   return (
-    <main className="screen screen--host host-standings">
-      {/* Chip left, title right — same as `HostScoring`, and the same corner
-          the chip sits in on every other host screen. */}
-      <HostHeader
-        left={<RoomChip code={room.code} />}
-        round={marker}
-        of={room.settings.roundCount}
-        right={<h1 className="host-standings__title">{done ? "Final standings" : "Standings"}</h1>}
-      />
-
-      <ol className="standings-list">
-        {standings.map((s) => (
-          <li
-            className="card standing-card"
-            key={s.id}
-            style={
-              s.colorIndex !== null
-                ? ({ "--accent": `var(${TEAM_COLORS[s.colorIndex].token})` } as CSSProperties)
-                : undefined
-            }
-          >
-            <span className="standing-card__place">{s.place}</span>
-            {s.colorIndex === null ? (
-              <span className="standing-card__avatar">{s.emoji}</span>
+    <main className={done ? "screen screen--host host-standings host-standings--final" : "screen screen--host host-standings"}>
+      {/* The stage dims *behind* the countdown rather than being replaced by
+          it: the standings are what the room is still talking about, and the
+          count is an interruption laid over them. */}
+      <div className={countdown ? "host-standings__stage host-standings__stage--dimmed" : "host-standings__stage"}>
+        <HostHeader
+          left={
+            done ? (
+              <span className="plaque plaque--over">MATCH OVER</span>
             ) : (
-              <span className="standing-card__swatch" aria-hidden="true" />
-            )}
-            <span className="standing-card__name">
-              {s.name}
-              {s.colorIndex !== null && (
-                <span className="standing-card__members">
-                  {s.members.map((id) => room.players.find((p) => p.id === id)?.emoji ?? "").join("")}
+              <div className="host-standings__title">
+                <h1>Standings</h1>
+                {/* The list states the scoring direction in its own explainer
+                    row, so the subtitle counts rounds instead of saying it
+                    twice. */}
+                <p>
+                  AFTER ROUND {played} OF {room.settings.roundCount} ·{" "}
+                  {room.settings.roundCount - played} TO GO
+                </p>
+              </div>
+            )
+          }
+          right={
+            <HostHeaderRight>
+              {done ? (
+                <span className="host-standings__meta">
+                  {room.settings.roundCount}{" "}
+                  {room.settings.roundCount === 1 ? "ROUND" : "ROUNDS"} · {standings.length}{" "}
+                  {standings.length === 1 ? "PLAYER" : "PLAYERS"} · ROOM {room.code}
                 </span>
+              ) : (
+                <>
+                  <RoomChip code={room.code} />
+                  {/* The match has no other exit between rounds — see the
+                      standings brief. Absent on the final screen, where the
+                      gold button already does exactly this. */}
+                  <HostExit
+                    label="Back to room"
+                    onClick={() => roomStore.send({ type: "backToLobby" })}
+                  />
+                </>
               )}
-            </span>
-            <BadgeStrip places={s.badges} />
-            <span className="standing-card__points">{s.points}</span>
-          </li>
-        ))}
-      </ol>
+            </HostHeaderRight>
+          }
+        />
 
-      <div className="host-standings__footer">
-        {countdown ? (
-          <>
-            <p className="get-ready">Get ready… {remaining}</p>
+        {/* Each shape does the job it is best at, and which one is up is fixed
+            by the state rather than chosen: between rounds the room wants
+            detail it can argue over, so the list; at the end it wants a result
+            somebody won, so the staircase. Both read the same `standings`
+            array in the same order, so nothing about placement or ties depends
+            on which is showing. */}
+        {done ? (
+          <Podium room={room} standings={standings} final />
+        ) : (
+          <StandingsList room={room} standings={standings} />
+        )}
+
+        <div className="host-standings__rule" />
+
+        <footer className="host-standings__footer">
+          {done ? (
+            <>
+              <p className="host-standings__hint">That's the match — ribbons freeze on the final step.</p>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => roomStore.send({ type: "backToLobby" })}
+              >
+                Back to room
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="host-standings__count">
+                <span>
+                  {ready} OF {here.length} READY
+                </span>
+                <p className="host-standings__hint">
+                  Step height is your place — ribbons go to the top three.
+                </p>
+              </div>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => roomStore.send({ type: "startGame" })}
+              >
+                Next round
+              </button>
+            </>
+          )}
+        </footer>
+      </div>
+
+      {countdown && (
+        <div className="host-standings__countdown">
+          <div className="get-ready-card">
+            <span className="get-ready-card__label">GET READY</span>
+            <span className="get-ready-card__count">{remaining}</span>
+          </div>
+          {/* Names the round but never the category: it is drawn at the
+              whistle, so there is nothing here to name yet — see reduce.ts. */}
+          <div className="get-ready-note">
+            <span className="get-ready-note__round">ROUND {currentRound(room)}</span>
+            <i className="get-ready-note__dot" />
+            <span>Un-ready to stop it</span>
             <button
               type="button"
               className="btn btn--secondary btn--small"
@@ -76,28 +143,9 @@ export function HostStandings({ room, countdown }: Props) {
             >
               Stop
             </button>
-          </>
-        ) : done ? (
-          <button
-            type="button"
-            className="btn"
-            onClick={() => roomStore.send({ type: "backToLobby" })}
-          >
-            Back to lobby
-          </button>
-        ) : (
-          <>
-            <p className="host-standings__hint">Starting early readies everyone up.</p>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => roomStore.send({ type: "startGame" })}
-            >
-              Next round
-            </button>
-          </>
-        )}
-      </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

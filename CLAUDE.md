@@ -228,9 +228,9 @@ is enforced at the connect gate, before `join` can seat anyone.
   stays continuous and one weight on all four sides. A `10px` accent border
   against `3px` sides flares the corners the radius rounds, and `--accent` is
   set inline only for a *team*, so on a solo card the whole border declaration
-  resolves invalid and that edge loses its stroke entirely. `.standing-card` is
-  the last one still on a border (`border-left`); it has both problems waiting
-  in it, and no badge yet.
+  resolves invalid and that edge loses its stroke entirely. Every accented
+  surface is now on a badge; the standings card was the last holdout and went
+  away with the podium rewrite.
 - **The shared list reaches teammates by `sendTo`, never `broadcast`.** On an
   accepted entry the server pushes `yourEntries` to that team's connected
   members only — the "no per-player entry counts in broadcasts" boundary is
@@ -252,6 +252,38 @@ one host action that asks first (`ConfirmDialog`), because `endGame` kicks
 everyone and cannot be undone by pressing it again. The round marker is
 **omitted** on team select and voting: both only happen at `history.length ===
 0`, so `HostHeader`'s `round` is optional.
+
+**The standings are a staircase, and a step's height is keyed to `place`, not
+to its column index** (`src/components/Podium.tsx`). That is what makes two
+tied scorers stand at exactly the same height with no special case, and it is
+why the ramp is a table of *percentages* rather than the design's pixels: the
+TV owns whatever viewport it is given, and fixed heights either float on a
+1080p screen or overrun a 720p one. Ordering is strictly by rank left to right
+— 1st is always leftmost, never a centred podium, because this board runs to
+ten and a centred one only orders its first three. It keeps a `final` prop —
+the design's "one component, two states" — even though the only caller passes
+it: the state→shape mapping below is a one-line decision in one place, and
+leaving both branches standing is what keeps it reversible. The inter-round
+countdown is **posed over** the dimmed board rather than replacing it, and
+names the round but never the category — there is no category to name until
+the whistle.
+
+**Which shape is up is fixed by the state, not chosen.** Between rounds the TV
+renders `StandingsList` — full-width rows carrying place, name, readiness and
+the running total, the shape a room argues over. At match end it renders
+`Podium`. There is deliberately no setting for this: the two screens do
+different jobs, and a host toggle only ever puts the wrong one up. Both read
+the same `computeStandings` array in the same order, so **nothing about
+placement or ties may depend on which is showing.**
+
+`StandingsList` runs full width to five scorers and **splits into two columns
+from six**, filled *down* the first column before the second so reading order
+stays 1st to last. That is why it is a `grid` with `grid-auto-flow: column` and
+a row-track list built in the component: the leader's row is taller only in the
+single-column board, because with two columns row one is shared with whoever
+sits at the top of column two. It carries no per-round chips — the podium's
+badge strip is where the golf sum is itemised, and between rounds the room
+wants the total, not the arithmetic.
 
 Screens are a pure `switch` on `room.phase.name` in `HostView`/`PlayerView`.
 Both have an explicit `ReactElement` return type — **that annotation is what
