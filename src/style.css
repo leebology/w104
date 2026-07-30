@@ -634,6 +634,19 @@ ul, ol { list-style: none; }
   margin: -6px;
 }
 
+/* There are players below the fold. The bottom band fades rather than cutting,
+   so a half-visible pill reads as "keep scrolling" instead of as a rendering
+   fault — and it goes the moment the list is scrolled to its end, so a room
+   that fits on screen never wears it. `-webkit-` first for the iOS versions
+   that only have the prefixed property; both are the same gradient.
+
+   40px is a pill and a half of fade, measured against `.roster-row`'s own
+   14px gap. */
+.roster-row--more {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent 100%);
+}
+
 /* ------------------------------------------------------------ player pill */
 
 .player-pill__avatar { font-size: 22px; line-height: 1; }
@@ -2082,8 +2095,24 @@ ul, ol { list-style: none; }
    The bottom padding is the strip the entry input occupies, and it has to
    clear the input's whole box — rule, padding and text line — not just the
    text: 3px border + 10px padding + a 22px line, plus room to breathe. Keep it
-   in step with `.entry-overlay input` or words will run into the rule. */
-.playing__list { justify-content: flex-end; gap: 4px; padding-bottom: 42px; }
+   in step with `.entry-overlay input` or words will run into the rule.
+
+   The mask is what makes that strip *stay* clear. Padding only reserves space
+   at the end of the content; scrolled content still paints through it, so
+   scrolling back through a long list dragged old words over the rule and into
+   what was being typed. Cutting at the content box's own bottom edge — two
+   stops at the same position, a hard edge rather than a fade — hides exactly
+   the band the input occupies and nothing else. It cannot be a fade: with
+   `justify-content: flex-end` the newest word's baseline sits right on that
+   edge, so any softening above it would wash out the word the player just
+   typed. */
+.playing__list {
+  justify-content: flex-end;
+  gap: 4px;
+  padding-bottom: 42px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 42px), transparent calc(100% - 42px));
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 42px), transparent calc(100% - 42px));
+}
 
 .playing__list .word { font-size: 17px; }
 
@@ -4261,7 +4290,10 @@ ul, ol { list-style: none; }
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-btn);
-  padding: 20px 12px 12px;
+  /* The extra 4px on top is clearance under the name tab, which overhangs the
+     corner and tilts — its low edge dips further down than its box does, and
+     the first member's name was reading as attached to it. */
+  padding: 24px 12px 12px;
   font-family: var(--display);
   cursor: pointer;
 }
@@ -4375,8 +4407,13 @@ ul, ol { list-style: none; }
 
 /* ------------------------------------------------------ player: teams */
 
+/* Less top padding than every other mobile screen. This one is a grid of
+   targets and nothing else, so the room a header would have taken above it
+   goes to the tiles — the difference is roughly one more row visible without
+   scrolling on a small phone. */
 .player-teams {
-  gap: 16px;
+  padding-top: 22px;
+  gap: 14px;
 }
 
 .player-teams__room {
@@ -4389,25 +4426,15 @@ ul, ol { list-style: none; }
 
 .player-teams__plaque { font-size: 16px; letter-spacing: 0.1em; padding: 8px 18px; }
 
-/* One slot above the grid, the same height whether or not you are on a team.
-   Fixed, not collapsing: the grid below must not move when you join — that
-   jump is the whole thing this screen was rebuilt to stop — and a slot that
-   appeared with the name editor in it would push every tile down the screen
-   at exactly the moment you were looking at one. */
-.player-teams__slot {
-  flex: 0 0 46px;
+/* The title and the name editor share one slot and take turns in it — the
+   plaque until you are on a team, the tab afterwards. Fixed at the plaque's
+   own height so the swap moves nothing below it: the grid must not shift when
+   you join, which is the whole point of this screen's layout. */
+.player-teams__title-slot {
+  flex: 0 0 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.player-teams__hint {
-  font-family: var(--display);
-  font-size: 13px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--cream);
-  opacity: 0.75;
 }
 
 /* The same tilted tab every other screen wears, with the name editable in
@@ -4419,6 +4446,9 @@ ul, ol { list-style: none; }
    sits on the box's edge at the end of a long name. */
 .player-teams__title {
   position: static;
+  /* The slot is a flex row, whose default `stretch` would blow the tab out to
+     the full width of the screen regardless of how short the name on it is. */
+  align-self: center;
   max-width: 100%;
   display: flex;
   align-items: center;

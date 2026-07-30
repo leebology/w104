@@ -47,8 +47,9 @@ function PenGlyph() {
  * somewhere else.
  *
  * Everything that grows or shrinks is therefore boxed into a fixed slot: the
- * name editor above the grid holds its height whether or not you have a team,
- * and so does the footer.
+ * title slot above the grid is the plaque's height whether it is holding the
+ * plaque or the name editor that replaces it, and the footer holds the Leave
+ * button's height whether or not there is one in it.
  *
  * Every tile carries its members by name as well as by face — a room of ten
  * emoji is not a roster anyone can read across two columns — and your own name
@@ -67,13 +68,13 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
 
   return (
     <main className="screen screen--mobile screen--locked player-teams">
-      <p className="plaque player-teams__plaque">Pick a team</p>
-
-      {/* One fixed-height slot, occupied either way. It holds the name editor
-          once you are on a team and the instruction before that — if it
-          collapsed when empty, joining would push the whole grid up the screen
-          and undo the point of the layout below. */}
-      <div className="player-teams__slot">
+      {/* One slot at the top of the screen, holding the title *or* the name
+          editor — never both, and never one above the other. Once you are on a
+          team the instruction has been followed and the tab that replaces it
+          says the same thing better, so the room the two would have taken
+          between them goes to the grid instead. Its height is fixed to the
+          plaque's, so the swap does not move the tiles below. */}
+      <div className="player-teams__title-slot">
         {mine ? (
           <div
             className="team-badge player-teams__title"
@@ -102,7 +103,7 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
             />
           </div>
         ) : (
-          <p className="player-teams__hint">Tap a team to join</p>
+          <p className="plaque player-teams__plaque">Pick a team</p>
         )}
       </div>
 
