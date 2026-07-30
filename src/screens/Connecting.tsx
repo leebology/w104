@@ -27,10 +27,10 @@ export function Connecting({ onBack }: { onBack?: () => void }) {
         <p className="notice notice--dim">
           {slow ? "Still trying. Check you're on the same wifi." : "Finding the room."}
         </p>
+        {/* Secondary, unlike ErrorScreen's gold "Try again": leaving is not the
+            thing to do here, it is the thing to do once the waiting turns out
+            to be pointless. */}
         {slow && onBack && (
-          {/* Secondary, unlike ErrorScreen's gold "Try again": leaving is not
-              the thing to do here, it is the thing to do if the waiting turns
-              out to be pointless. */}
           <button type="button" className="btn btn--secondary btn--block" onClick={onBack}>
             Back
           </button>
