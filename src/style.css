@@ -782,6 +782,21 @@ ul, ol { list-style: none; }
 
 /* ------------------------------------------------------------ host lobby */
 
+/* Close room sits on the same inset as the drawer tabs in the corners below
+   it — 26px off the top and off the side, so the lobby's two right-hand
+   corners are a matched pair. (The tabs' 5px drop shadow overhangs that line;
+   the pills themselves are what line up.) The header's own padding cannot do
+   it alone: the brand block makes this header several times the button's
+   height, and a vertically centred right slot floats the button most of the
+   way down it. Only that slot is pinned to the top — `align-items` on the
+   header would take the absolutely positioned round marker up with it. */
+.host-lobby .host-header {
+  padding-top: 26px;
+  padding-right: 26px;
+}
+
+.host-lobby .host-header__right { align-self: flex-start; }
+
 /* The wordmark and the join URL as one unit in the header's left slot. */
 .host-lobby__brand {
   display: flex;
