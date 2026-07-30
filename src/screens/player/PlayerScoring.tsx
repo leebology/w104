@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { TeamBadge } from "../../components/TeamBadge";
 import { WordList } from "../../components/WordList";
 import type { RowReveal } from "../../components/WordList";
@@ -18,10 +18,28 @@ import {
   seededRng,
   uniqueDirection,
 } from "../../../shared/reveal";
+import { scrollFraction } from "../../../shared/mirror";
 import type { SelfMarks } from "../../../shared/selfstrike";
 import { currentRound } from "../../../shared/state";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import type { Results } from "../../../shared/scoring";
+
+/**
+ * The mirror's send rate: a trailing send every `MIRROR_INTERVAL` while the
+ * finger moves, plus one `MIRROR_SETTLE` after it stops.
+ *
+ * The settle send is what guarantees the TV ends up exactly where the finger
+ * did rather than up to one interval short of it.
+ *
+ * The interval is chosen rather than assumed. Every message wakes the
+ * hibernating Durable Object and counts against `doRequestsPerDay`, which is
+ * 100,000/day *account-wide* and shared between staging and production
+ * (`shared/usage.ts`). At 100ms the mirror alone would cap the account near
+ * fifty matches a day; at 250ms it is about a third of that, and the host's
+ * easing (see `HostScoring`) closes the visual gap.
+ */
+const MIRROR_INTERVAL = 250;
+const MIRROR_SETTLE = 150;
 
 type Props = {
   room: RoomState;
@@ -67,6 +85,57 @@ export function PlayerScoring({
     [results, room.code, room.history.length],
   );
   const { step } = useRevealStep(schedule, startedAt, skipped, reduced);
+
+  /** The scroll box itself, not the card around it. */
+  const listBox = useRef<HTMLDivElement | null>(null);
+  const sentAt = useRef(0);
+  const lastSent = useRef<number | null>(null);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /**
+   * The mirror drives this phone's own column on the TV — but only once the
+   * reveal has run out.
+   *
+   * Until then the TV is still following its own newest revealed line, and its
+   * column holds *only revealed rows* while this screen has shown the whole
+   * list since the first frame: the row under a finger here may not exist there
+   * yet. `step >= lastStep` is the same instant on every device, because both
+   * screens count it off the same `scoring.startedAt` against the same
+   * schedule, and a FAST FORWARD lands it on all of them together.
+   *
+   * The TV holds what arrives and starts applying at its own later gate — see
+   * `HostScoring`. That gap is deliberate and is why this side does not wait
+   * for it.
+   */
+  const mirroring = step >= schedule.lastStep;
+
+  useEffect(() => {
+    const box = listBox.current;
+    if (!box || !mirroring) return;
+
+    const push = () => {
+      const at = scrollFraction(box.scrollTop, box.scrollHeight, box.clientHeight);
+      // Null is a list shorter than its box: no position to mirror, so nothing
+      // is sent at all. An unchanged rounded value is the free dedupe the
+      // three-decimal quantization buys.
+      if (at === null || at === lastSent.current) return;
+      lastSent.current = at;
+      sentAt.current = Date.now();
+      roomStore.send({ type: "scrollTo", at });
+    };
+
+    const onScroll = () => {
+      if (Date.now() - sentAt.current >= MIRROR_INTERVAL) push();
+      if (settleTimer.current !== null) clearTimeout(settleTimer.current);
+      settleTimer.current = setTimeout(push, MIRROR_SETTLE);
+    };
+
+    box.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      box.removeEventListener("scroll", onScroll);
+      if (settleTimer.current !== null) clearTimeout(settleTimer.current);
+    };
+  }, [mirroring]);
 
   // A word too long for the phone's column clips and travels, same as on the TV.
   // Re-measured on a manual mark as well: a word losing its bold weight is a
@@ -195,6 +264,7 @@ export function PlayerScoring({
           labelFor={labelFor}
           authorFor={me.colorIndex !== null ? emojiOf : undefined}
           reveal={reveal}
+          listRef={listBox}
           // The request is fire-and-forget, like every other client action: the
           // struck state comes back in the next `state` push, so there is no
           // optimistic copy to reconcile. A round trip is one hop and nothing
