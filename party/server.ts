@@ -45,6 +45,15 @@ export interface Env {
   /** Debug-panel secrets. Absent everywhere until `wrangler secret put`. */
   CF_API_TOKEN?: string;
   CF_ACCOUNT_ID?: string;
+  /**
+   * Per-IP budget for room connects — see `rateLimited` below.
+   *
+   * Optional on purpose. `wrangler dev` has no rate limiter unless the binding
+   * is in the config it reads, and an environment deployed before this landed
+   * has none at all; in both cases the games must still run. A missing limiter
+   * means no limiting, never a closed door.
+   */
+  JOIN_LIMITER?: RateLimit;
 }
 
 /**
@@ -1041,13 +1050,61 @@ async function handleUsage(request: Request, env: Env): Promise<Response> {
   });
 }
 
+/**
+ * Whether this connect attempt has spent its caller's budget.
+ *
+ * Room codes are four-letter words so they can be read off a TV and shouted
+ * across a room, and that ceiling is the whole point of them — no list anyone
+ * can shout is large enough to hide in. At ~800 words the entire code space is
+ * a couple of minutes of requests, and because a room's code *is* its
+ * Durable Object name, walking that space enumerates every live lobby. So the
+ * defence is a budget, not a bigger list: lengthening `CODE_WORDS` raises the
+ * cost of a sweep, this is what makes the cost bite.
+ *
+ * Be clear about what it buys. The limit is per Cloudflare location and keyed
+ * on the client address, so it stops casual enumeration from one machine and
+ * does nothing about a sweep spread across a botnet. That is the right trade
+ * here: what a sweep actually yields is a list of joinable lobbies — never
+ * word lists, which `toRoomState` strips, and never a game in progress, which
+ * `onConnect` refuses — so the harm is strangers turning up in someone's
+ * living-room game, and raising the price of finding one is proportionate.
+ *
+ * `MAX_PLAYERS` phones plus a host share one address behind household NAT, and
+ * flaky wifi has partysocket reconnecting on top of that, so the budget is set
+ * far above a real room's worst hour and far below a walk of the code space.
+ * The number itself is in `wrangler.jsonc` — it is configuration, and a
+ * constant here that did not control it would only ever go stale.
+ *
+ * Two ways this declines to limit, both deliberate: no binding (see `Env`), and
+ * no `CF-Connecting-IP`, which is every request in `wrangler dev` — there is no
+ * caller to key on, and guessing one would rate-limit local development
+ * against itself.
+ */
+async function rateLimited(request: Request, env: Env): Promise<boolean> {
+  const ip = request.headers.get("CF-Connecting-IP");
+  if (!env.JOIN_LIMITER || !ip) return false;
+  const { success } = await env.JOIN_LIMITER.limit({ key: ip });
+  return !success;
+}
+
 // Worker entrypoint: route /parties/:party/:room to the right room instance.
 export default {
   async fetch(request, env) {
     // Checked before `routePartykitRequest`, which would otherwise 404 it
-    // itself — this path is not a party route and never reaches a room.
+    // itself — this path is not a party route and never reaches a room. Also
+    // before the budget below: the debug panel polls on its own schedule and
+    // is not what the budget is defending.
     if (new URL(request.url).pathname === "/debug/usage") {
       return handleUsage(request, env);
+    }
+
+    // Everything past here is a room connect, which is the only request that
+    // can tell an attacker whether a code is live.
+    if (await rateLimited(request, env)) {
+      return new Response("Too Many Requests", {
+        status: 429,
+        headers: { "Retry-After": "60" },
+      });
     }
 
     // PartyServer takes the connection id from `_pk`, and partysocket mints one

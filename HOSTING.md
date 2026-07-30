@@ -103,6 +103,24 @@ socket, so passing `--local-protocol https` to `wrangler dev` breaks the
 connection; with both sides on http there's no mixed-content problem to work
 around.
 
+### The connect budget
+
+Room connects are metered per client IP — 60 a minute — so the four-letter code
+space can't be walked to find live lobbies. Two things to know when testing:
+
+- **Local dev is never limited.** `wrangler dev` requests carry no
+  `CF-Connecting-IP`, so there is nothing to key on and the limiter is skipped.
+- **On staging or production, every phone on your wifi shares one budget**,
+  because they share one public address. A full room plus reconnects is
+  nowhere near 60, but a reconnect loop can be — the symptom is sockets that
+  never open and a `429` in the network tab, clearing on its own within a
+  minute.
+
+Staging counts against its own namespace (`1002`, vs production's `1001`) so
+an afternoon of testing can't spend the budget of people actually playing. The
+limit lives in `wrangler.jsonc`; `rateLimited()` in `party/server.ts` explains
+what it does and does not defend against.
+
 ---
 
 ## One-time setup
