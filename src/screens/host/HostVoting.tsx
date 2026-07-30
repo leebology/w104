@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
-import { CATEGORIES } from "../../../shared/categories";
+import { BALLOT, RANDOM_CATEGORY } from "../../../shared/categories";
 import { tallyVotes, voteBudget, voteShares } from "../../../shared/voting";
 import { teamsEnabled } from "../../../shared/teams";
 import { isWaiting } from "../../../shared/bots";
@@ -87,14 +87,23 @@ function nameSize(votes: number, max: number): string {
 }
 
 /**
- * The ten cards split into the two rows the TV shows, balanced so the rows
+ * What a card is called on the TV. Only the random option differs from its
+ * ballot id, and it differs on every screen that renders it — see PlayerVoting.
+ */
+function cardLabel(category: string): string {
+  return category === RANDOM_CATEGORY ? "🎲 random" : category;
+}
+
+/**
+ * The eleven cards split into the two rows the TV shows, balanced so the rows
  * carry near-equal total grow.
  *
  * Width is the odds, but `flex-grow` is only ever relative to the row a card
  * is in — so without this a one-vote card in a quiet row comes out wider than
  * a two-vote card in a loud one, and the whole mechanic quietly lies. Heaviest
- * card to the lighter row, five per row, then each row is put back into pool
- * order: the list itself never re-sorts, only which row a card lands in.
+ * card to the lighter row, half the ballot per row, then each row is put back
+ * into ballot order: the list itself never re-sorts, only which row a card
+ * lands in.
  */
 type VoteCard = { category: string; votes: number };
 
@@ -115,7 +124,7 @@ function balancedRows(cards: VoteCard[]): VoteCard[][] {
     }
   }
   const poolIndex = (c: VoteCard) =>
-    CATEGORIES.indexOf(c.category as (typeof CATEGORIES)[number]);
+    BALLOT.indexOf(c.category as (typeof BALLOT)[number]);
   rowA.sort((a, b) => poolIndex(a) - poolIndex(b));
   rowB.sort((a, b) => poolIndex(a) - poolIndex(b));
   return rowB.length > 0 ? [rowA, rowB] : [rowA];
@@ -140,7 +149,7 @@ export function HostVoting({ room, offset, countdown }: Props) {
     return <HostVotingClosed room={room} totals={totals} remaining={remaining} cast={cast} />;
   }
 
-  const cards = CATEGORIES.map((category) => ({
+  const cards = BALLOT.map((category) => ({
     category,
     votes: totals[category] ?? 0,
   }));
@@ -172,7 +181,10 @@ export function HostVoting({ room, offset, countdown }: Props) {
             {row.map(({ category, votes }) => (
               <div
                 key={category}
-                className={votes > 0 ? "vote-card" : "vote-card vote-card--zero"}
+                className={
+                  (votes > 0 ? "vote-card" : "vote-card vote-card--zero") +
+                  (category === RANDOM_CATEGORY ? " vote-card--random" : "")
+                }
                 // The whole mechanic: card width IS the odds. No measurement,
                 // no JS layout pass — flex-grow carries it. `--name-size` is
                 // the ideal; the CSS clamps it against the card's own width.
@@ -181,7 +193,7 @@ export function HostVoting({ room, offset, countdown }: Props) {
                   "--name-size": nameSize(votes, maxVotes),
                 } as CSSProperties}
               >
-                <span className="vote-card__name">{category}</span>
+                <span className="vote-card__name">{cardLabel(category)}</span>
                 {votes > 0 && (
                   <VoteFoot room={room} category={category} total={String(votes)} />
                 )}
@@ -223,8 +235,9 @@ function HostVotingClosed({
   cast: number;
 }) {
   const shares = voteShares(room.votes);
-  // Survivors only, strongest first. Zero-vote categories are gone.
-  const survivors = CATEGORIES
+  // Survivors only, strongest first. Zero-vote options are gone. Off the
+  // ballot, so a room that backed `random` sees its odds like any other.
+  const survivors = BALLOT
     .filter((c) => (totals[c] ?? 0) > 0)
     .sort((a, b) => (totals[b] ?? 0) - (totals[a] ?? 0));
   const top = survivors.slice(0, 3);
@@ -264,7 +277,9 @@ function HostVotingClosed({
             <div className="host-voting__row host-voting__row--top">
               {top.map((category, i) => (
                 <div className="vote-card" key={category} style={{ flexGrow: shares[category] }}>
-                  <span className="vote-card__name" style={{ fontSize: rankNameSize[i] }}>{category}</span>
+                  <span className="vote-card__name" style={{ fontSize: rankNameSize[i] }}>
+                    {cardLabel(category)}
+                  </span>
                   <VoteFoot
                     room={room}
                     category={category}
@@ -281,7 +296,7 @@ function HostVotingClosed({
                   // Equal width below the top three: under ~10% the differences
                   // are not worth a size difference.
                   <div className="vote-card vote-card--small" key={category}>
-                    <span className="vote-card__name">{category}</span>
+                    <span className="vote-card__name">{cardLabel(category)}</span>
                     <VoteFoot room={room} category={category} total={`${shares[category]}%`} />
                   </div>
                 ))}

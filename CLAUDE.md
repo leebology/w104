@@ -180,6 +180,16 @@ replaced wholesale on each `state` push; every client action is a *request*.
 - **`Room.history` holds aggregates only, never words.** It rides in
   `RoomState`, so an `entries` field on `RoundSummary` would leak every past
   round to every socket — the same boundary `toRoomState` exists to hold.
+- **`random` is on the ballot, never in the pool.** `BALLOT` is
+  `CATEGORIES + RANDOM_CATEGORY`, and only the ballot is what `castVote`
+  accepts, what the two voting grids render, what `voteShares` breaks ties by
+  and what the archive snapshots. `CATEGORIES` stays "the things a round can be
+  about", so the draw's pool, `spentCategories`, `playedCategories` and the
+  round header need no guard against it. If `random` wins the weighted draw it
+  is spent on a uniform draw over what is left — `weightedPick` returns *where
+  in the winning segment* the roll landed, which is itself uniform, so one
+  `roll` still pays for both stages and `reduce` keeps its single source of
+  randomness per tick.
 - **Settings are validated against the active mode's descriptors, never against
   loose constants.** `shared/gamemodes.ts` is the single source of truth for
   which settings a mode exposes and what their bounds are; `setSettings`
@@ -262,6 +272,28 @@ Known gap, pre-existing: kicking a player who is *already disconnected* records
 no sessions, so their next connect finds an empty array, matches nothing, and
 lifts the ban immediately.
 
+**The room this device is in is persisted too** (`getSession` in
+`src/net/identity.ts`), and `App` seeds its `session` state from it and
+reconnects on mount. That is what survives a *discarded page*: a locked phone
+keeps its socket and partysocket retries on its own, but iOS is free to throw
+the tab away, and a discarded tab comes back as a cold load with no React state
+at all. `RoomStore.connect` also re-dials on `visibilitychange`/`pageshow`/
+`online`, because a suspended tab's retry timer fires late and on a backoff
+computed while nobody was looking.
+
+- **A failed resume is not a failed join.** Nobody typed the code, so
+  `no-such-room` sends the device to Landing with the ended banner rather than
+  an error beside the code boxes — the same trip a host now makes when their own
+  room is reaped out from under them, which used to be a dead-end `ErrorScreen`.
+- **A resumed host connect carries no `intent: "create"`,** or a host who slept
+  through the reap would silently open a second empty room on the same code. The
+  connect gate refuses a `role=host` connect to a room with a different `hostId`
+  for the matching reason: `claimHost` would ignore it and leave that device
+  parked on a host screen driving nothing.
+- Resuming is bounded by a window in `identity.ts`, and that window is only
+  about how long *trying* is worth it. The server is the real gate — an
+  abandoned room is reaped seconds after its last socket closes.
+
 ### Teams
 
 - **The unit of scoring is a `Scorer`, not a `Player`.** `rosterOf(room)` in
@@ -287,6 +319,21 @@ lifts the ban immediately.
   have `settle` drop the room back into team select. The tick is the backstop
   for the one case Continue cannot see — readiness counts only *connected*
   players, so a phone that died in team select arrives at the whistle teamless.
+- **Switching teams mid-countdown puts the full five seconds back**, in
+  `joinTeam` itself. Leaving already stops the count dead (it clears `ready` and
+  `settle` drops the room back into team select), but a switch keeps the flag
+  set, so without this a change of mind on the last second is carried into
+  voting with nobody able to react to it. It cannot be left to `settle`: the
+  countdown out of the host's Continue is force-readied, so `settle` has nothing
+  to re-derive.
+- **Team panels never move on the phone either.** `PlayerTeams` renders the full
+  roster of teams in colour order and joining one changes what a tile *says*,
+  never where it sits — the tile you tapped is still under your thumb. The name
+  editor and the Leave button therefore live in fixed-height slots, or joining
+  would resize the grid between them. Every tile carries its members by name as
+  well as by face, and your own name is inverted into an ink pill: Bungee has one
+  weight, so "bolder" cannot be a `font-weight`, and an accent-filled pill would
+  read differently on each of the ten colours.
 - **`cancelStart` is rejected on the teams countdown.** It clears readiness so
   `settle` cannot re-open the countdown, which would wedge a room landing back
   in `teams` with everyone still on a team and no way to become ready again.

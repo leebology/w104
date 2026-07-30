@@ -8,7 +8,7 @@
  * in milliseconds by the existing `shared/**` suite, which is also why the
  * mapping does not live in `party/` alongside the binding.
  */
-import { CATEGORIES } from "./categories";
+import { BALLOT } from "./categories";
 import { normalize } from "./scoring";
 import type { Results } from "./scoring";
 import { computeStandings } from "./standings";
@@ -195,13 +195,19 @@ export function gameStartRows(
  * after `startGame`, so at match start there is nothing to record. Votes are
  * immutable once voting closes, so the first bank is the earliest moment they
  * are both complete and safe.
+ *
+ * The *ballot* rather than the pool, so `random` gets a row like everything
+ * else: a vote for it is one of the votes cast that night, and a snapshot that
+ * left it out would make the counts fail to add up. It simply never earns
+ * `was_played` — the match-end update sets that from the categories actually
+ * drawn, and `random` is never one of them.
  */
 export function voteRows(
   room: Room,
   game: string,
 ): { categories: GameCategoryRow[]; votes: VoteRow[] } {
   const totals = tallyVotes(room.votes);
-  const categories: GameCategoryRow[] = CATEGORIES.map((category) => ({
+  const categories: GameCategoryRow[] = BALLOT.map((category) => ({
     game_id: game,
     category,
     vote_total: totals[category] ?? 0,

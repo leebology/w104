@@ -5,7 +5,7 @@ import { NO_SELF_MARKS, toggleMark } from "./selfstrike";
 import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, MatchSettings, Player, PlayerId, Room, RoundSummary } from "./state";
-import { CATEGORIES } from "./categories";
+import { BALLOT } from "./categories";
 import { isGameModeId, modeSpec, normalizeSetting } from "./gamemodes";
 import type { NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
@@ -725,9 +725,10 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "castVote": {
       if (room.phase.name !== "voting") return room;
-      // A hand-rolled socket message is not bound by the UI, so the pool and
-      // the budget are both checked here rather than trusted.
-      if (!(CATEGORIES as readonly string[]).includes(ev.category)) return room;
+      // A hand-rolled socket message is not bound by the UI, so the ballot and
+      // the budget are both checked here rather than trusted. The *ballot*,
+      // not the pool: `random` is votable but is not a category.
+      if (!(BALLOT as readonly string[]).includes(ev.category)) return room;
       if (!room.players.some((p) => p.id === ev.playerId)) return room;
       const budget = voteBudget(room.settings);
       const row = room.votes[ev.playerId] ?? {};
@@ -767,12 +768,19 @@ function apply(room: Room, ev: RoomEvent): Room {
       // `ready` is derived from membership and set only here and in
       // leaveTeam — the `ready` event is rejected in this phase, exactly as
       // castVote and resetVotes own the flag during voting.
-      return {
-        ...room,
-        players: mapPlayer(room.players, ev.playerId, (p) => ({
-          ...p, teamId: ev.teamId, ready: true,
-        })),
-      };
+      const players = mapPlayer(room.players, ev.playerId, (p) => ({
+        ...p, teamId: ev.teamId, ready: true,
+      }));
+      // A *switch* mid-countdown puts the full five seconds back on the clock.
+      // Leaving a team already stops the count dead — it clears `ready` and
+      // `settle` drops the room back into team select — but switching keeps
+      // the flag set, so without this someone changing their mind on the last
+      // second is carried into voting on a team they have just left, with no
+      // time for anyone to react to the move. `inTeamSelect` has already
+      // established that this countdown is the one out of team select.
+      return room.phase.name === "countdown"
+        ? { ...room, players, phase: { ...room.phase, endsAt: ev.now + COUNTDOWN_MS } }
+        : { ...room, players };
     }
 
     case "leaveTeam": {

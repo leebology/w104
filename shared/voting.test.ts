@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { CATEGORIES, DEFAULT_CATEGORY } from "./categories";
+import { BALLOT, CATEGORIES, DEFAULT_CATEGORY, RANDOM_CATEGORY } from "./categories";
 import { MAX_ROUND_COUNT } from "./gamemodes";
 import {
   pickCategory,
@@ -190,5 +190,77 @@ describe("pickCategory", () => {
 
   test("an all-spent pool falls back rather than throwing", () => {
     expect(CATEGORIES).toContain(pickCategory(votes, [...CATEGORIES], 0.5));
+  });
+});
+
+describe("the random option", () => {
+  test("it is on the ballot but never in the pool", () => {
+    // The whole arrangement rests on this: everything that reads CATEGORIES as
+    // "what a round can be about" — the draw, spentCategories, the archive's
+    // played set — stays correct precisely because `random` is not in it.
+    expect(CATEGORIES as readonly string[]).not.toContain(RANDOM_CATEGORY);
+    expect(BALLOT).toContain(RANDOM_CATEGORY);
+    expect(BALLOT[BALLOT.length - 1]).toBe(RANDOM_CATEGORY);
+  });
+
+  test("random is never itself drawn", () => {
+    const votes: VoteMap = { p0: { [RANDOM_CATEGORY]: 5 } };
+    for (let i = 0; i < 100; i++) {
+      expect(pickCategory(votes, [], i / 100)).not.toBe(RANDOM_CATEGORY);
+    }
+  });
+
+  test("an all-random room draws uniformly over the whole pool", () => {
+    const votes: VoteMap = { p0: { [RANDOM_CATEGORY]: 3 } };
+    // One segment covering the whole roll space, so the conditional position
+    // inside it *is* the roll — every category has to come up.
+    const drawn = new Set<string>();
+    for (let i = 0; i < 1000; i++) drawn.add(pickCategory(votes, [], i / 1000));
+    expect(drawn.size).toBe(CATEGORIES.length);
+  });
+
+  test("it never draws a spent category", () => {
+    const votes: VoteMap = { p0: { [RANDOM_CATEGORY]: 2 } };
+    for (let i = 0; i < 200; i++) {
+      expect(pickCategory(votes, ["song", "movie"], i / 200)).not.toBe("song");
+    }
+  });
+
+  test("it competes as an ordinary weight", () => {
+    // song 1, random 3 — the segments are [0, .25) and [.25, 1), so three
+    // quarters of the roll space goes to a uniform draw.
+    const votes: VoteMap = { p0: { song: 1, [RANDOM_CATEGORY]: 3 } };
+    expect(pickCategory(votes, [], 0.24)).toBe("song");
+    let song = 0;
+    for (let i = 0; i < 1000; i++) {
+      if (pickCategory(votes, [], i / 1000) === "song") song += 1;
+    }
+    // 250 rolls land in song's own segment, plus random's share of the
+    // uniform draw it hands off to — one tenth of the remaining 750.
+    expect(song).toBeGreaterThan(250);
+    expect(song).toBeLessThan(400);
+  });
+
+  test("the handoff is uniform, not a fixed pick", () => {
+    // A roll at the bottom of random's segment and one at the top must land on
+    // different categories, or the second stage is ignoring where the roll
+    // actually fell and every random win draws the same thing.
+    const votes: VoteMap = { p0: { [RANDOM_CATEGORY]: 1 } };
+    expect(pickCategory(votes, [], 0)).toBe(CATEGORIES[0]);
+    expect(pickCategory(votes, [], 0.999)).toBe(CATEGORIES[CATEGORIES.length - 1]);
+  });
+
+  test("random votes count toward the shares the room is shown", () => {
+    const shares = voteShares({ p0: { song: 1, [RANDOM_CATEGORY]: 1 } });
+    expect(shares).toEqual({ song: 50, [RANDOM_CATEGORY]: 50 });
+  });
+
+  test("random loses a remainder tie to every category", () => {
+    // It is last on the ballot, so the ballot-order tie-break puts it last —
+    // the point being that it has an order at all, where CATEGORIES.indexOf
+    // would have given it -1 and floated it to the front.
+    const shares = voteShares({ p0: { song: 1, movie: 1, [RANDOM_CATEGORY]: 1 } });
+    expect(shares.song).toBe(34);
+    expect(shares[RANDOM_CATEGORY]).toBe(33);
   });
 });

@@ -983,6 +983,11 @@ ul, ol { list-style: none; }
 
 .vote-card--zero .vote-card__name { text-align: center; }
 
+/* The same broken outline the phone's tile wears, for the same reason: it is
+   the one card on the wall that is not a subject. It keeps its place in ballot
+   order and competes for width like everything else. */
+.vote-card--random { border-style: dashed; }
+
 /* Two ceilings, and the smaller wins. `--name-size` is the ideal — it scales
    with share of the leader, set inline per card — and `17cqw` is what the
    card can actually afford at the width flex-grow has left it. `anywhere`
@@ -3757,6 +3762,31 @@ ul, ol { list-style: none; }
   color: var(--ink-dim);
 }
 
+/* The random option runs the full width of the grid, last. The grid is two
+   fixed columns and the ballot is odd-numbered, so without this the tile that
+   is on every ballot every match sits alone in a half-width slot and reads as
+   a category the list ran out of room for. */
+.player-voting__wide { grid-column: 1 / -1; }
+
+/* Dashed, and only here. Every other tile names a thing the round could be
+   about; this one is a bet on the draw, and the broken outline is what says
+   so at a glance without spending the gold "go forward" colour on it. */
+.vote-tile--random {
+  border-style: dashed;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.vote-tile__note {
+  font-family: var(--body);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+}
+
 .vote-tile__badge {
   position: absolute;
   top: -11px;
@@ -4359,71 +4389,41 @@ ul, ol { list-style: none; }
 
 .player-teams__plaque { font-size: 16px; letter-spacing: 0.1em; padding: 8px 18px; }
 
-/* Heavier than the tiles below it in every dimension — 4px rule where they
-   have 3, a deeper shadow, and a name tab a size up. The card you are on has
-   to be legible as "the one" before any word on it is read.
-   No `overflow: hidden`: the tab overhangs the corner. */
-.player-teams__mine {
-  position: relative;
+/* One slot above the grid, the same height whether or not you are on a team.
+   Fixed, not collapsing: the grid below must not move when you join — that
+   jump is the whole thing this screen was rebuilt to stop — and a slot that
+   appeared with the name editor in it would push every tile down the screen
+   at exactly the moment you were looking at one. */
+.player-teams__slot {
+  flex: 0 0 46px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 0 0 auto;
-  /* On top of `.player-teams`' own gap, so this card sits further from the
-     plaque above it than every other pair of siblings on the screen does. */
-  margin-top: 14px;
-  background: var(--cream);
-  color: var(--ink);
-  border: var(--border-heavy);
-  border-radius: var(--radius);
-  box-shadow: 7px 7px 0 var(--ink);
-  padding: 4px 0 16px;
+  align-items: center;
+  justify-content: center;
 }
 
-.player-teams__joined {
-  position: absolute;
-  top: 10px;
-  right: 12px;
+.player-teams__hint {
   font-family: var(--display);
-  font-size: 11px;
-  line-height: 1;
-  letter-spacing: 0.14em;
+  font-size: 13px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  background: var(--gold);
-  color: var(--ink-gold);
-  border: var(--border);
-  border-radius: 99px;
-  padding: 4px 12px;
-  transform: rotate(-2.5deg);
-  box-shadow: 3px 3px 0 var(--ink);
+  color: var(--cream);
+  opacity: 0.75;
 }
 
-/* The same tab every other screen wears, with the name editable in place.
-   `.team-badge` is `position: absolute` — fine for a badge dropped onto a
-   card that already has other content in flow, but this one *is* the title
-   row, so it has to opt back into flow or it floats free of `.player-teams__mine`
-   and the member list below rises to fill the gap it left, landing under it.
-   The negative top margin is what gets the overhang back: `.player-teams__mine`
-   only carries 4px of top padding now, and this pulls the tab up the rest of
-   the way to sit on the card's top border, same as every absolutely-positioned
-   badge does. `overflow: visible` because the caret sits on the box's edge at
-   the end of a long name; the width cap is what keeps it clear of the
-   JOINED! badge pinned to this card's top-right corner. */
+/* The same tilted tab every other screen wears, with the name editable in
+   place — so the thing you rename is visibly the same object as the tab on
+   your tile below and on the TV.
+   `.team-badge` is `position: absolute`, which is right for a badge dropped
+   onto a card that has other content in flow; here the tab *is* the content of
+   its slot, so it opts back into flow. `overflow: visible` because the caret
+   sits on the box's edge at the end of a long name. */
 .player-teams__title {
   position: static;
-  /* `.player-teams__mine` is a column flex container, so its default
-     `align-items: stretch` stretches every child to the column's full width —
-     this is a flex item too, and without an override it filled the whole
-     card regardless of how short the name inside it was. `flex-start` lets it
-     size to its own content (the `size` attribute on the input below), so the
-     tab scales with the name instead of the card. */
-  align-self: flex-start;
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 5px 14px;
-  margin: -18px 0 0 12px;
-  max-width: calc(100% - 116px);
   overflow: visible;
 }
 
@@ -4443,33 +4443,90 @@ ul, ol { list-style: none; }
   padding: 0;
 }
 
-/* The field is shared and last write wins, so a teammate's edit arriving
-   under your thumb has to read as expected rather than as a glitch. */
-.player-teams__shared {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--ink-dim);
-  padding: 0 18px;
-}
-
-/* The top padding clears the name tab above, which is tilted — its low
-   corner dips further down than its box does. */
-.player-teams__members {
+/* Every team's roster, on every tile. Names as well as faces: two columns of
+   bare emoji is not something anyone can read a room off, which is the whole
+   job this screen has. */
+.team-tile__members {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-family: var(--display);
-  font-size: 14px;
-  color: var(--ink-dim);
-  padding: 10px 18px 0;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
 }
 
-.player-teams__divider { flex: 0 0 auto; margin: 12px 0 6px; }
+.team-tile__member {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  font-size: 13px;
+  line-height: 1.15;
+  color: var(--ink-dim);
+}
 
-.team-tile__count {
-  font-family: var(--body);
-  font-size: 18px;
-  text-align: left;
+.team-tile__avatar { flex: 0 0 auto; font-size: 15px; }
+
+.team-tile__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* You, inverted. Bungee has one weight, so "bolder" cannot be a font-weight —
+   it is full-strength ink behind cream instead, which reads at arm's length
+   and is the same at every accent, unlike a colour-filled pill. This is the
+   mark the screen is actually answering "which team am I on?" with. */
+.team-tile__member--you {
+  background: var(--ink);
+  color: var(--cream);
+  border-radius: 99px;
+  padding: 2px 9px;
+  margin-left: -3px;
+  font-size: 14px;
+}
+
+.team-tile__member--empty { font-style: italic; opacity: 0.6; }
+
+/* The tile you are on. Heavier in ink only — a thicker rule and a deeper
+   shadow — never in the accent: the card's outline stays one weight on all
+   four sides and the colour rides the badge, as it does everywhere else.
+   `box-sizing: border-box` is what keeps the extra pixel of rule from
+   resizing the tile and nudging its neighbours. */
+.team-tile--mine {
+  border: var(--border-heavy);
+  box-shadow: 7px 7px 0 var(--ink);
+  cursor: default;
+}
+
+/* Not a press: your own tile is not a target, so it must not answer a tap
+   with the physics of one. */
+.team-tile--mine:active { transform: none; box-shadow: 7px 7px 0 var(--ink); }
+
+/* The name tab and the JOINED! badge share this tile's top edge, one at each
+   end. Yielding the badge's width is what keeps a twenty-character team name
+   from running under it — the tab clips and travels instead, which is what it
+   does everywhere else it is short of room. */
+.team-tile--mine .team-badge { max-width: calc(100% - 84px); }
+
+/* Inside the tile's own width, not overhanging it: the grid clips its x-axis
+   (it has to, to scroll on y), and there is only the shadows' clearance out
+   there — which the badge's own shadow would then spend twice. */
+.team-tile__joined {
+  position: absolute;
+  top: -10px;
+  right: 6px;
+  font-family: var(--display);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  background: var(--gold);
+  color: var(--ink-gold);
+  border: var(--border);
+  border-radius: 99px;
+  padding: 4px 9px;
+  transform: rotate(-2.5deg);
+  box-shadow: 3px 3px 0 var(--ink);
 }
 
 .player-teams__footer {
@@ -4478,6 +4535,14 @@ ul, ol { list-style: none; }
   flex-direction: column;
   align-items: center;
   gap: 14px;
+  padding-top: 10px;
+}
+
+/* Holds the button's height whether or not there is a button in it, so the
+   scrolling grid above does not change size the moment you join a team. */
+.player-teams__leave {
+  width: 100%;
+  min-height: 52px;
 }
 
 /* ------------------------------------------------------------ debug panel */
