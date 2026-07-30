@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 import type { ClientMessage, ErrorCode, ServerMessage } from "../../shared/protocol";
 import type { RejectReason } from "../../shared/reduce";
 import type { Entry, RoomState } from "../../shared/state";
+import type { ScorerId } from "../../shared/teams";
 import { randomUUID } from "./identity";
 
 // Set by Vercel in production; falls back to the local `wrangler dev` server.
@@ -61,6 +62,17 @@ const EMPTY: ClientState = {
 
 export class RoomStore {
   private listeners = new Set<() => void>();
+  /**
+   * Mirrored column scrolls, as a plain listener set rather than part of the
+   * `useSyncExternalStore` snapshot.
+   *
+   * Deliberately outside React state. `HostScoring` renders up to ten columns
+   * of up to 200 rows; routing a 4Hz value through `set()` would re-render that
+   * whole tree four times a second per scrolling player. The host writes
+   * `scrollTop` straight onto the DOM nodes it already holds instead — the same
+   * imperative-where-React-would-be-wrong call the measured swap makes.
+   */
+  private scrollListeners = new Set<(scorer: ScorerId, at: number) => void>();
   private socket: PartySocket | null = null;
   private seq = 0;
   private state: ClientState = EMPTY;
@@ -69,6 +81,11 @@ export class RoomStore {
   subscribe = (fn: () => void): (() => void) => {
     this.listeners.add(fn);
     return () => { this.listeners.delete(fn); };
+  };
+
+  onColumnScroll = (fn: (scorer: ScorerId, at: number) => void): (() => void) => {
+    this.scrollListeners.add(fn);
+    return () => { this.scrollListeners.delete(fn); };
   };
 
   getSnapshot = (): ClientState => this.state;
@@ -197,6 +214,11 @@ export class RoomStore {
             ...this.state.entries.filter((e) => e.seq !== undefined),
           ],
         });
+        break;
+      case "columnScroll":
+        // Straight to the listeners — never through `set()`, which would
+        // re-render every subscriber four times a second.
+        for (const listener of this.scrollListeners) listener(msg.scorer, msg.at);
         break;
       case "entryAck":
         if (msg.accepted) {

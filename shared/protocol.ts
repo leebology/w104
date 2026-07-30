@@ -1,7 +1,7 @@
 import type { Entry, PlayerId, RoomState } from "./state";
 import type { RejectReason } from "./reduce";
 import type { NumericSettingKey } from "./gamemodes";
-import type { TeamId } from "./teams";
+import type { ScorerId, TeamId } from "./teams";
 import type { ViewId } from "./views";
 
 export type ClientMessage =
@@ -23,6 +23,12 @@ export type ClientMessage =
    * host-only — it is the player's own list.
    */
   | { type: "selfStrike"; index: number; struck: boolean }
+  /**
+   * The scroll mirror, `scoring` only: put my scorer's column on the host TV at
+   * this fraction of its scrollable range. Accepted only from that column's
+   * driver — see `driverOf` in `shared/mirror.ts`.
+   */
+  | { type: "scrollTo"; at: number }
   | { type: "backToLobby" }
   | { type: "castVote"; category: string }
   | { type: "resetVotes" }
@@ -56,6 +62,14 @@ export type ServerMessage =
   | { type: "state"; state: RoomState }
   | { type: "entryAck"; seq: number; accepted: boolean; reason?: RejectReason }
   | { type: "yourEntries"; entries: Entry[] }
+  /**
+   * One column's mirrored scroll position. Sent to the host socket alone, and
+   * never persisted or broadcast — a scroll is not game state.
+   *
+   * Addressed by *scorer* rather than by sender: with teams on the sender is
+   * one member of a shared column, and the TV addresses columns by scorer.
+   */
+  | { type: "columnScroll"; scorer: ScorerId; at: number }
   | { type: "error"; code: ErrorCode; message: string };
 
 export type ErrorCode =
