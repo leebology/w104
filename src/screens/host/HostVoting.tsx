@@ -3,6 +3,7 @@ import { formatClock, useRemaining } from "../../net/clock";
 import { CATEGORIES } from "../../../shared/categories";
 import { tallyVotes, voteBudget, voteShares } from "../../../shared/voting";
 import { teamsEnabled } from "../../../shared/teams";
+import { isWaiting } from "../../../shared/bots";
 import type { Player, RoomState } from "../../../shared/state";
 import { VOTING_MS } from "../../../shared/reduce";
 import { RoomChip } from "../../components/RoomChip";
@@ -133,7 +134,7 @@ export function HostVoting({ room, offset, countdown }: Props) {
   // Matches `everyoneReady` in shared/reduce.ts, which is what actually closes
   // voting: a disconnected player must not read as "ready" on the TV, or the
   // count can say "not everyone's ready" right before voting closes anyway.
-  const ready = room.players.filter((p) => p.connected && p.ready).length;
+  const ready = room.players.filter((p) => p.connected && isWaiting(p)).length;
 
   if (countdown) {
     return <HostVotingClosed room={room} totals={totals} remaining={remaining} cast={cast} />;

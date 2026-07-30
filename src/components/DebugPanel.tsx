@@ -12,16 +12,23 @@ import { debugEnabled, fetchUsage } from "../net/usage";
 import type { UsageResult } from "../net/usage";
 import { getPlayerId } from "../net/identity";
 import { roomStore, useRoom } from "../net/room";
+import { VIEWS, currentView } from "../../shared/views";
+import { MAX_BOTS, isBot } from "../../shared/bots";
 
 /**
  * The debug menu: a corner triangle that opens a drawer of development tools.
  *
- * Three sections, top to bottom. **Debug** holds the controls that act on a
+ * Five sections, top to bottom. **Debug** holds the controls that act on a
  * live round — hold the timer, cut it short, fill every list with test data.
- * **Experimental features** holds on/off switches for things being tried mid-
- * round. **Usage** sits pinned to the bottom, collapsed, because it is the
- * section you want to glance at rather than read: free-tier headroom is a
- * background fact, not a task.
+ * **Views** jumps the room to any screen, or restarts the one it is on.
+ * **Bots** dresses the room with placeholder players so a crowded screen can be
+ * looked at by one person. **Experimental features** holds on/off switches for
+ * things being tried mid-round. **Usage** sits pinned to the bottom, collapsed,
+ * because it is the section you want to glance at rather than read: free-tier
+ * headroom is a background fact, not a task.
+ *
+ * Debug, Views and Bots all mutate the live room and are host-only, enforced on
+ * the server. The other two touch nothing.
  *
  * **Deliberately not in the game's visual language.** Every other surface in
  * this app is cream-on-pink with gold for "go"; this one is ink with a teal
@@ -154,6 +161,8 @@ export function DebugPanel() {
 
         <div className="debug-panel__body">
           <DebugControls state={state} />
+          <ViewJumper state={state} />
+          <BotBench state={state} />
           <Experiments />
           <UsageSection
             result={result}
@@ -236,6 +245,144 @@ function DebugControls({ state }: { state: ReturnType<typeof useRoom> }) {
           Round held with {Math.ceil(paused / 1000)}s left.
         </p>
       )}
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------- views
+
+/**
+ * Jump the room to any screen, or restart the one it is on.
+ *
+ * **Host-only, and the room moves with it** — every phone follows the TV, which
+ * is the point: a screen inspected on the TV alone is half the screen. Enforced
+ * in `shared/reduce.ts`; the disabled buttons here are a courtesy.
+ *
+ * The list is `VIEWS` in play order rather than a hand-written one, so a new
+ * screen becomes reachable by being added to the catalog. The current view is
+ * marked rather than disabled: jumping to where you already are *is* the
+ * refresh, so it has to stay pressable.
+ */
+function ViewJumper({ state }: { state: ReturnType<typeof useRoom> }) {
+  const room = state.room;
+  const isHost = room !== null && room.hostId === getPlayerId();
+  const here = room ? currentView(room) : null;
+
+  return (
+    <section className="debug-section">
+      <h3 className="debug-section__title">Views</h3>
+      <p className="debug-section__detail">
+        {!room
+          ? "Not in a room."
+          : !isHost
+            ? "Host device only."
+            : "Moves every phone in the room, not just this screen."}
+      </p>
+      <div className="debug-views">
+        {VIEWS.map((view) => (
+          <button
+            key={view.id}
+            type="button"
+            className={`debug-btn debug-view${here === view.id ? " debug-view--here" : ""}`}
+            disabled={!isHost}
+            onClick={() => roomStore.send({ type: "debugJump", to: view.id })}
+            aria-current={here === view.id}
+          >
+            {view.label}
+          </button>
+        ))}
+      </div>
+      <div className="debug-actions">
+        <button
+          type="button"
+          className="debug-btn debug-btn--wide"
+          disabled={!isHost || here === null}
+          onClick={() => here && roomStore.send({ type: "debugJump", to: here })}
+        >
+          Restart this view
+        </button>
+      </div>
+      {/* The two views made of a round say so: jumping to either from a lobby
+          deals a set of word lists, which is not obvious from the label. */}
+      <p className="debug-section__detail">
+        Results and Standings deal test words when nobody has typed any.
+      </p>
+    </section>
+  );
+}
+
+// -------------------------------------------------------------------- bots
+
+/**
+ * Add or remove placeholder players.
+ *
+ * Host-only and server-enforced like the two sections above it. The count is
+ * sent absolutely rather than as a delta, so a fast double-tap cannot drift the
+ * room away from the number on the button.
+ *
+ * The population is read back off `room.players` rather than held in local
+ * state: the server is the authority, so the readout is the room's answer and
+ * a second tab showing this panel cannot disagree with the first.
+ */
+function BotBench({ state }: { state: ReturnType<typeof useRoom> }) {
+  const room = state.room;
+  const isHost = room !== null && room.hostId === getPlayerId();
+  const bots = room ? room.players.filter(isBot) : [];
+  const count = bots.length;
+  const set = (n: number) => roomStore.send({ type: "debugBots", count: n });
+
+  return (
+    <section className="debug-section">
+      <h3 className="debug-section__title">Bots</h3>
+      <p className="debug-section__detail">
+        {!room
+          ? "Not in a room."
+          : !isHost
+            ? "Host device only."
+            : "Placeholder players. They never type, vote or ready up."}
+      </p>
+      <div className="debug-stepper">
+        <button
+          type="button"
+          className="debug-btn"
+          disabled={!isHost || count === 0}
+          onClick={() => set(count - 1)}
+          aria-label="Remove a bot"
+        >
+          −
+        </button>
+        <span className="debug-stepper__value" aria-live="polite">
+          {count} / {MAX_BOTS}
+        </span>
+        <button
+          type="button"
+          className="debug-btn"
+          disabled={!isHost || count >= MAX_BOTS}
+          onClick={() => set(count + 1)}
+          aria-label="Add a bot"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          className="debug-btn"
+          disabled={!isHost || count === 0}
+          onClick={() => set(0)}
+        >
+          Clear
+        </button>
+      </div>
+      {count > 0 && (
+        <p className="debug-section__detail debug-section__detail--live">
+          {bots.map((b) => `${b.emoji} ${b.name}`).join("  ")}
+        </p>
+      )}
+      {/* The cap is deliberately past MAX_PLAYERS, and the results grid is laid
+          out for ten columns — so say which way it will break rather than
+          leaving it to look like a bug. */}
+      <p className="debug-section__detail">
+        Past 10 the round and results layouts are over their design limit.
+      </p>
     </section>
   );
 }

@@ -2,6 +2,7 @@ import type { Entry, PlayerId, RoomState } from "./state";
 import type { RejectReason } from "./reduce";
 import type { NumericSettingKey } from "./gamemodes";
 import type { TeamId } from "./teams";
+import type { ViewId } from "./views";
 
 export type ClientMessage =
   | { type: "setProfile"; name: string; emoji: string }
@@ -38,6 +39,17 @@ export type ClientMessage =
   | { type: "debugSkip" }
   /** Fills every scorer's list with random words. `playing` only. */
   | { type: "debugFill" }
+  /**
+   * Puts the whole room — TV and phones — on the named screen. Legal from every
+   * phase, and jumping to the screen already showing restarts it, which is the
+   * panel's refresh button. `to` is checked against the catalog on arrival.
+   */
+  | { type: "debugJump"; to: ViewId }
+  /**
+   * Sets the placeholder-bot population to exactly `count`, clamped to
+   * 0..MAX_BOTS on arrival. Legal from every phase.
+   */
+  | { type: "debugBots"; count: number }
   | { type: "endGame" };
 
 export type ServerMessage =

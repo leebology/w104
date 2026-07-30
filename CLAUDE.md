@@ -83,17 +83,20 @@ Two subsystems hang off the Worker:
   `migrations/` holds the schema. Every call goes through `ctx.waitUntil()` in
   try/catch that logs and swallows — **the archive is allowed to lose data, the
   game is not allowed to notice.** The game never reads it back.
-- **The debug menu** (`src/components/DebugPanel.tsx`) — three sections. Two of
+- **The debug menu** (`src/components/DebugPanel.tsx`) — five sections. Two of
   them, experiment flags and free-tier usage (`party/usage.ts` behind
-  `/debug/usage`), touch nothing. The third **deliberately mutates a live
-  round** — pause, skip, auto-fill — and is therefore host-only and enforced
-  server-side. See "Debug menu" below.
+  `/debug/usage`), touch nothing. The other three **deliberately mutate a live
+  room** — the round controls (pause, skip, auto-fill), the view jumper, and the
+  bot bench — and are therefore host-only and enforced server-side. See "Debug
+  menu" below.
 
-Each keeps one file in `shared/` that is **not** game logic — `shared/archive.ts`
-and `shared/usage.ts` — and for the same two reasons: purity makes them testable
-under the existing vitest glob, and `party/` and `src/` are separate tsconfig
-projects, so a type the client imported from `party/` would drag the whole
-Worker into `tsconfig.json`. Nothing in the game imports either.
+Each keeps files in `shared/` that are **not** game logic — `shared/archive.ts`,
+`shared/usage.ts`, `shared/views.ts`, `shared/bots.ts` — and for the same two
+reasons: purity makes them testable under the existing vitest glob, and `party/`
+and `src/` are separate tsconfig projects, so a type the client imported from
+`party/` would drag the whole Worker into `tsconfig.json`. The archive and usage
+files are imported by nothing in the game at all; the debug ones are reached only
+through the events they define.
 
 ### State flow
 
@@ -283,8 +286,11 @@ lifts the ban immediately.
 ### Debug menu
 
 Mostly off every game path — the Usage and Experimental sections are deletable
-without the game noticing. The Debug section is the exception: it is the one
-place outside normal play that mutates a live round.
+without the game noticing. Three sections are the exception: **Debug**, **Views**
+and **Bots** are the only things outside normal play that mutate a live room, and
+all three are host-only and enforced on the server.
+
+The Debug section holds the round controls.
 
 - **Its three controls are host-only and `playing`-only, enforced on the
   server.** `debugPause` and `debugSkip` are rejected in `shared/reduce.ts`;
@@ -309,6 +315,68 @@ place outside normal play that mutates a live round.
   still apply. `fillWordsFor` in `shared/debug.ts` deals from a shared sub-pool
   so the lists *deliberately overlap* — independent draws would leave nothing
   for the Boggle rule to strike through.
+
+**The view jumper** (`shared/views.ts`, the Views section) puts the whole room —
+TV and phones — on any screen, and jumping to the screen already showing is the
+panel's refresh button.
+
+- **`VIEWS` is the catalog and the gate.** It is not the same list as
+  `Phase["name"]`: `countdown` renders two different screens, so it appears twice
+  and `currentView` tells them apart. `to` off the wire is checked with `isViewId`
+  — an unknown id would fall off the end of `jumpTo`'s switch and return
+  `undefined` as a `Room`.
+- **A jump is not a phase transition.** `jumpTo` builds the target phase and
+  leaves `history`, `settings` and `votes` alone — the point is to look at one
+  screen without losing the state that makes it worth looking at. It is host-only
+  and legal from **every** phase; a legal-phase list would be a jumper that could
+  not reach most of what it lists.
+- **`debugJump` is the second event `reduce` skips `settle` for.** Readiness is
+  *forced* for a countdown target and *cleared* for every untimed one, and both
+  halves are load-bearing: `settle` would tear down a countdown on a room below
+  `MIN_PLAYERS`, and a fully-ready room arriving at `lobby`/`voting`/`scoring`
+  would settle straight back out of the screen the jump just asked for.
+- **`Room.viewNonce` is the remount key, and it rides in `RoomState` on
+  purpose.** `HostView` and `PlayerView` key their phase screen on it, so a bump
+  restarts CSS animations *and* screen-local state. Re-stamping the phase clock
+  is not enough — `HostScoring` holds the swap, podium and footer in local state
+  seeded at mount. It is public for the same reason FAST FORWARD is: a refresh
+  the TV kept to itself would leave the phones on a reveal the room has been
+  taken back to the start of.
+- **The two views made of a round are stood up by `party/server.ts`, not
+  `reduce`.** `jumpToView` chains `playing` → `fillEveryList` → `scoring`,
+  because writing `entries` is the one mutation `reduce` deliberately does not
+  own. Standings additionally requires an empty `history` before it synthesizes,
+  or every refresh press would bank another round and the match would grow one
+  per press.
+- **Synthetic rounds stay out of the D1 archive for free.** `maybeArchiveBank`
+  reads the `before` captured at the top of `onMessage`, and a room that
+  synthesized its own round was not on `scoring` then. A jump out of a *real*
+  results screen into standings banks and archives like any other.
+
+**The bot bench** (`shared/bots.ts`, the Bots section) dresses the room with up
+to 20 placeholder players, named for the fellowship, so one person at one laptop
+can see a crowded screen.
+
+- **Bots are inert, and `isWaiting` is the whole of that rule.** A bot is always
+  counted as waiting and never counted toward `everyoneReady`'s floor, so it can
+  neither hold a countdown down nor make a room startable that would not have
+  started without it. Every "n of m ready" readout on a screen goes through the
+  same predicate, so a bot never reads as the holdout.
+- **They are `Player`s, deliberately.** `isBot?: true` is optional and absent on
+  every real player, which is what keeps it off the persistence-migration list.
+  Everything downstream — `rosterOf`, the reveal grid, the podium, auto-fill —
+  treats a bot as a seat with no special case, and that is the feature.
+- **`MAX_BOTS` is double `MAX_PLAYERS`, and bots hold no seat against the cap.**
+  The join gate counts humans only, in `reduce` *and* at the connect gate, so a
+  room dressed with twenty of them still takes real phones. The panel says which
+  layouts are over their design limit rather than leaving it to look like a bug.
+- **`debugBots` sets the population absolutely, and is *not* exempt from
+  `settle`** — it needs no exemption, because inert scenery gives `settle`
+  nothing to open or tear down. Trimmed bots take their `entries` with them, the
+  same rule a kick follows.
+- **`seatBots` runs at `enterTeams`, and touches bots only.** Team select is for
+  humans picking; a placeholder has nothing to pick with, and an empty panel is
+  the one thing that screen is dressed to avoid.
 
 The rest is off every game path, and deletable without the game noticing.
 

@@ -69,6 +69,19 @@ export type Player = {
    * `players`, which also gives it a stable order for free.
    */
   teamId: TeamId | null;
+  /**
+   * A debug-menu placeholder rather than a person — see `shared/bots.ts`.
+   *
+   * Optional, and absent on every real player: that is what keeps it off the
+   * persistence migration list, since a room stored before it existed loads
+   * back with the field simply missing rather than needing a backfill in
+   * `load()`. Read it through `isBot`, never as a bare truthiness test.
+   *
+   * It rides in `RoomState` with the rest of the player, deliberately: the
+   * point of a bot is that every screen renders it exactly as it renders a
+   * player, so nothing downstream has to be told which is which.
+   */
+  isBot?: true;
 };
 
 export type Phase =
@@ -194,6 +207,26 @@ export type Room = {
    * sits on 0:00.
    */
   paused: number | null;
+  /**
+   * Debug only. Bumped by every view jump; nothing else reads or writes it.
+   *
+   * It exists so that a jump to the view the room is *already* on is still an
+   * observable change. `HostView` and `PlayerView` key their phase screen on
+   * it, so a bump remounts that screen and every CSS animation and every piece
+   * of screen-local state starts over — which is the whole of "refresh this
+   * view". Re-stamping the phase's own clock is not enough on its own:
+   * `HostScoring` holds the swap, the podium and the footer in local state, and
+   * a fresh `startedAt` alone would restart the line count under an already
+   * settled grid.
+   *
+   * Rides in `RoomState` deliberately. A refresh the TV kept to itself would
+   * leave the phones running the reveal the room has been taken back to the
+   * start of — the same reasoning that puts FAST FORWARD in room state.
+   *
+   * A counter rather than a timestamp so it is stable to compare and cheap to
+   * read as a React key.
+   */
+  viewNonce: number;
 };
 
 /** Broadcast to every connection. Safe for all eyes. */
@@ -221,6 +254,7 @@ export function createRoom(code: string, now: number): Room {
     hostGoneAt: null,
     configuring: false,
     paused: null,
+    viewNonce: 0,
   };
 }
 
