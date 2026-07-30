@@ -36,11 +36,19 @@ describe("toRoomState", () => {
       "configuring",
       "history",
       "hostId",
+      // Public on purpose: every screen showing the round timer has to know it
+      // is held, or it counts down to a deadline the server stopped
+      // maintaining and sits on 0:00. It leaks nothing — the pause is already
+      // visible as a timer that is not moving.
+      "paused",
       "phase",
       "players",
       "serverTime",
       "settings",
       "teams",
+      // Public on purpose too, and for the same shape of reason: a debug view
+      // refresh has to remount the screen on every phone, not only on the TV.
+      "viewNonce",
       "votes",
     ]);
   });
@@ -66,6 +74,8 @@ describe("toRoomState", () => {
       votes: {},
       teams: [],
       configuring: false,
+      paused: null,
+      viewNonce: 0,
       serverTime: 9000,
     });
   });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { ReactElement } from "react";
 import { getPlayerId } from "../../net/identity";
 import { roomStore } from "../../net/room";
@@ -53,7 +53,11 @@ export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: ()
 
   return (
     <>
-      {renderPhase(room, state, onLeave)}
+      {/* Keyed on `viewNonce` so the debug menu's refresh remounts the screen.
+          Deliberately around `renderPhase` alone and not around this whole
+          component: the entry input below must survive it, or a refresh would
+          drop the field iOS only opens a keyboard for on a real gesture. */}
+      <Fragment key={room.viewNonce}>{renderPhase(room, state, onLeave)}</Fragment>
       {/* Keyed on the sequence, not the text, so the same rejection twice in
           a row replays the fade instead of leaving the first one to finish
           expiring. Lives out here beside the input rather than inside the
@@ -147,7 +151,14 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
       return <TimesUp />;
     case "scoring":
       return (
-        <PlayerScoring room={room} results={room.phase.results} playerId={getPlayerId()} />
+        <PlayerScoring
+          room={room}
+          results={room.phase.results}
+          playerId={getPlayerId()}
+          startedAt={room.phase.startedAt}
+          skipped={room.phase.skipped}
+          marks={room.phase.selfMarks}
+        />
       );
     case "standings":
       return <PlayerStandings room={room} playerId={getPlayerId()} />;

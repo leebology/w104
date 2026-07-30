@@ -4,6 +4,10 @@ import type { Room } from "./state";
 import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, TIMESUP_MS, VOTING_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
 import { voteBudget } from "./voting";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS } from "./teams";
+import { rowKey } from "./reveal";
+import { isSelfStruck } from "./selfstrike";
+import type { SelfMarks } from "./selfstrike";
+import type { Results } from "./scoring";
 
 /** A room with `n` joined players, none ready, plus a host. */
 function seed(n: number, now = 1000): Room {
@@ -653,10 +657,25 @@ describe("long rounds", () => {
     room = reduce(room, { t: "tick", now: playEnd, roll: 0 });
     room = reduce(room, { t: "tick", now: (room.phase as { endsAt: number }).endsAt, roll: 0 });
     expect(room.phase.name).toBe("scoring");
-    // 10 x 200 entries is ~2M union-find comparisons. Generous ceiling: this
-    // is a regression guard against an accidental O(n^3), not a benchmark.
-    expect(Date.now() - started).toBeLessThan(5_000);
-  });
+    // 10 x 200 entries is the absolute worst case MAX_PLAYERS and MAX_ENTRIES
+    // permit, and it is ~2M union-find comparisons, each running editDistance
+    // over a short string. That legitimately costs a few seconds.
+    //
+    // The ceiling was 5s and sat close enough to the real figure to fail on a
+    // machine with anything else running — measured at 5.0-5.1s here, failing
+    // two runs in three both on this branch and on an unmodified checkout, so
+    // it was flaky rather than newly slow. Raised rather than tuned, because
+    // what this guards is an accidental O(n^3), which would show up as orders
+    // of magnitude and not as 20%.
+    //
+    // A complexity-based guard would be the right tool and this is not it; a
+    // wall-clock assertion in CI can only ever be approximately right.
+    expect(Date.now() - started).toBeLessThan(20_000);
+    // The third argument is vitest's own testTimeout, and it is load-bearing:
+    // it defaults to 5000ms — the same figure the assertion above used to
+    // carry — so this test could fail two different ways for one reason, and
+    // raising only the assertion just converted the failure into a timeout.
+  }, 60_000);
 });
 
 /** A room that has reached the voting phase with `n` players. */
@@ -1500,3 +1519,364 @@ describe("submitEntry with a shared team list", () => {
     expect(out.room.entries.p0).toBeUndefined();
   });
 });
+
+/**
+ * A room mid-round, teams off. Walks the real edges so the helper cannot
+ * drift from the rules; the round is 30s and started at 8000 + COUNTDOWN_MS.
+ */
+function playingRoom(durationSec = 30): Room {
+  let room = seed(2);
+  room = { ...room, settings: { ...room.settings, roundCount: 2, durationSec } };
+  room = readyAll(room, 1000);
+  const votingStart = (room.phase as { endsAt: number }).endsAt;
+  room = reduce(room, { t: "tick", now: votingStart, roll: 0 });
+  room = reduce(room, { t: "startGame", playerId: "host", now: 8000 });
+  room = reduce(room, { t: "tick", now: 8000 + COUNTDOWN_MS, roll: 0 });
+  expect(room.phase.name).toBe("playing");
+  return room;
+}
+
+describe("debug pause", () => {
+  test("banks the time left rather than the moment it happened", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const paused = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 12_000,
+    });
+    expect(paused.paused).toBe(12_000);
+  });
+
+  test("resuming spends the banked time forward from now, however long it sat", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    let held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 12_000,
+    });
+    // An hour later.
+    held = reduce(held, {
+      t: "debugPause", playerId: "host", paused: false, now: endsAt + 3_600_000,
+    });
+    expect(held.paused).toBeNull();
+    expect((held.phase as { endsAt: number }).endsAt).toBe(endsAt + 3_600_000 + 12_000);
+  });
+
+  test("pausing twice does not re-bank a shorter remainder", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const first = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 12_000,
+    });
+    const second = reduce(first, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 3_000,
+    });
+    expect(second).toBe(first);
+    expect(second.paused).toBe(12_000);
+  });
+
+  test("a held round does not advance when the alarm fires", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 5_000,
+    });
+    const ticked = reduce(held, { t: "tick", now: endsAt + 60_000, roll: 0 });
+    expect(ticked).toBe(held);
+    expect(ticked.phase.name).toBe("playing");
+  });
+
+  test("the alarm falls back to the idle horizon while held", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 5_000,
+    });
+    expect(nextAlarmAt(held)).toBe(held.lastActivityAt + IDLE_REAP_MS);
+  });
+
+  test("a held room with somebody connected is touched, never reaped", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 5_000,
+    });
+    const outcome = alarmOutcome(held, held.lastActivityAt + IDLE_REAP_MS, true, 0);
+    expect(outcome.action).toBe("touch");
+  });
+
+  test("a held room everyone abandoned still reaps", () => {
+    const room = playingRoom(30);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 5_000,
+    });
+    const outcome = alarmOutcome(held, held.lastActivityAt + IDLE_REAP_MS, false, 0);
+    expect(outcome.action).toBe("reap");
+  });
+
+  test("a player cannot pause", () => {
+    const room = playingRoom(30);
+    const attempt = reduce(room, {
+      t: "debugPause", playerId: "p0", paused: true, now: 12_000,
+    });
+    expect(attempt).toBe(room);
+  });
+
+  test("only the playing phase can be held", () => {
+    const room = seed(2);
+    const attempt = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: 2000,
+    });
+    expect(attempt).toBe(room);
+  });
+
+  test("resuming a round that was never held is a no-op", () => {
+    const room = playingRoom(30);
+    const attempt = reduce(room, {
+      t: "debugPause", playerId: "host", paused: false, now: 12_000,
+    });
+    expect(attempt).toBe(room);
+  });
+});
+
+describe("debug skip", () => {
+  test("moves the deadline to now so the ordinary tick ends the round", () => {
+    const room = playingRoom(30);
+    const skipped = reduce(room, { t: "debugSkip", playerId: "host", now: 12_000 });
+    expect((skipped.phase as { endsAt: number }).endsAt).toBe(12_000);
+    const ticked = reduce(skipped, { t: "tick", now: 12_000, roll: 0 });
+    expect(ticked.phase.name).toBe("timesup");
+  });
+
+  test("skipping a held round ends it rather than resuming it", () => {
+    const room = playingRoom(30);
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: 12_000,
+    });
+    const skipped = reduce(held, { t: "debugSkip", playerId: "host", now: 20_000 });
+    expect(skipped.paused).toBeNull();
+    const ticked = reduce(skipped, { t: "tick", now: 20_000, roll: 0 });
+    expect(ticked.phase.name).toBe("timesup");
+  });
+
+  test("a player cannot skip", () => {
+    const room = playingRoom(30);
+    const attempt = reduce(room, { t: "debugSkip", playerId: "p0", now: 12_000 });
+    expect(attempt).toBe(room);
+  });
+
+  test("skipping outside a round is a no-op", () => {
+    const room = seed(2);
+    expect(reduce(room, { t: "debugSkip", playerId: "host", now: 2000 })).toBe(room);
+  });
+});
+
+describe("the results screen", () => {
+  test("entering it clears readiness, so nothing skips the reveal", () => {
+    const room = scored();
+    expect(room.phase.name).toBe("scoring");
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("it records when the reveal began, unskipped", () => {
+    const room = scored();
+    const phase = room.phase as { name: string; startedAt: number; skipped: boolean };
+    // The reveal's zero is the moment the times-up screen ran out, which is
+    // what `scored()` ticks it on.
+    expect(phase.startedAt).toBe(45_000);
+    expect(phase.skipped).toBe(false);
+  });
+
+  test("everyone readying up banks the round with no host action", () => {
+    const room = readyAll(scored(), 51_000);
+    expect(room.phase.name).toBe("standings");
+    expect(room.history).toHaveLength(1);
+    expect(room.entries).toEqual({});
+    // Cleared again on the far side, or the next countdown opens immediately.
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+  });
+
+  test("one of two players is not enough", () => {
+    const room = reduce(scored(), { t: "ready", playerId: "p0", ready: true, now: 51_000 });
+    expect(room.phase.name).toBe("scoring");
+    expect(room.history).toHaveLength(0);
+  });
+
+  test("the host's button still moves a half-ready room on", () => {
+    let room = reduce(scored(), { t: "ready", playerId: "p0", ready: true, now: 51_000 });
+    room = reduce(room, { t: "showStandings", playerId: "host", now: 51_500 });
+    expect(room.phase.name).toBe("standings");
+    expect(room.history).toHaveLength(1);
+  });
+
+  test("fast forward is host-only, once, and only here", () => {
+    const room = scored();
+    expect(reduce(room, { t: "fastForward", playerId: "p0", now: 51_000 })).toBe(room);
+
+    const skipped = reduce(room, { t: "fastForward", playerId: "host", now: 51_000 });
+    expect((skipped.phase as { skipped: boolean }).skipped).toBe(true);
+    // Already skipped is a genuine no-op, per the identity contract.
+    expect(reduce(skipped, { t: "fastForward", playerId: "host", now: 52_000 })).toBe(skipped);
+
+    const mid = playing();
+    expect(reduce(mid, { t: "fastForward", playerId: "host", now: 51_000 })).toBe(mid);
+  });
+});
+
+describe("selfStrike", () => {
+  /** The row index of a word in that scorer's scored list. */
+  const indexOf = (room: Room, scorerId: string, text: string) => {
+    const scorer = (room.phase as { results: Results }).results.scorers.find(
+      (s) => s.id === scorerId,
+    )!;
+    return scorer.entries.findIndex((e) => e.text === text);
+  };
+  const marksOf = (room: Room) =>
+    (room.phase as { selfMarks: SelfMarks }).selfMarks;
+
+  test("the scoring phase opens with nothing marked", () => {
+    expect(marksOf(scored())).toEqual({ counts: {}, last: null });
+  });
+
+  test("a player strikes one of their own words out", () => {
+    const before = scored();
+    const index = indexOf(before, "p0", "Beyonce");
+    const after = reduce(before, {
+      t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000,
+    });
+    expect(isSelfStruck(marksOf(after), rowKey("p0", index))).toBe(true);
+    expect(marksOf(after).last).toEqual({ row: rowKey("p0", index), at: 50_000 });
+  });
+
+  test("tapping it again takes it back", () => {
+    let room = scored();
+    const index = indexOf(room, "p0", "Beyonce");
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 });
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: false, now: 51_000 });
+    expect(isSelfStruck(marksOf(room), rowKey("p0", index))).toBe(false);
+  });
+
+  test("asking for the state it is already in is a no-op", () => {
+    const before = scored();
+    const index = indexOf(before, "p0", "Beyonce");
+    expect(
+      reduce(before, { t: "selfStrike", playerId: "p0", index, struck: false, now: 50_000 }),
+    ).toBe(before);
+    const struck = reduce(before, {
+      t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000,
+    });
+    expect(
+      reduce(struck, { t: "selfStrike", playerId: "p0", index, struck: true, now: 51_000 }),
+    ).toBe(struck);
+  });
+
+  // The whole point of the guard: a duplicate is already struck, so restoring
+  // one would award back a point nobody ever had.
+  test("a duplicated word cannot be marked", () => {
+    const before = scored();
+    const index = indexOf(before, "p0", "Adele");
+    expect(
+      reduce(before, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 }),
+    ).toBe(before);
+  });
+
+  test("an index outside the scorer's list is ignored", () => {
+    const before = scored();
+    for (const index of [-1, 99, Number.NaN]) {
+      expect(
+        reduce(before, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 }),
+      ).toBe(before);
+    }
+  });
+
+  test("somebody who was not in the round cannot mark anything", () => {
+    const before = scored();
+    expect(
+      reduce(before, { t: "selfStrike", playerId: "host", index: 0, struck: true, now: 50_000 }),
+    ).toBe(before);
+  });
+
+  test("it is refused outside the scoring screen", () => {
+    const before = playing();
+    expect(
+      reduce(before, { t: "selfStrike", playerId: "p0", index: 0, struck: true, now: 50_000 }),
+    ).toBe(before);
+  });
+
+  test("the banked round places the self-validated scores", () => {
+    let room = scored();
+    // p0 had Adele (duplicated) and Beyonce (unique); p1 had Adele only. p0
+    // wins the round 1-0 until it disowns the only word that scored.
+    const index = indexOf(room, "p0", "Beyonce");
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 });
+    room = reduce(room, { t: "showStandings", playerId: "host", now: 51_000 });
+    expect(room.history[0].places.p0).toMatchObject({ unique: 0, total: 2, place: 1 });
+    expect(room.history[0].places.p1).toMatchObject({ unique: 0, total: 1, place: 1 });
+  });
+
+  test("a word taken back before the round banks still scores", () => {
+    let room = scored();
+    const index = indexOf(room, "p0", "Beyonce");
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 });
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: false, now: 51_000 });
+    room = reduce(room, { t: "showStandings", playerId: "host", now: 52_000 });
+    expect(room.history[0].places.p0.unique).toBe(1);
+    expect(room.history[0].places.p0.place).toBe(1);
+    expect(room.history[0].places.p1.place).toBe(2);
+  });
+
+  test("readying everyone up banks the self-validated round too", () => {
+    let room = scored();
+    const index = indexOf(room, "p0", "Beyonce");
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 });
+    room = readyAll(room, 51_000);
+    expect(room.phase.name).toBe("standings");
+    expect(room.history[0].places.p0.unique).toBe(0);
+  });
+
+  // The marks live on the phase, so the next round starts clean with nothing
+  // having to clear them.
+  test("the next round's scoring screen opens with no marks", () => {
+    let room = scored();
+    const index = indexOf(room, "p0", "Beyonce");
+    room = reduce(room, { t: "selfStrike", playerId: "p0", index, struck: true, now: 50_000 });
+    room = reduce(room, { t: "showStandings", playerId: "host", now: 51_000 });
+    room = readyAll(room, 52_000);
+    const startAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: startAt, roll: 0 }); // -> playing
+    const playEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: playEnd, roll: 0 }); // -> timesup
+    const upEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: upEnd, roll: 0 }); // -> scoring
+    expect(room.phase.name).toBe("scoring");
+    expect(marksOf(room)).toEqual({ counts: {}, last: null });
+  });
+});
+
+describe("selfStrike in team play", () => {
+  test("any member may mark the list their team shares", () => {
+    let room = playingInTeams();
+    room = submitEntry(room, "p0", "Adele", 10_000).room;
+    room = submitEntry(room, "p1", "Cher", 10_100).room;
+    const playEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: playEnd, roll: 0 });
+    const upEnd = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: upEnd, roll: 0 });
+    expect(room.phase.name).toBe("scoring");
+
+    const teamId = room.players.find((p) => p.id === "p1")!.teamId!;
+    const results = (room.phase as { results: Results }).results;
+    const team = results.scorers.find((s) => s.id === teamId)!;
+    const index = team.entries.findIndex((e) => e.by === "p0");
+    expect(index).toBeGreaterThanOrEqual(0);
+
+    // p1 strikes the word p0 wrote: it is the team's list, not p0's.
+    const after = reduce(room, {
+      t: "selfStrike", playerId: "p1", index, struck: true, now: 50_000,
+    });
+    expect(isSelfStruck(marksOfPhase(after), rowKey(teamId, index))).toBe(true);
+  });
+});
+
+function marksOfPhase(room: Room): SelfMarks {
+  return (room.phase as { selfMarks: SelfMarks }).selfMarks;
+}

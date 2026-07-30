@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { useMarquee } from "../marquee";
 import { TEAM_COLORS } from "../../shared/teams";
 
 type Props = {
@@ -20,14 +21,21 @@ type Props = {
  *
  * The name is live and the colour is not: renaming must never recolour a
  * team, because the colour is what the room is actually navigating by.
+ *
+ * The badge sizes itself to its name up to the width of the card it names, and
+ * a name longer than that clips and travels rather than ellipsing — so the tab
+ * is its own clip box, with the name as the single run inside it.
  */
 export function TeamBadge({ name, colorIndex, className }: Props) {
+  const badge = useMarquee<HTMLSpanElement>([name]);
   return (
     <span
+      ref={badge}
+      data-marquee=""
       className={className ? `team-badge ${className}` : "team-badge"}
       style={{ "--accent": `var(${TEAM_COLORS[colorIndex].token})` } as CSSProperties}
     >
-      {name}
+      <span className="marquee">{name}</span>
     </span>
   );
 }

@@ -3,6 +3,7 @@ import { formatClock, useRemaining } from "../../net/clock";
 import { CATEGORIES } from "../../../shared/categories";
 import { VOTING_MS } from "../../../shared/reduce";
 import { voteBudget, voteShares, votesSpent } from "../../../shared/voting";
+import { isWaiting } from "../../../shared/bots";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import { roomStore } from "../../net/room";
 
@@ -27,7 +28,7 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
   // a player who never spent their votes before the 60s expired locks too,
   // rather than being handed a live grid during the countdown.
   const locked = left === 0 || closed;
-  const waitingOn = room.players.filter((p) => p.connected && !p.ready).length;
+  const waitingOn = room.players.filter((p) => p.connected && !isWaiting(p)).length;
   // Only once voting has closed. While it is open the tally is still moving,
   // and a percentage that ticks under the player's thumb reads as a score
   // rather than as the odds it is. Any badged category holds at least this

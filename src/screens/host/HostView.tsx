@@ -1,7 +1,9 @@
+import { Fragment } from "react";
 import type { ReactElement } from "react";
 import { roomStore } from "../../net/room";
 import type { ClientState } from "../../net/room";
 import { countdownScreen } from "../../../shared/state";
+import type { RoomState } from "../../../shared/state";
 import { TimesUp } from "../shared/TimesUp";
 import { HostLobby } from "./HostLobby";
 import { HostPlaying } from "./HostPlaying";
@@ -10,9 +12,6 @@ import { HostStandings } from "./HostStandings";
 import { HostTeams } from "./HostTeams";
 import { HostVoting } from "./HostVoting";
 
-// The explicit ReactElement return type is what makes tsc flag an unhandled
-// phase — there is no noImplicitReturns in this repo, so dropping it would
-// make a missing case compile silently.
 export function HostView({ state, onLeave }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
 
@@ -26,6 +25,17 @@ export function HostView({ state, onLeave }: { state: ClientState; onLeave: () =
     onLeave();
   };
 
+  // Keyed on `viewNonce` so the debug menu's refresh remounts the screen — the
+  // only way to restart animations and screen-local state that a re-render
+  // cannot touch. A Fragment rather than an element, because it must add no DOM
+  // of its own: every screen below is a `.screen` root the layout depends on.
+  return <Fragment key={room.viewNonce}>{screenFor(room, state, leave)}</Fragment>;
+}
+
+// The explicit ReactElement return type is what makes tsc flag an unhandled
+// phase — there is no noImplicitReturns in this repo, so dropping it would
+// make a missing case compile silently.
+function screenFor(room: RoomState, state: ClientState, leave: () => void): ReactElement {
   switch (room.phase.name) {
     case "lobby":
       return <HostLobby room={room} onLeave={leave} />;
@@ -56,7 +66,15 @@ export function HostView({ state, onLeave }: { state: ClientState; onLeave: () =
     case "timesup":
       return <TimesUp />;
     case "scoring":
-      return <HostScoring room={room} results={room.phase.results} />;
+      return (
+        <HostScoring
+          room={room}
+          results={room.phase.results}
+          startedAt={room.phase.startedAt}
+          skipped={room.phase.skipped}
+          marks={room.phase.selfMarks}
+        />
+      );
     case "standings":
       return <HostStandings room={room} />;
     case "teams":

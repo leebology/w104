@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (293 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (378 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -75,6 +75,29 @@ The layering is the point: **all game rules live in `shared/`** so they test in
 milliseconds. `party/server.ts` is plumbing only. If you find yourself writing a
 rule inside the Durable Object, it belongs in `shared/reduce.ts` instead.
 
+Two subsystems hang off the Worker:
+
+- **The D1 score archive** — on no game path at all. `shared/archive.ts` maps
+  `Room`/`Results` to row shapes (pure, so the `shared/**/*.test.ts` glob covers
+  it); `party/archive.ts` is the only file that touches the `DB` binding;
+  `migrations/` holds the schema. Every call goes through `ctx.waitUntil()` in
+  try/catch that logs and swallows — **the archive is allowed to lose data, the
+  game is not allowed to notice.** The game never reads it back.
+- **The debug menu** (`src/components/DebugPanel.tsx`) — five sections. Two of
+  them, experiment flags and free-tier usage (`party/usage.ts` behind
+  `/debug/usage`), touch nothing. The other three **deliberately mutate a live
+  room** — the round controls (pause, skip, auto-fill), the view jumper, and the
+  bot bench — and are therefore host-only and enforced server-side. See "Debug
+  menu" below.
+
+Each keeps files in `shared/` that are **not** game logic — `shared/archive.ts`,
+`shared/usage.ts`, `shared/views.ts`, `shared/bots.ts` — and for the same two
+reasons: purity makes them testable under the existing vitest glob, and `party/`
+and `src/` are separate tsconfig projects, so a type the client imported from
+`party/` would drag the whole Worker into `tsconfig.json`. The archive and usage
+files are imported by nothing in the game at all; the debug ones are reached only
+through the events they define.
+
 ### State flow
 
 The Durable Object is the sole authority. Clients hold a read-only replica,
@@ -101,7 +124,8 @@ replaced wholesale on each `state` push; every client action is a *request*.
 - **Opening `voting` clears every ready flag.** `ready` means "waiting in the
   room" before that edge and "votes spent" after it; carried across, the next
   `settle` closes voting before anyone has voted. It happens in exactly one
-  place — the tick that opens `voting`.
+  place — the tick that opens `voting`. **Opening `scoring` clears them for the
+  same reason** — see "The scoring reveal" — as does banking a round.
 - The post-voting countdown is not readiness-cancellable. `everyoneReady` needs
   `MIN_PLAYERS`, so after a host solo-start that branch would tear it down on
   the next event.
@@ -131,6 +155,16 @@ replaced wholesale on each `state` push; every client action is a *request*.
   `storage.get<Room>` is an unchecked cast over older stored rooms.
 - **Durable Objects must stay on `new_sqlite_classes`** in `wrangler.jsonc`.
   `new_classes` requires a paid Cloudflare plan and breaks deploys.
+- **WebSocket Hibernation is on (`static options = { hibernate: true }`), so no
+  instance field survives between events.** Anything the `W104` class holds must
+  be reloadable in `onStart()` — that is why `room`, `archive` and
+  `kickedSessions` are all read from storage there. Adding a `private` field
+  with meaningful state and no `onStart()` load is a defect that will look like
+  intermittent amnesia rather than a crash. `Connection` state is the exception:
+  `setState` serializes into the socket's own attachment, so `ConnState` rides
+  with the socket. Hibernation is what keeps Durable Object *duration* off the
+  free-tier ceiling — an idle pinned room costs ~83% of a day's allowance on its
+  own.
 - **Local dev stays plain http.** An https page cannot open a `ws://` socket, so
   no `--local-protocol https`.
 - The host is not a player. A natural start needs 2+ *connected* players all
@@ -174,6 +208,18 @@ Three distinct ids, easy to confuse:
 
 A kick is durable for the room's lifetime (`backToLobby` does not clear it) and
 is enforced at the connect gate, before `join` can seat anyone.
+
+**`kickedSessions` is persisted, not an instance field**, and hibernation is
+why. An absent entry is treated as "still banned" — the safe direction — so an
+in-memory copy lost to eviction would leave a kicked player unable to rejoin at
+all rather than letting a stale socket slip through. That was already true on a
+cold wake before hibernation; it was just rare enough not to notice. Stored as
+a `Record<PlayerId, string[]>` because DO storage is JSON and a `Map` of `Set`s
+comes back empty.
+
+Known gap, pre-existing: kicking a player who is *already disconnected* records
+no sessions, so their next connect finds an empty array, matches nothing, and
+lifts the ban immediately.
 
 ### Teams
 
@@ -237,6 +283,142 @@ is enforced at the connect gate, before `join` can seat anyone.
   untouched — and sends it *before* the `entryAck`, so the authoritative copy
   lands ahead of the message that retires the client's optimistic one.
 
+### Debug menu
+
+Mostly off every game path — the Usage and Experimental sections are deletable
+without the game noticing. Three sections are the exception: **Debug**, **Views**
+and **Bots** are the only things outside normal play that mutate a live room, and
+all three are host-only and enforced on the server.
+
+The Debug section holds the round controls.
+
+- **Its three controls are host-only and `playing`-only, enforced on the
+  server.** `debugPause` and `debugSkip` are rejected in `shared/reduce.ts`;
+  `debugFill` is rejected in `party/server.ts`. The panel also disables the
+  buttons for non-hosts, but **that is a courtesy, not the boundary** — the
+  panel renders in production, so the server assumes the buttons are missing.
+- **`Room.paused` holds the milliseconds remaining, not the moment of
+  pausing.** `phase.endsAt` is absolute and a pause must survive an arbitrary
+  wait; resuming is `endsAt = now + paused`. While it is non-null `phase.endsAt`
+  is stale by design, so `tick` returns early and every client timer reads the
+  banked figure through `useRemaining`'s third argument instead of counting to
+  a dead deadline.
+- **A held round falls back to the ordinary idle horizon**, not a longer
+  paused-specific one. `alarmOutcome` answers a stale room with `touch` while
+  anyone is connected, so the people in the room keep it alive and an abandoned
+  paused room reaps like any other.
+- **`debugSkip` moves the deadline to now rather than transitioning itself**,
+  so the round ends down the exact path a natural expiry takes — scoring, the
+  archive write and the standings hand-off cannot drift from the real one.
+- **Auto-fill loops `submitEntry`** rather than writing `entries` directly, so
+  phase, duplicates-within-a-scorer, `MAX_ENTRIES` and the team-merged list all
+  still apply. `fillWordsFor` in `shared/debug.ts` deals from a shared sub-pool
+  so the lists *deliberately overlap* — independent draws would leave nothing
+  for the Boggle rule to strike through.
+
+**The view jumper** (`shared/views.ts`, the Views section) puts the whole room —
+TV and phones — on any screen, and jumping to the screen already showing is the
+panel's refresh button.
+
+- **`VIEWS` is the catalog and the gate.** It is not the same list as
+  `Phase["name"]`: `countdown` renders two different screens, so it appears twice
+  and `currentView` tells them apart. `to` off the wire is checked with `isViewId`
+  — an unknown id would fall off the end of `jumpTo`'s switch and return
+  `undefined` as a `Room`.
+- **A jump is not a phase transition.** `jumpTo` builds the target phase and
+  leaves `history`, `settings` and `votes` alone — the point is to look at one
+  screen without losing the state that makes it worth looking at. It is host-only
+  and legal from **every** phase; a legal-phase list would be a jumper that could
+  not reach most of what it lists.
+- **`debugJump` is the second event `reduce` skips `settle` for.** Readiness is
+  *forced* for a countdown target and *cleared* for every untimed one, and both
+  halves are load-bearing: `settle` would tear down a countdown on a room below
+  `MIN_PLAYERS`, and a fully-ready room arriving at `lobby`/`voting`/`scoring`
+  would settle straight back out of the screen the jump just asked for.
+- **`Room.viewNonce` is the remount key, and it rides in `RoomState` on
+  purpose.** `HostView` and `PlayerView` key their phase screen on it, so a bump
+  restarts CSS animations *and* screen-local state. Re-stamping the phase clock
+  is not enough — `HostScoring` holds the swap, podium and footer in local state
+  seeded at mount. It is public for the same reason FAST FORWARD is: a refresh
+  the TV kept to itself would leave the phones on a reveal the room has been
+  taken back to the start of.
+- **The two views made of a round are stood up by `party/server.ts`, not
+  `reduce`.** `jumpToView` chains `playing` → `fillEveryList` → `scoring`,
+  because writing `entries` is the one mutation `reduce` deliberately does not
+  own. Standings additionally requires an empty `history` before it synthesizes,
+  or every refresh press would bank another round and the match would grow one
+  per press.
+- **Synthetic rounds stay out of the D1 archive for free.** `maybeArchiveBank`
+  reads the `before` captured at the top of `onMessage`, and a room that
+  synthesized its own round was not on `scoring` then. A jump out of a *real*
+  results screen into standings banks and archives like any other.
+
+**The bot bench** (`shared/bots.ts`, the Bots section) dresses the room with up
+to 20 placeholder players, named for the fellowship, so one person at one laptop
+can see a crowded screen.
+
+- **Bots are inert, and `isWaiting` is the whole of that rule.** A bot is always
+  counted as waiting and never counted toward `everyoneReady`'s floor, so it can
+  neither hold a countdown down nor make a room startable that would not have
+  started without it. Every "n of m ready" readout on a screen goes through the
+  same predicate, so a bot never reads as the holdout.
+- **They are `Player`s, deliberately.** `isBot?: true` is optional and absent on
+  every real player, which is what keeps it off the persistence-migration list.
+  Everything downstream — `rosterOf`, the reveal grid, the podium, auto-fill —
+  treats a bot as a seat with no special case, and that is the feature.
+- **`MAX_BOTS` is double `MAX_PLAYERS`, and bots hold no seat against the cap.**
+  The join gate counts humans only, in `reduce` *and* at the connect gate, so a
+  room dressed with twenty of them still takes real phones. The panel says which
+  layouts are over their design limit rather than leaving it to look like a bug.
+- **`debugBots` sets the population absolutely, and is *not* exempt from
+  `settle`** — it needs no exemption, because inert scenery gives `settle`
+  nothing to open or tear down. Trimmed bots take their `entries` with them, the
+  same rule a kick follows.
+- **`seatBots` runs at `enterTeams`, and touches bots only.** Team select is for
+  humans picking; a placeholder has nothing to pick with, and an empty panel is
+  the one thing that screen is dressed to avoid.
+
+The rest is off every game path, and deletable without the game noticing.
+
+- **`GET /debug/usage` on the Worker, live in every environment including
+  production.** It was staging-only at first; that hid the only numbers worth
+  watching behind a branch deploy. The endpoint is consequently public and
+  unauthenticated, which is an accepted trade — it serves account-level usage
+  counts, never tokens or room state. `handleUsage` in `party/server.ts` is
+  where a gate goes if that changes; the client's `debugEnabled()` is a button,
+  not a boundary.
+- **`ENVIRONMENT` gates nothing** and is the only `var` left. It is the label in
+  the panel footer, so a tab open against the wrong Worker is obvious.
+- **Every figure in the panel reads the same from every environment.** Nothing
+  is scoped to the Worker serving it: the Workers query is unfiltered and
+  grouped by `scriptName`, so both deployed scripts are always listed and
+  staging usage is checkable from production and vice versa. Durable Object and
+  D1 counters are account-wide outright — a match played on staging moves
+  production's bars.
+- **The Workers allowance is per *account*, not per script.** 100,000/day
+  across everything deployed, which is why that section leads with the account
+  total and the per-script rows are a breakdown of it. Two independent bars at
+  60% each would look survivable while being 120% of one allowance.
+- `WORKER_SCRIPTS` in `party/usage.ts` mirrors the `name` fields in
+  `wrangler.jsonc`. Renaming a Worker without updating it shows that script as
+  permanently idle rather than as an error.
+- **Local dev generates no Cloudflare analytics at all.** `wrangler dev` never
+  reaches the edge, so nothing you do locally moves any bar. The Workers
+  section says so rather than leaving it to be discovered.
+- **One GraphQL request per metric, each with its own try/catch.** Cloudflare's
+  analytics schema is discovered by introspection rather than published field
+  by field, so a field name in `party/usage.ts` may be wrong. Batched, one bad
+  name returns no data at all and the panel goes blank with no clue why; split,
+  it nulls one bar and prints the error on it.
+- **Vercel has no usage API on Hobby.** The panel shows the ceilings and links
+  to the dashboard rather than inventing a number. `vercelService()` is the
+  only place that changes if Vercel ever ships one.
+- The panel deliberately ignores the design tokens for colour and shape: it is
+  ink-on-ink with a teal rule because anything wearing the game's gold-and-cream
+  buttons reads as a game control.
+
+See "The debug usage panel" in `HOSTING.md` for the API token setup.
+
 ### Client
 
 `src/net/room.ts` is a single `RoomStore` singleton exposed via
@@ -297,6 +479,65 @@ only chance to have a keyboard up when `playing` begins off a timer. Do not
 move that input into a phase-specific screen, and keep it out of a `<form>`
 (triggers Safari's AutoFill bar).
 
+### The scoring reveal
+
+`HostScoring` plays a round's results as three frames — deal in, reveal line by
+line, swap into final order. Every visible thing derives from **one integer**,
+`step`, against a schedule built once in `shared/reveal.ts`: which words are out,
+which are struck, whose emoji trails them, what each UNIQUE reads, what rank each
+card ends on. Rules to keep:
+
+- **`step` is derived from `scoring.startedAt`, not from a chain of timers.**
+  `useRevealStep` (`src/reveal.ts`) counts lines off the server clock, the same
+  arrangement the round timer uses and for the same reason. That is what lets
+  **`PlayerScoring` run the identical reveal on every phone** — it builds the
+  same schedule from the same arguments and strikes each word on the beat the TV
+  does. Nothing about the reveal is ticked over the wire, and the two schedules
+  must not drift: `playerOrder`/`lineOrder`/seed are the same in both screens.
+- **FAST FORWARD is room state (`scoring.skipped`), not a local jump.** A skip
+  the TV kept to itself would leave the phones crawling through lines the room
+  has already been shown.
+- **The phone shows the whole list from the first frame; only the *bad news*
+  arrives over time.** It is your own list and you know what is on it. So
+  `PlayerScoring` ignores `RowView.revealed` and reads only `struck`/`alsoShown`,
+  and its strike delay is zero — the hold exists so a word on the TV never
+  *appears* pre-struck, and here it has been on screen all along.
+- **Readying up on the results screen banks the round.** `settle` treats
+  `scoring` like `standings`: everyone ready advances with no host action, and
+  the host's Standings button still overrides a half-ready room. This is why the
+  `timesup -> scoring` tick clears every ready flag — carried over from the round
+  just played, `settle` would bank the round before anyone read a word of it. The
+  archive write is therefore keyed off the `scoring -> standings` *transition*
+  (`maybeArchiveBank`), never off one trigger.
+- **Every flash's alternating parity comes from an ordinal, never from a step.**
+  `cardView` reports `strikeCount`/`flinchCount` and `rowView` reports
+  `popCount` for exactly this: two strikes an even number of steps apart share a
+  step parity, so a class keyed on the step does not change, the animation never
+  re-fires and the flash is silently missed. The UNIQUE stat skips the trick
+  altogether — it is **keyed on `strikeCount` so React remounts it**, which
+  restarts the blink by definition. The card's dip cannot do that (a remount
+  would drop its scroll position and its measured rect), so it keeps the A/B
+  pair.
+
+- **Nothing is stored per row and nothing is diffed.** A rule that needs its own
+  piece of state belongs in `shared/reveal.ts` as a derivation.
+- **A row is struck once any partner is already on screen.** Back-checking falls
+  out of that with nothing watching for it, and `struckAt` is never earlier than
+  the row's own step, so a word never appears pre-struck.
+- **`flinchAt` is back-check strikes only** — the active card does not flinch at
+  its own words.
+- **The strike partners are re-derived here, not carried on `ScoredEntry`.**
+  `alsoBy` keeps scorer ids, and the reveal needs the matching *rows*, because a
+  word strikes at the step another column lands it. Re-clustering with the same
+  `normalize`/`isMatch` leaves the wire format and the stored `Room` alone.
+- **The frame-3 swap is measured, never calculated.** The DOM stays in deal
+  order; columns are translated by `getBoundingClientRect` deltas, so the grid's
+  arithmetic is not duplicated in the driver.
+- **The marquee is measured too, and must not use `container-type`** — that
+  zeroes an element's intrinsic width and collapses a shrink-to-fit team badge.
+  `src/marquee.ts` re-measures on `document.fonts.ready`, because Bungee lands
+  after first paint and a mount-only measurement says "it fits".
+
 ## Docs
 
 - `docs/superpowers/specs/2026-07-25-w104-mvp-design.md` — the design spec:
@@ -323,7 +564,18 @@ move that input into a phase-specific screen, and keep it out of a `<form>`
   which is the brief it answers.
 - `docs/superpowers/specs/2026-07-28-score-persistence-design.md` — the D1
   archive: schema, where the writes happen, and the rule that the game never
-  reads it back. Approved, not yet implemented.
+  reads it back. Implemented (§14 steps 1–4); the write path has not yet been
+  exercised by a real match, which is step 5.
+- `docs/superpowers/specs/2026-07-29-freetier-debug-panel-design.md` — the
+  debug menu. §§1–11 are the usage half: the `/debug/usage` route, why one
+  GraphQL request per metric, the per-account Workers allowance, why Vercel is
+  a link rather than a bar. **§12 is the round controls** — pause, skip,
+  auto-fill, experiment flags, and why each is host-only. Implemented.
+- `docs/superpowers/specs/2026-07-29-host-scoring-reveal-design.md` — the host
+  results screen and its three-frame reveal: the merged card, the derive-from-one-
+  integer schedule, the strike/back-check rule, the measured swap, the podium and
+  the guarded footer swap. Read with `design_handoff_host_scoring_reveal/README.md`,
+  which is the brief it answers. Implemented.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.
@@ -335,7 +587,14 @@ Branch off `main`, open a PR. CI (`.github/workflows/ci.yml`) runs typecheck,
 tests, build. Merges to `main` deploy production (Vercel for the app, GitHub
 Actions → `wrangler deploy` for the Worker).
 
-Two long-lived branches: `main` (production, `w104.leebo.io`) and `staging`
+**Every PR bumps the version.** Vite's `define` substitutes `package.json`'s
+`version` as `__APP_VERSION__`, which renders in Landing's corner and in the
+debug panel's footer — so on a deployed URL it is the only way to tell a fresh
+page from a cached one. Bump it in **three** places, all kept in sync:
+`package.json`, `package-lock.json`'s top-level `version`, and the matching one
+under `packages: { "": ... }`.
+
+Two long-lived branches: `main` (production, `www.oknameone.com`) and `staging`
 (`staging.oknameone.com` + the `w104-staging` Worker). **PRs no longer deploy
 the Worker** — they used to, which meant any open PR overwrote the shared
 staging Worker and changed what people testing on phones were talking to. Merge
@@ -347,8 +606,3 @@ Named Wrangler environments do not inherit `durable_objects` bindings, so
 
 Commits here stage explicit paths — never `git add -A`, so the untracked
 working note `Project W-104.md` stays untracked.
-
-Every PR bumps the version — `package.json`'s `version` and both spots in
-`package-lock.json` (the top-level `version` and the matching one under
-`packages: { "": ... }`), kept in sync per the existing "sync the lockfile
-version to package.json" precedent.

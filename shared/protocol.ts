@@ -2,6 +2,7 @@ import type { Entry, PlayerId, RoomState } from "./state";
 import type { RejectReason } from "./reduce";
 import type { NumericSettingKey } from "./gamemodes";
 import type { TeamId } from "./teams";
+import type { ViewId } from "./views";
 
 export type ClientMessage =
   | { type: "setProfile"; name: string; emoji: string }
@@ -14,6 +15,14 @@ export type ClientMessage =
   | { type: "setMode"; mode: string }
   | { type: "setConfiguring"; open: boolean }
   | { type: "showStandings" }
+  /** Host-only, `scoring` only: land every outstanding strike of the reveal. */
+  | { type: "fastForward" }
+  /**
+   * Self-validation, `scoring` only: strike one of your own words out by hand,
+   * or take it back. `index` is into your own scorer's `results` entries. Not
+   * host-only — it is the player's own list.
+   */
+  | { type: "selfStrike"; index: number; struck: boolean }
   | { type: "backToLobby" }
   | { type: "castVote"; category: string }
   | { type: "resetVotes" }
@@ -21,6 +30,26 @@ export type ClientMessage =
   | { type: "leaveTeam" }
   | { type: "setTeamName"; teamId: TeamId; name: string }
   | { type: "balanceTeams" }
+  /**
+   * Debug-panel controls. Host-only and enforced as such in `shared/reduce.ts`
+   * and `party/server.ts` — the panel hides them from non-hosts, but a hidden
+   * button is not an authorization boundary and these mutate a live round.
+   */
+  | { type: "debugPause"; paused: boolean }
+  | { type: "debugSkip" }
+  /** Fills every scorer's list with random words. `playing` only. */
+  | { type: "debugFill" }
+  /**
+   * Puts the whole room — TV and phones — on the named screen. Legal from every
+   * phase, and jumping to the screen already showing restarts it, which is the
+   * panel's refresh button. `to` is checked against the catalog on arrival.
+   */
+  | { type: "debugJump"; to: ViewId }
+  /**
+   * Sets the placeholder-bot population to exactly `count`, clamped to
+   * 0..MAX_BOTS on arrival. Legal from every phase.
+   */
+  | { type: "debugBots"; count: number }
   | { type: "endGame" };
 
 export type ServerMessage =

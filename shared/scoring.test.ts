@@ -115,7 +115,47 @@ describe("scoreRound", () => {
     const a = results.scorers.find((p) => p.id === "a")!;
     expect(a.total).toBe(1);
     expect(a.unique).toBe(1);
-    expect(a.entries[0]).toEqual({ text: "Zendaya", by: "a", unique: true, alsoBy: [] });
+    expect(a.entries[0]).toEqual({
+      text: "Zendaya",
+      by: "a",
+      unique: true,
+      group: 0,
+      alsoBy: [],
+    });
+  });
+
+  test("matching entries share a group and non-matching ones do not", () => {
+    const results = scoreRound({
+      scorers,
+      entries: {
+        a: [{ text: "Adele", ...by("a", 1) }, { text: "Cher", ...by("a", 2) }],
+        b: [{ text: "adele", ...by("b", 3) }],
+        c: [{ text: "Cher", ...by("c", 4) }],
+      },
+    });
+    const group = (id: string, i: number) =>
+      results.scorers.find((s) => s.id === id)!.entries[i].group;
+
+    // Two distinct collisions, each pairing a different set of scorers.
+    expect(group("a", 0)).toBe(group("b", 0)); // Adele / adele
+    expect(group("a", 1)).toBe(group("c", 0)); // Cher / Cher
+    expect(group("a", 0)).not.toBe(group("a", 1));
+  });
+
+  test("one scorer's two words cancelled by the same rival get distinct groups", () => {
+    // The case that makes `group` necessary: `alsoBy` is ["b"] for both of a's
+    // entries, so it cannot tell these two clusters apart on its own.
+    const results = scoreRound({
+      scorers,
+      entries: {
+        a: [{ text: "Adele", ...by("a", 1) }, { text: "Cher", ...by("a", 2) }],
+        b: [{ text: "Adele", ...by("b", 3) }, { text: "Cher", ...by("b", 4) }],
+        c: [],
+      },
+    });
+    const a = results.scorers.find((s) => s.id === "a")!;
+    expect(a.entries[0].alsoBy).toEqual(a.entries[1].alsoBy); // identical
+    expect(a.entries[0].group).not.toBe(a.entries[1].group); // still separable
   });
 
   test("a shared word scores for nobody and carries the other emoji", () => {

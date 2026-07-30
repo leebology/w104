@@ -43,6 +43,38 @@
   --mint: #7CE0D3;
   --mint-lit: #00E0C6;
 
+  /* The scoring reveal. `--penalty` is the strike moment — the word as the line
+     draws through it, and the UNIQUE numeral as it drops. Darker and less
+     saturated than the pink field on purpose: it must never read as brand pink.
+     `--penalty-soft` is the ring bleeding in from inside a card's edge when it
+     is caught out. Both live ONLY inside cream cards, never on the pink field,
+     and `--penalty-soft` is only ever feathered. */
+  --penalty: #8E0B24;
+  --penalty-soft: #BA1B40;
+
+  /* Self-validation. `--restore` is `--penalty`'s mirror: the beat a player
+     takes one of their own words back, and the only thing on the results screen
+     that moves a score up. Deeper than `--team-green` on purpose — it must never
+     read as a team accent — and like the penalty pair it lives ONLY inside cream
+     cards, never on the pink field. `--restore-soft` is the ring's counterpart to
+     `--penalty-soft` and is only ever feathered, for the same reason. */
+  --restore: #1B7A46;
+  --restore-soft: #1FA05B;
+
+  /* The resting colour of a word its own scorer disowned, and the one thing that
+     tells the two kinds of strike apart at a glance: a duplicate greys out to
+     `--struck`, a manual one stays burnt orange. Warm enough to read as
+     deliberate rather than as dead, dark enough to hold on cream, and well clear
+     of both `--gold` and `--team-orange` — a struck word must never look like a
+     forward action or a team. */
+  --self-struck: #B4530C;
+
+  /* Podium. Gold is the existing token — the same yellow the forward action
+     wears — so only second and third need adding. Bronze is warm enough to sit
+     beside cream and dark enough to hold ink text. */
+  --silver: #C9CDD4;
+  --bronze: #C08457;
+
   /* Team accents. Ten fixed colours, one per possible team — a team's colour
      is set once at creation and never changes, so these are the only place
      any of them is written. Every accented surface reads `--accent`, a
@@ -1093,13 +1125,14 @@ ul, ol { list-style: none; }
    share the same height. Deriving width from height means two rows shrink to
    fit instead, and the 20vw cap is what holds a short row to the intended
    fifth-of-the-screen rather than letting three cards sprawl. */
-/* Width comes from the column track; height fills whatever the row has. */
+/* Width comes from the column track; height fills whatever the row has. One
+   card fills it — see `.result-card` for why the identity block and the word
+   list are no longer two. */
 .result-col {
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
 }
 
 /* A team's accent arrives on its name tab, not on this card — no top border
@@ -1173,15 +1206,290 @@ ul, ol { list-style: none; }
 /* The one number that matters is the only pink thing inside a cream card. */
 .stat__num--unique { color: var(--pink); }
 
+/* Blinks on every strike this card took, consecutive ones included. One copy,
+   not the alternating pair the card's dip needs: the element is remounted on
+   each strike (keyed on the count), so the animation restarts by definition and
+   no parity trick can fail to re-fire it. */
+.stat__num--flash { animation: statBlink 420ms ease-in-out; }
+
+/* The same blink the other way up: only a player taking one of their own words
+   back moves this number up, so green is unambiguous. */
+.stat__num--flash-up { animation: statBlinkUp 420ms ease-in-out; }
+
 .stat__label { font-size: 9px; color: var(--ink-dim); letter-spacing: 0.1em; }
 
 .list-card { padding: 14px; flex: 1; min-height: 0; }
 
-.host-scoring__footer {
+/* ------------------------------------------------- the host results card */
+
+/* ONE card per player, not two.
+   The identity block and the word list used to be siblings, each with its own
+   3px border, 6px shadow and the 12px gap between them. Merging them behind a
+   1px hairline buys back around 30px of vertical per column, which is what
+   makes the six-to-ten player two-row layout readable at all — and it means the
+   penalty ring covers the whole reaction rather than half a card flinching.
+
+   `overflow` stays visible: the team badge overhangs the top-left corner and
+   the medal plaque the top-right, and either one clipped is a card with a
+   corner shaved off. */
+.result-card {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  padding: 10px;
+  /* Teal is already the app's liveness signal, so "this list is talking" needs
+     no new colour — and no scale, either. The card must not change size. */
+  transition: box-shadow 180ms ease-out;
+}
+
+/* Clearance for the badge overhang. Solo cards keep their padding. */
+.result-card--team .id-card__head { padding-top: 15px; }
+
+.result-card--live { box-shadow: 6px 6px 0 var(--teal); }
+
+/* Two lines, not one. Name, RANK and both stat pairs on a single row collide
+   for any name longer than about five characters inside a 240px track; giving
+   the name its own full-width line hands it roughly four times the room and
+   costs the card 6px. */
+.id-card__head {
   flex: 0 0 auto;
   display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.id-card__line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.id-card__foot {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.id-card__foot .id-card__meta { flex: 1; }
+
+/* A clip box on this screen rather than an ellipsis — a name too long for its
+   column travels. `.id-card__name`'s own `text-overflow` is inert once the run
+   inside it is an inline-block, so it costs nothing to leave in place for the
+   phone. */
+.result-card .id-card__name {
+  flex: 1;
+  min-width: 0;
+  display: block;
+}
+
+/* In team play the name lives in the badge, so the block leads with the faces
+   instead — above RANK, where the name would have been. */
+.result-card .id-card__members {
+  gap: 5px;
+  font-size: 19px;
+  line-height: 1;
+  padding-top: 0;
+  margin-bottom: -2px;
+}
+
+.result-card__rule {
+  flex: 0 0 auto;
+  height: 1px;
+  background: var(--card-rule);
+  margin: 7px 0;
+}
+
+/* The penalty ring, on an overlay child and never on `.card` itself — there it
+   would fight the card's hard offset shadow. Feathered, and inset: it reads as
+   light bleeding in from inside the card's edge, not as the panel changing
+   colour. This is the single blur in the whole design system, and it is a light
+   effect *inside* a card rather than a shadow *under* one. */
+.card__penalty {
+  position: absolute;
+  inset: 0;
+  border-radius: calc(var(--radius) - 3px);
+  box-shadow: inset 0 0 17px 3px var(--penalty-soft);
+  pointer-events: none;
+  opacity: 0;
+}
+
+/* Every strike flashes, with no cooldown. An identical animation string does
+   not restart, so consecutive strikes would coalesce and read as a deliberate
+   pause — hence two identical copies of the ring, the dip, the stat blink and
+   the trail pop, alternated per revealed line. */
+.result-card--hit-a { animation: dipA 483ms cubic-bezier(0.3, 1.5, 0.5, 1); }
+.result-card--hit-b { animation: dipB 483ms cubic-bezier(0.3, 1.5, 0.5, 1); }
+.result-card--hit-a .card__penalty { animation: penaltyBlinkA 420ms ease-out; }
+.result-card--hit-b .card__penalty { animation: penaltyBlinkB 420ms ease-out; }
+
+/* FAST FORWARD lands every outstanding strike on one frame, so the whole grid
+   takes one ring together as the acknowledgement. Without it the skip reads as
+   a jump cut rather than as "all of that happened". */
+.result-card--ack .card__penalty { animation: ackRing 320ms ease-out; }
+
+/* Self-validation takes the same ring as a strike the round landed: the card is
+   still losing a word, and it should feel like it. Declared after
+   `.result-card--hit-*` on purpose — equal specificity, so on a card that has
+   both classes the manual mark is the one that just happened and wins.
+
+   The green ring is the mirror, and it is the only thing in the whole design
+   system that means "you got something back". A/B pairs throughout, so tapping a
+   word off and on again flashes twice. */
+.card--self-strike-a .card__penalty { animation: penaltyBlinkA 420ms ease-out; }
+.card--self-strike-b .card__penalty { animation: penaltyBlinkB 420ms ease-out; }
+.card--self-restore-a .card__penalty { animation: restoreBlinkA 420ms ease-out; }
+.card--self-restore-b .card__penalty { animation: restoreBlinkB 420ms ease-out; }
+
+/* Green rather than red, and nothing else changes. `--penalty-soft` is baked
+   into `.card__penalty`'s own box-shadow, so the colour has to be restated on
+   the element rather than left to the keyframes. */
+.card--self-restore-a .card__penalty,
+.card--self-restore-b .card__penalty {
+  box-shadow: inset 0 0 17px 3px var(--restore-soft);
+}
+
+/* The podium is flat graphic, by decision: no glow, no blur, no sparkle. A
+   tilted plaque on the house angle, and the card's existing hard offset shadow
+   recoloured from ink to the medal. */
+.result-card--gold,
+.result-card--silver,
+.result-card--bronze { transition-duration: 260ms; }
+
+.result-card--gold { box-shadow: 6px 6px 0 var(--gold); }
+.result-card--silver { box-shadow: 6px 6px 0 var(--silver); }
+.result-card--bronze { box-shadow: 6px 6px 0 var(--bronze); }
+
+/* Top-right, opposite the team badge, so a first-placed team wears both without
+   either one covering the other. */
+.medal-plaque {
+  position: absolute;
+  top: -13px;
+  right: 10px;
+  font-family: var(--display);
+  font-size: 13px;
+  line-height: 1.06;
+  color: var(--ink-gold);
+  border: var(--border);
+  border-radius: 8px;
+  padding: 4px 10px;
+  box-shadow: 4px 4px 0 var(--ink);
+  transform: rotate(-2.5deg);
+  animation: plaquePop 280ms cubic-bezier(0.34, 1.42, 0.64, 1) both;
+}
+
+.medal-plaque--gold { background: var(--gold); }
+.medal-plaque--silver { background: var(--silver); }
+.medal-plaque--bronze { background: var(--bronze); }
+
+/* ------------------------------------------------------ the three frames */
+
+/* Frame 1. Cards swing in from the side with momentum, one unit per column, in
+   deal order. The curve carries a card past its slot and back — the overshoot
+   at ~62% is the whole point — and the opacity runs at half the duration so the
+   card is solid before it gets there. */
+.result-col--deal {
+  animation: dealIn 920ms cubic-bezier(0.34, 1.42, 0.64, 1)
+    calc(var(--deal-rank) * 150ms) both;
+}
+
+.result-col--deal > .result-card {
+  animation: cardFadeIn 460ms linear calc(var(--deal-rank) * 150ms) both;
+}
+
+/* Frame 2. The next column shakes for the whole inter-column beat, so the pause
+   is a cue rather than a stall and the room is already looking at the list about
+   to fill. Fires before the first column too. */
+.result-col--cue { animation: shakeCue 1000ms ease-in-out; }
+
+/* The revealing column sits over its neighbours, so the teal shadow is never
+   half-covered by the card next to it. */
+.result-col--live { z-index: 4; }
+
+/* Frame 3. Vertical first, horizontal 180ms behind it when the card is changing
+   rows — that lag is what stops an eight-player two-row swap reading as a
+   shuffle instead of as travel. Both hold their end state, so the cards stay
+   where their rank put them; the DOM never reorders.
+
+   An A/B pair, like the dip and the ring, and here it is not a nicety: the swap
+   can run a second time, when a word crossed out on a phone re-ranks a podium
+   that has already landed. Clearing the class and re-adding it does not restart
+   an animation when both happen inside one React effect flush — nothing paints in
+   between, so the browser sees the same animation, already finished, and the
+   `both` fill snaps the card onto its new slot with no travel. Only a different
+   animation-name plays. */
+.result-col--swapped-a {
+  animation: swapYA var(--swap-dur) cubic-bezier(0.34, 1.28, 0.64, 1) both;
+}
+
+.result-col--swapped-b {
+  animation: swapYB var(--swap-dur) cubic-bezier(0.34, 1.28, 0.64, 1) both;
+}
+
+/* Beats `.result-card--hit-*` on specificity, which matters only because that
+   class is still on the card long after its dip has finished. */
+.result-col--swapped-a > .result-card {
+  animation: swapXA var(--swap-dur) cubic-bezier(0.34, 1.28, 0.64, 1)
+    var(--swap-x-delay) both;
+}
+
+.result-col--swapped-b > .result-card {
+  animation: swapXB var(--swap-dur) cubic-bezier(0.34, 1.28, 0.64, 1)
+    var(--swap-x-delay) both;
+}
+
+/* A travelling card passes visibly over a stationary one. */
+.result-col--flight { z-index: 3; }
+
+/* ------------------------------------------------------------ the footer */
+
+/* Fixed height and its own positioning context: the two buttons swap without
+   the grid above ever reflowing, and the footer can be genuinely empty in
+   between without the layout moving. */
+.host-scoring__footer {
+  flex: 0 0 auto;
+  position: relative;
+  display: flex;
   justify-content: center;
+  align-items: flex-start;
+  min-height: 57px;
   padding-top: 16px;
+}
+
+/* Deliberately quieter than `.btn`, and deliberately somewhere else. Gold, the
+   4px border and the 5px shadow are reserved for STANDINGS — the forward
+   action — so the button that skips the show can never be mistaken for it, and
+   the two never share a hit target. */
+.btn-ff {
+  position: absolute;
+  left: 34px;
+  top: 16px;
+  font: inherit;
+  font-family: var(--display);
+  font-size: 14px;
+  line-height: 1.06;
+  padding: 12px 22px;
+  border: var(--border);
+  border-radius: 99px;
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  cursor: pointer;
+  text-transform: uppercase;
+}
+
+.btn-ff--out {
+  animation: ffOut 160ms ease-out both;
+  pointer-events: none;
+}
+
+/* Ignores the press it arrives under. Position and the empty footer before it
+   are the other two thirds of the guard against a mashed FAST FORWARD landing
+   on STANDINGS and blowing past the results. */
+.host-scoring__go--entering {
+  animation: stdIn 280ms cubic-bezier(0.34, 1.42, 0.64, 1) both;
+  pointer-events: none;
 }
 
 /* -------------------------------------------------------------- word list */
@@ -1223,28 +1531,372 @@ ul, ol { list-style: none; }
   overflow-wrap: anywhere;
 }
 
+/* A clip box, wherever the word is a scored one rather than a line being typed.
+   The 60/40 split with the trail is load-bearing: without the floor, four
+   attributions take the row and squeeze the word — the thing being read — down
+   to nothing. */
+.word--clip {
+  flex: 1 1 0;
+  min-width: 60%;
+  display: block;
+  overflow: hidden;
+  overflow-wrap: normal;
+}
+
 /* Struck words carry no weight — they lost. */
 .word--struck {
   font-weight: 400;
   color: var(--struck);
   text-decoration: line-through;
+  text-decoration-color: var(--struck);
 }
 
-.word-row__also {
-  font-size: calc(var(--word-size, 16px) - 3px);
-  color: var(--struck);
-  flex: 0 0 auto;
+/* The line has to be declared on the RUN, not only on the clip box around it.
+   Two reasons, and either one alone is enough: a clip box is an inline-block, and
+   a parent's decoration is not propagated into one — and `text-decoration-color`
+   set on one element cannot colour a decoration declared on another, so the
+   strike and restore animations (which run on `.marquee`) would have nothing of
+   their own to draw. The clip box keeps its own declaration for the shorter
+   words, where the two coincide. */
+.word--struck .marquee {
+  text-decoration-line: line-through;
+  text-decoration-color: var(--struck);
 }
+
+/* The clip box carries the pop and the run inside carries the travel — one
+   transform each, so the two never fight. A clipped emoji is a missing
+   attribution, so this scrolls rather than truncating. */
+.word-row__also {
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  display: block;
+  overflow: hidden;
+  font-size: calc(var(--word-size, 16px) - 4px);
+  line-height: 1;
+  color: var(--struck);
+}
+
+.word-row__also .marquee {
+  letter-spacing: -0.16em;
+  /* Puts back the space the negative tracking steals from the last glyph. */
+  padding-right: 0.16em;
+}
+
+.word-row__also--pop-a { animation: popInA 260ms cubic-bezier(0.34, 1.42, 0.64, 1); }
+.word-row__also--pop-b { animation: popInB 260ms cubic-bezier(0.34, 1.42, 0.64, 1); }
+
+/* Text that does not fit is cut off and travels back and forth — no ellipsis,
+   no wrap. `--travel` is measured per element after layout (src/marquee.ts);
+   anything that fits gets 0px and never moves, so this is free on a normal row.
+
+   Every clip box has exactly one of these inside it, and this is the only place
+   the marquee is declared — which is why a run that needs a second animation
+   (a word being struck through) has to restate both. */
+.marquee {
+  display: inline-block;
+  white-space: nowrap;
+  animation: marqueeX 5200ms ease-in-out 700ms infinite alternate;
+}
+
+/* The strike owns its own duration, independently of the line interval: a slow
+   interval leaves no dead air and a fast one does not truncate it. `--penalty`
+   touches a word at exactly one frame, 55% of the way through, and the delay
+   holds the word in plain ink first — a word never appears pre-struck. */
+.word--striking .marquee {
+  animation:
+    marqueeX 5200ms ease-in-out 700ms infinite alternate,
+    strikeIn 300ms cubic-bezier(0.2, 0.7, 0.3, 1) var(--strike-delay, 0ms) both;
+}
+
+/* Self-validation, in both directions. Same duration and same curve as a strike
+   the round landed — it is the same event, chosen rather than suffered — but with
+   no hold in front of it: the player just tapped the word, so there is nothing
+   left to conceal.
+
+   Four rules, not two, and the pair in each is a byte-for-byte copy: an
+   identical animation string does not restart, so crossing a word out, taking it
+   back and crossing it out again would play once. Same reason the dip, the ring
+   and the trail pop each come in an A/B pair. */
+.word--self-strike-a .marquee,
+.word--self-strike-b .marquee {
+  animation:
+    marqueeX 5200ms ease-in-out 700ms infinite alternate,
+    selfStrikeIn 300ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* Burnt orange, and it stays: a word the round struck is grey and gone, a word
+   its own scorer disowned is a decision, and the room should be able to tell
+   which is which without being told. Declared statically as well as landed on by
+   the keyframes, because reduced motion strips the animation off `.marquee` and
+   the resting colour cannot depend on a fill. Ordered after `.word--struck
+   .marquee`, which it ties with on specificity. */
+.word--self-strike-a,
+.word--self-strike-b { color: var(--self-struck); }
+
+.word--self-strike-a .marquee,
+.word--self-strike-b .marquee { text-decoration-color: var(--self-struck); }
+
+.word--self-restore-a .marquee,
+.word--self-restore-b .marquee {
+  /* The row lost `word--struck` on the same commit, so the line being taken away
+     has to be restated here for the animation to have something to fade out. It
+     ends on `transparent` and stays there, which is why nothing has to remove
+     it afterwards. */
+  text-decoration-line: line-through;
+  /* The resting state, stated rather than left to the animation's fill: reduced
+     motion strips the animation off `.marquee` entirely, and without this the
+     line would come back at its inherited colour on a word just taken back. */
+  text-decoration-color: transparent;
+  animation:
+    marqueeX 5200ms ease-in-out 700ms infinite alternate,
+    restoreIn 300ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+}
+
+/* A word on your own list, waiting to be judged. A button, so it resets: the
+   row keeps the flex layout every other row has and gains only a hit target and
+   the pointer. No pill, no chip, no hover box — the list must read as a list. */
+.word-row--tappable {
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  padding: 0;
+  width: 100%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* The whole affordance, deliberately: the press itself, and the one line of hint
+   under the list. No underline and no hover box — the row already carries a
+   line-through as *state*, and a second decoration on the same word to mean
+   "tappable" is the one thing this list cannot afford to say. */
+.word-row--tappable:active { opacity: 0.7; }
+
+/* Said once, under the list, in the same quiet ink as an empty list. */
+.list-card__hint {
+  flex: 0 0 auto;
+  padding-top: 10px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  letter-spacing: 0.04em;
+}
+
+.result-card .word-row { animation: rowIn 156ms ease-out both; }
 
 /* Who wrote a word, in team play only — dimmed so it never competes with
    the word itself. */
 .word-row__by {
-  font-size: calc(var(--word-size, 16px) - 3px);
+  font-size: calc(var(--word-size, 16px) - 4px);
   color: var(--ink-dim);
   flex: 0 0 auto;
 }
 
 .word-list__empty { font-size: 15px; color: var(--ink-dim); }
+
+/* --------------------------------------------- the scoring reveal, in full */
+
+/* Every value below is the design handoff's timing table. The rules that use
+   them are up in the host-scoring section; this is only the motion. */
+
+/* Frame 1. `--deal-x` / `--deal-r` are the direction, so one keyframe covers
+   all five of them. */
+@keyframes dealIn {
+  from { transform: translateX(var(--deal-x, 900px)) rotate(var(--deal-r, 2deg)); }
+  to { transform: none; }
+}
+
+@keyframes cardFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes strikeIn {
+  0% { color: var(--ink); text-decoration-color: transparent; }
+  55% { color: var(--penalty); text-decoration-color: var(--penalty); }
+  100% { color: var(--struck); text-decoration-color: var(--struck); }
+}
+
+/* `strikeIn`, landing on burnt orange instead of grey. The red beat at 55% is
+   kept: the moment is the same moment — a word is being given up — and only where
+   it comes to rest differs. */
+@keyframes selfStrikeIn {
+  0% { color: var(--ink); text-decoration-color: transparent; }
+  55% { color: var(--penalty); text-decoration-color: var(--penalty); }
+  100% { color: var(--self-struck); text-decoration-color: var(--self-struck); }
+}
+
+/* `selfStrikeIn` played backwards, in green. The row has already lost
+   `word--struck` by the time this runs, so frame 0 puts the burnt orange back by
+   hand — exactly as `strikeIn` starts from plain ink on a row that is already
+   marked struck. */
+@keyframes restoreIn {
+  0% { color: var(--self-struck); text-decoration-color: var(--self-struck); }
+  55% { color: var(--restore); text-decoration-color: var(--restore); }
+  100% { color: var(--ink); text-decoration-color: transparent; }
+}
+
+/* Two identical copies. See `.result-card--hit-a`. */
+@keyframes popInA {
+  0% { opacity: 0; transform: scale(0.4); }
+  62% { transform: scale(1.18); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes popInB {
+  0% { opacity: 0; transform: scale(0.4); }
+  62% { transform: scale(1.18); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes penaltyBlinkA {
+  0%, 100% { opacity: 0; }
+  18% { opacity: 1; }
+  52% { opacity: 0.82; }
+}
+
+@keyframes penaltyBlinkB {
+  0%, 100% { opacity: 0; }
+  18% { opacity: 1; }
+  52% { opacity: 0.82; }
+}
+
+/* Two identical copies, in green. See `.result-card--hit-a`. */
+@keyframes restoreBlinkA {
+  0%, 100% { opacity: 0; }
+  18% { opacity: 1; }
+  52% { opacity: 0.82; }
+}
+
+@keyframes restoreBlinkB {
+  0%, 100% { opacity: 0; }
+  18% { opacity: 1; }
+  52% { opacity: 0.82; }
+}
+
+@keyframes ackRing {
+  0%, 100% { opacity: 0; }
+  22% { opacity: 1; }
+}
+
+/* The card takes the hit physically: weight down, then a small overshoot back. */
+@keyframes dipA {
+  0%, 100% { transform: none; }
+  26% { transform: translateY(7px); }
+  62% { transform: translateY(-1.96px); }
+}
+
+@keyframes dipB {
+  0%, 100% { transform: none; }
+  26% { transform: translateY(7px); }
+  62% { transform: translateY(-1.96px); }
+}
+
+/* The decremented value is already committed on the first frame — the blink is
+   the acknowledgement, not the change. */
+@keyframes statBlink {
+  0%, 100% { color: var(--pink); transform: none; }
+  24% { color: var(--penalty); transform: scale(1.16); }
+}
+
+/* Identical timing and identical overshoot — the gesture is the same one, and
+   only the colour says which direction the number went. */
+@keyframes statBlinkUp {
+  0%, 100% { color: var(--pink); transform: none; }
+  24% { color: var(--restore); transform: scale(1.16); }
+}
+
+@keyframes shakeCue {
+  0%, 100% { transform: none; }
+  10% { transform: translateX(-5px) rotate(-0.7deg); }
+  25% { transform: translateX(5px) rotate(0.7deg); }
+  40% { transform: translateX(-4px) rotate(-0.5deg); }
+  55% { transform: translateX(4px) rotate(0.5deg); }
+  70% { transform: translateX(-2px); }
+  85% { transform: translateX(2px); }
+}
+
+@keyframes marqueeX {
+  from { transform: translateX(0); }
+  to { transform: translateX(var(--travel, 0px)); }
+}
+
+/* Frame 3. Y and X are separate elements so the two travels can be staggered
+   without either one needing to know the other's value. Two identical copies of
+   each — see `.result-col--swapped-a`, where the pair is what makes a second swap
+   play at all rather than snapping. */
+@keyframes swapYA {
+  from { transform: none; }
+  to { transform: translateY(var(--travel-y, 0px)); }
+}
+
+@keyframes swapYB {
+  from { transform: none; }
+  to { transform: translateY(var(--travel-y, 0px)); }
+}
+
+@keyframes swapXA {
+  from { transform: none; }
+  50% {
+    transform: translateX(calc(var(--travel-x, 0px) * 0.5)) rotate(1.5deg) scale(1.03);
+  }
+  to { transform: translateX(var(--travel-x, 0px)); }
+}
+
+@keyframes swapXB {
+  from { transform: none; }
+  50% {
+    transform: translateX(calc(var(--travel-x, 0px) * 0.5)) rotate(1.5deg) scale(1.03);
+  }
+  to { transform: translateX(var(--travel-x, 0px)); }
+}
+
+@keyframes plaquePop {
+  0% { opacity: 0; transform: rotate(-2.5deg) scale(0.5); }
+  65% { transform: rotate(-2.5deg) scale(1.12); }
+  100% { opacity: 1; transform: rotate(-2.5deg) scale(1); }
+}
+
+@keyframes ffOut {
+  to { opacity: 0; transform: translateY(14px); }
+}
+
+@keyframes stdIn {
+  0% { opacity: 0; transform: translateY(16px) scale(0.92); }
+  70% { transform: translateY(0) scale(1.04); }
+  100% { opacity: 1; transform: none; }
+}
+
+/* Degrades to the settled END STATE, not to "animations removed": the cards are
+   rendered in final order by the screen itself, every list is fully revealed,
+   every strike is applied, the plaques and medal shadows are present and the
+   footer already shows STANDINGS. The screen has to be correct and readable
+   with all motion off. */
+@media (prefers-reduced-motion: reduce) {
+  .result-col,
+  .result-card,
+  .card__penalty,
+  .word-row,
+  .marquee,
+  .word-row__also,
+  .stat__num,
+  .medal-plaque,
+  .btn-ff,
+  .host-scoring__go {
+    animation: none !important;
+    transition: none !important;
+    transform: none !important;
+  }
+
+  /* The plaque keeps the house angle; only its entrance goes. */
+  .medal-plaque { transform: rotate(-2.5deg) !important; }
+}
 
 /* -------------------------------------------------------- player screens */
 
@@ -1402,6 +2054,15 @@ ul, ol { list-style: none; }
   border: var(--border);
   background: conic-gradient(var(--teal) calc(var(--frac, 0) * 360deg), var(--cream-dim) 0);
   transition: background 0.2s linear;
+}
+
+/* A round the host has held from the debug menu. The slice stops draining on
+   its own, which is invisible — a wheel that is not moving looks the same as
+   one that is moving slowly — so it also changes colour. Gold rather than a
+   new token: on this surface it is the only warm colour that is not the
+   pink field, and the wheel is a status light, not a control. */
+.playing__timer--paused {
+  background: conic-gradient(var(--gold) calc(var(--frac, 0) * 360deg), var(--cream-dim) 0);
 }
 
 .playing__card { position: relative; flex: 1; min-height: 0; padding: 14px 14px 14px 16px; }
@@ -3818,3 +4479,546 @@ ul, ol { list-style: none; }
   align-items: center;
   gap: 14px;
 }
+
+/* ------------------------------------------------------------ debug panel */
+
+/* Staging and local only — `debugEnabled()` in src/net/usage.ts decides, and
+   the Worker route it reads 404s in production regardless.
+
+   Everything below deliberately ignores the design system's tokens for colour
+   and shape. The rest of the app is cream-on-pink with gold for "go"; this is
+   ink-on-ink with a teal rule, because the panel overlays screens a room of
+   people may be looking at and anything wearing the game's buttons reads as a
+   game control. It is meant to look like it does not belong. The one thing it
+   does honour is the flat-graphic rule: no gradients, no blur, no soft
+   shadows. */
+
+.debug-tab {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 900;
+  width: 34px;
+  height: 34px;
+  padding: 0 8px 0 0;
+  border: 0;
+  margin: 0;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--body);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-align: right;
+  line-height: 30px;
+  cursor: pointer;
+  /* Four points, not three, so the collapsed triangle and the expanded tab
+     interpolate: clip-path only animates between polygons with a matching
+     point count, and the collapsed shape simply doubles up its third point. */
+  clip-path: polygon(100% 0, 100% 100%, 100% 100%, 0 0);
+  transition: width 160ms ease, clip-path 160ms ease, opacity 120ms ease;
+}
+
+.debug-tab:hover,
+.debug-tab:focus-visible {
+  width: 132px;
+  clip-path: polygon(100% 0, 100% 100%, 26px 100%, 0 0);
+  outline: none;
+}
+
+.debug-tab__label {
+  opacity: 0;
+  transition: opacity 120ms ease 40ms;
+}
+
+.debug-tab:hover .debug-tab__label,
+.debug-tab:focus-visible .debug-tab__label {
+  opacity: 1;
+}
+
+/* Hidden rather than unmounted while the panel is open: it is the thing focus
+   returns to, and unmounting it would make the panel's own exit animation the
+   only motion on screen. */
+.debug-tab--hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.debug-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: 901;
+  display: flex;
+  flex-direction: column;
+  width: min(380px, 100vw);
+  height: 100dvh;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--body);
+  border-left: 3px solid var(--teal);
+  /* Off-screen rather than display:none so it slides. `visibility` is what
+     stops a closed panel from being hit-tested over the game underneath;
+     transform alone would leave nothing there, but the delay keeps it
+     paintable for the duration of the exit. */
+  transform: translateX(100%);
+  visibility: hidden;
+  transition: transform 200ms ease, visibility 0s linear 200ms;
+}
+
+.debug-panel--open {
+  transform: translateX(0);
+  visibility: visible;
+  transition: transform 200ms ease, visibility 0s;
+}
+
+.debug-panel__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 14px 12px;
+  border-bottom: 1px solid rgba(255, 247, 232, 0.18);
+}
+
+.debug-panel__title {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.debug-panel__sub {
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.debug-panel__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.debug-btn {
+  border: 1px solid rgba(255, 247, 232, 0.35);
+  background: transparent;
+  color: var(--cream);
+  font-family: var(--body);
+  font-size: 11px;
+  padding: 5px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.debug-btn:hover:not(:disabled) { border-color: var(--teal); color: var(--teal); }
+.debug-btn:disabled { opacity: 0.4; cursor: default; }
+.debug-btn--close { padding: 5px 8px; }
+
+/* The panel is the one place in this app allowed to scroll a container this
+   large: it is an overlay with unbounded content, not a game screen whose
+   controls have to stay reachable without one. */
+.debug-panel__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 14px 14px;
+}
+
+.debug-panel__foot {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 14px;
+  border-top: 1px solid rgba(255, 247, 232, 0.18);
+  font-size: 10px;
+  opacity: 0.5;
+}
+
+.debug-service { padding: 14px 0 4px; }
+.debug-service + .debug-service { border-top: 1px solid rgba(255, 247, 232, 0.12); }
+
+.debug-service__name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.debug-service__name a { color: inherit; text-decoration: none; border-bottom: 1px dotted; }
+.debug-service__name a:hover { color: var(--teal); }
+
+.debug-service__detail {
+  margin-top: 3px;
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+/* The one link in the panel that is a destination rather than a footnote:
+   Vercel's two rows have no number without it. */
+.debug-service__cta {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 4px 9px;
+  border: 1px solid var(--teal);
+  border-radius: 4px;
+  color: var(--teal);
+  font-size: 10px;
+  text-decoration: none;
+}
+
+.debug-service__cta:hover { background: var(--teal); color: var(--ink); }
+
+.debug-chip {
+  font-family: var(--body);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  opacity: 0.8;
+}
+
+.debug-chip--unconfigured,
+.debug-chip--manual,
+.debug-chip--unused { color: var(--team-yellow); }
+.debug-chip--error { color: var(--team-red); }
+
+.debug-bar { margin-top: 11px; }
+
+.debug-bar__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.debug-bar__label { opacity: 0.85; }
+.debug-bar__value { font-variant-numeric: tabular-nums; }
+.debug-bar__limit { opacity: 0.45; }
+
+.debug-track {
+  margin-top: 4px;
+  height: 7px;
+  border-radius: 999px;
+  background: rgba(255, 247, 232, 0.14);
+  overflow: hidden;
+}
+
+/* A figure we could not read must not look like a figure of zero. Hatching
+   says "unknown" where an empty track says "none used". */
+.debug-track--unknown {
+  background: repeating-linear-gradient(
+    -45deg,
+    rgba(255, 247, 232, 0.14) 0 4px,
+    transparent 4px 8px
+  );
+}
+
+/* `display: block` is load-bearing, not tidying. The expanded bars nest a
+   `div` in a `div`, but the collapsed strip nests a `span` in a `span` — and
+   on an inline box both `width: n%` and `height: 100%` are ignored outright,
+   so every mini bar rendered empty while the same number drew correctly one
+   click away. Setting it here rather than on `.debug-track--mini` keeps the
+   fill's own layout independent of which element happens to wrap it. */
+.debug-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 300ms ease;
+}
+
+.debug-fill--ok { background: var(--teal); }
+.debug-fill--warn { background: var(--team-yellow); }
+.debug-fill--danger { background: var(--team-red); }
+
+.debug-bar__reset {
+  margin-top: 3px;
+  font-size: 10px;
+  opacity: 0.45;
+}
+
+/* The failure text from party/usage.ts, printed verbatim. A renamed analytics
+   field is the likeliest reason a bar is blank, and the message names it. */
+.debug-bar__note {
+  margin-top: 3px;
+  font-size: 10px;
+  color: var(--team-yellow);
+  opacity: 0.85;
+  overflow-wrap: anywhere;
+}
+
+.debug-note { padding: 16px 0; font-size: 11px; opacity: 0.7; }
+.debug-note--bad { color: var(--team-yellow); opacity: 1; }
+
+/* A phone in landscape running the player screen has no room for a 380px
+   panel beside anything, so it takes the lot. */
+@media (max-width: 420px) {
+  .debug-panel { width: 100vw; border-left: 0; border-top: 3px solid var(--teal); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .debug-tab,
+  .debug-tab__label,
+  .debug-panel,
+  .debug-fill { transition: none; }
+}
+
+/* ---------------------------------------------------- debug panel sections */
+
+/* The body is a flex column so the Usage section can be pushed to the bottom
+   with `margin-top: auto` — it is the section you glance at, not the one you
+   came in for, so it sits out of the way of the controls above it. */
+.debug-panel__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debug-section {
+  flex: 0 0 auto;
+  padding: 14px 0 10px;
+}
+
+.debug-section + .debug-section {
+  border-top: 1px solid rgba(255, 247, 232, 0.12);
+}
+
+/* Pinned to the bottom of the drawer. `margin-top: auto` in a flex column
+   eats the free space above it; when the section is expanded and the content
+   overflows there is no free space left and it simply sits after the others,
+   which is the behaviour we want at both extremes. */
+.debug-section--usage {
+  margin-top: auto;
+}
+
+.debug-section__title {
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.debug-section__detail {
+  margin-top: 4px;
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+.debug-section__detail--live { color: var(--teal); opacity: 0.9; }
+
+/* The whole header is the hit target, not just the chevron — a 12px glyph is
+   not a control on a phone. */
+.debug-section__toggle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--cream);
+  text-align: left;
+  cursor: pointer;
+}
+
+.debug-section__meta {
+  margin-left: auto;
+  font-family: var(--body);
+  font-size: 10px;
+  opacity: 0.5;
+}
+
+.debug-section__chev { font-size: 10px; opacity: 0.6; }
+
+.debug-usage__full { margin-top: 4px; }
+
+.debug-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.debug-btn--wide { width: 100%; text-align: left; padding: 7px 10px; }
+
+/* Two columns, so nine views are five rows rather than nine — the whole list
+   has to be visible at once for the play order to read as a map of the match. */
+.debug-views {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px;
+  margin-top: 8px;
+}
+
+.debug-view {
+  text-align: left;
+  padding: 6px 8px;
+  /* Labels differ by a word ("Countdown → vote" / "Countdown → round"), so a
+     truncated one would name the wrong target. Wrap instead. */
+  white-space: normal;
+  line-height: 1.25;
+}
+
+/* Marked, never disabled: a jump to the view already showing is the refresh. */
+.debug-view--here {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+/* One row: the two nudge buttons sit either side of the readout, so the count
+   is between the controls that change it rather than above them. */
+.debug-stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.debug-stepper__value {
+  /* Fixed, so stepping 9 → 10 does not shuffle the buttons sideways. */
+  min-width: 62px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--teal);
+}
+
+/* ---- the collapsed usage strip ---- */
+
+.debug-mini {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debug-mini__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.debug-mini__label {
+  flex: 0 0 96px;
+  font-size: 9px;
+  letter-spacing: 0.02em;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.debug-track--mini {
+  flex: 1 1 auto;
+  display: block;
+  height: 5px;
+  margin-top: 0;
+}
+
+/* ---- experiment switches ---- */
+
+.debug-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 9px;
+  cursor: pointer;
+}
+
+/* The native checkbox stays in the DOM and keeps the label association, the
+   focus ring and the keyboard behaviour; only its painting is replaced. */
+.debug-toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.debug-toggle__track {
+  flex: 0 0 auto;
+  position: relative;
+  width: 30px;
+  height: 17px;
+  margin-top: 1px;
+  border: 1px solid rgba(255, 247, 232, 0.35);
+  border-radius: 999px;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.debug-toggle__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--cream);
+  opacity: 0.55;
+  transition: transform 140ms ease, opacity 140ms ease;
+}
+
+.debug-toggle input:checked + .debug-toggle__track {
+  background: var(--teal);
+  border-color: var(--teal);
+}
+
+.debug-toggle input:checked + .debug-toggle__track .debug-toggle__knob {
+  transform: translateX(13px);
+  background: var(--ink);
+  opacity: 1;
+}
+
+.debug-toggle input:focus-visible + .debug-toggle__track {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+
+.debug-toggle__text { font-size: 11px; }
+
+.debug-toggle__note {
+  display: block;
+  font-size: 9px;
+  opacity: 0.45;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .debug-toggle__track,
+  .debug-toggle__knob { transition: none; }
+}
+
+/* What spends each allowance. Brighter than `__detail`, which carries the
+   scope caveats — this is the line you actually came to read, so it must not
+   sit at the same 55% opacity as a footnote. */
+.debug-service__sources {
+  margin-top: 5px;
+  font-size: 10px;
+  line-height: 1.45;
+  opacity: 0.8;
+}
+
+/* The Usage header is a cream plaque, so the boundary between the controls
+   above and the reporting below is unmistakable — it is the one section that
+   is collapsed by default, and a collapsed section with a quiet header reads
+   as the end of the panel rather than as something openable. Inverted rather
+   than merely brighter: this is the only surface in the drawer that is not
+   ink, which is what makes it register as a divider. */
+.debug-section--usage .debug-section__toggle {
+  background: var(--cream);
+  color: var(--ink);
+  padding: 7px 10px;
+  border-radius: 4px;
+}
+
+.debug-section--usage .debug-section__toggle:hover {
+  background: var(--paper-lit);
+}
+
+/* Both inherit `currentColor`, so they follow the flip to ink automatically;
+   only the opacity needs lifting, since dim cream-on-ink and dim ink-on-cream
+   do not read the same. */
+.debug-section--usage .debug-section__meta { opacity: 0.65; }
+.debug-section--usage .debug-section__chev { opacity: 0.75; }
+
+/* The plaque already separates it; a rule as well is two dividers for one job. */
+.debug-section--usage { border-top: 0; padding-top: 16px; }
