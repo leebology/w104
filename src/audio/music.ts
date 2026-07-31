@@ -19,14 +19,14 @@ const FADE_STEPS = 16;
  * first of the round, which nobody hears.
  *
  * Big enough to cover the latency, small enough to be a rounding error against
- * a beat — 25ms is about 5% of one at 120bpm. Raise it if a gap is still
+ * a beat — 10ms is about 2% of one at 120bpm. Raise it if a gap is still
  * audible, lower it if the join sounds rushed.
  *
  * Note that no amount of scheduling fixes silence baked into the *files*. If
  * this is tuned and the seam is still not clean, check whether the lead ends or
  * the round's track begins with a few ms of digital silence.
  */
-const HANDOFF_LEAD_MS = 25;
+const HANDOFF_LEAD_MS = 10;
 
 /**
  * What the countdown's lead-in hands over to when it finishes.

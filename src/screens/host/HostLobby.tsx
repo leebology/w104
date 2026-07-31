@@ -113,6 +113,7 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
                 it again. */}
             <HostExit
               label="Close room"
+              pinned
               active={closing}
               onClick={() => setClosing(true)}
             />

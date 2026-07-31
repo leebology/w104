@@ -123,6 +123,19 @@ replaced wholesale on each `state` push; every client action is a *request*.
   voting, and standings, and is still the one exception (host solo-start
   bypasses `MIN_PLAYERS`), and `reduce` skips `settle` for it. From a lobby with
   teams on it opens team select rather than a countdown.
+- **`backToLobby` is legal from `playing` and `scoring` as well**, so those two
+  screens can carry the same top-right back-out every other host screen does.
+  Between them they abandon a round while it is being written and while it is
+  being read, which is what a host pressing it is asking for, and that round
+  never reaches the D1 archive for free: `maybeArchiveBank` keys off the
+  `scoring -> standings` transition and neither of these is one. Both go all the
+  way home, teams or not — the one-step-back rule belongs to the phases *before*
+  round one, and from a round in progress there is nothing to step back into.
+- **`backToLobby` clears `paused`**, for the reason the view jumper does. A hold
+  belongs to the phase it was taken in, and one carried into a lobby freezes the
+  room with no visible cause: `tick` returns early while it is set, so no
+  readiness would ever open a countdown again. Both holdable phases — `playing`
+  and `voting` — now have a back-out on screen while the hold is on.
 - Voting is bookended by a countdown on both sides, so `countdown` carries a
   `to: "voting" | "playing"`. It is the one phase field that is stored rather
   than derived: two distinct countdowns now sit at `history.length === 0`, so
@@ -589,27 +602,81 @@ Entries render optimistically and reconcile on `entryAck` (a 30s round cannot
 wait on a round trip); `seq` is present only while an entry is unacked.
 
 **Every countdown in the game is one card** (`src/components/GetReady.tsx`), on
-the TV and on the phones. The lobby's count into the vote, the one after voting
-closes and the one between rounds are the same moment, so they are the same
+the TV and on the phones, with no exceptions left — team select was the last
+screen wearing the old `.get-ready` plaque, which made the count a room reads
+from furthest away the one drawn smallest, and that class is gone. The lobby's
+count into the vote, the one after voting closes, the one out of team select and
+the one between rounds are the same moment, so they are the same
 object: the gold plaque, the teal tab overhanging its top-left corner naming
 where it leads, and — on the host screens that can stop it — a Stop button. No
 caption: the Ready button that opened the count is still under the player's thumb
-and still says Not ready, and a five-second card is not read. It is **posed
-over** the screen it interrupts
+and still says Not ready, and a five-second card is not read. It is normally
+**posed over** the screen it interrupts
 rather than replacing it, and whatever it is posed over wears `countdown-dim`.
 Which parts dim is stated per screen and is not incidental: the phones keep their
 Ready button lit through the count, because un-readying is the room's brake on
-it. Team select is the one countdown still on the old plaque — it is not
-cancellable at all (see `cancelStart`), so it has no note to carry.
+it, and team select dims its panels on both devices but not the Leave button or
+the host's Auto sort, which stay legal through the count.
+
+**The closed category vote is the one screen the card is laid out on rather than
+posed over** (`.host-voting__countdown`), and it is the exception that states the
+rule. Everywhere else the card interrupts furniture the room has already read.
+There it would cover the only thing on screen worth reading — the winning
+categories, or the "no one voted" line outright — and that screen exists for
+five seconds precisely so the room can read it. So the two share the height and
+nothing dims: `.host-voting__stage` takes everything under the header and spaces
+the pair with `space-around`, both sized to their content. **The reveal is the
+one that gives** — eleven surviving categories want more height than a 720p TV
+has, so the top row drops its 206px basis and the card's band never shrinks. A
+card told to shrink does not: its height is padding and a 150px numeral, so only
+the box gets smaller and the card hangs off the bottom of the screen. The phone's
+copy of that screen stays posed: it is a locked never-scrolling screen with a
+personal recap on it, and there is no height to share.
 
 **Every host screen's back-out lives top-right, as `HostExit`** — a cream
 outline on the field, deliberately not a `.btn`. Gold with a hard shadow means
 "go forward" in this app, so the footer carries exactly one forward action and
-the button that abandons the phase is never beside it. Closing the room is the
-one host action that asks first (`ConfirmDialog`), because `endGame` kicks
-everyone and cannot be undone by pressing it again. The round marker is
+the button that abandons the phase is never beside it. The round marker is
 **omitted** on team select and voting: both only happen at `history.length ===
 0`, so `HostHeader`'s `round` is optional.
+
+**It is a closed ✕ that opens into its words on hover**, and the label is the
+button's `aria-label` either way — which is the whole reason the collapse is
+safe. There is no pointer on a TV, so on the device this screen is usually
+being *watched* on the ✕ is all there is; the words are for the laptop it is
+being *driven* from. `active` holds it open and filled while the dialog it
+opened is up, because a dialog whose opener has collapsed behind it has no
+visible subject. The ✕ is **drawn, not typed**: `--display` has one weight, so
+a glyph cannot be made heavier, and its side bearings sit it a pixel or two up
+and left of a circle that makes exactly that obvious.
+
+**The lobby's Close room is `pinned` and wears no ✕** — the one exit that never
+collapses. Everything else in that corner backs out of a phase into a room that
+is still there; this ends the room itself, and it is the control a host who has
+never seen this screen needs to find without hovering anything.
+
+**Every back-out that ends a game asks first, as `HostBackToRoom`** — the
+button and its `ConfirmDialog` in one component, because the question is the
+same on all four screens that carry it. Two deliberately do not:
+
+- **The final standings**, where the match is already over. Nothing is running
+  to end, and the footer's gold button does the same thing unguarded.
+- **"Back to teams"**, the voting screen's back-out *with teams on*. That steps
+  to team select rather than home (see `backToLobby`), so no round is lost and
+  the only casualty is a tally nobody has acted on. Warning that the game will
+  end would be warning about something that does not happen.
+
+Closing the room from the lobby keeps its own dialog rather than this one:
+`endGame` kicks everybody out of the room itself, which is a different and
+larger thing than ending the game inside it.
+
+**The room chip leads the header and the screen's own title takes the far end.**
+The join instruction is the one thing on a TV that has to be in the same corner
+every time — somebody walking in reads that corner and nothing else — so no
+screen gets to lead with its own name. The standings had it the other way round,
+on the screen a room sits in front of longest. The final board is the exception
+that proves it: the match is over, there is nobody left to join, and it leads
+with the MATCH OVER plaque instead.
 
 **The standings are a staircase, and a step's height is keyed to `place`, not
 to its column index** (`src/components/Podium.tsx`). That is what makes two
@@ -657,12 +724,33 @@ of arithmetic a room between rounds actually asks for.
 
 **Readiness on the standings board is a marker per row, never a tally.** The
 footer's "n of m READY" is gone: a count says how many are left when what the
-host wants is *which*. A ready row wears the chip, a waiting one wears nothing,
+host wants is *which*. A ready row wears the mark, a waiting one wears nothing,
 and a part-ready *team* is the single exception that still gets a number. It is
 also why banking a round readies the bots (`readyBots` in `shared/bots.ts`) —
 `isWaiting` already excused them, but under a per-row marker a bot with a blank
 chip reads as the holdout. That is cosmetic by construction: the flag it sets
 was already true to every rule that reads it.
+
+**There is one ready marker in the app and it is the lobby's**
+(`src/components/ReadyMark.tsx`). The same tag is worn by the lobby pill, the
+standings row, the podium's mid-match state and the results card — it had been
+drawn three different ways for one fact, and a host reading the room off a TV
+should not have to learn a second shape for it halfway through a match. It
+carries an ink outline the lobby's did not need, because only there does it sit
+on gold; everywhere else the ground is cream. Sizing is the host screen's to set
+(the leader's row takes a step up, the split board a step down), the drawing is
+not. **Its predicate is `isWaiting`, never `player.ready` alone** — a bot never
+readies, and a readout that disagreed with the rules would report scenery as the
+holdout.
+
+**The results card shows readiness where RANK used to be, and dropping RANK is
+the point rather than a side effect.** Readying up on that screen is what banks
+the round, so the room's answer belongs on the card that is asking; the rank was
+already said twice by the time it meant anything — the columns re-order into it
+and the top three take a medal. The slot is always rendered, holding the tag or
+nothing: `id-card__head` is `flex: 0 0 auto` above a list that takes the rest, so
+a line that came and went would push a whole column of words down the instant
+somebody readied, mid-reveal, on the screen built not to move under the eye.
 
 Screens are a pure `switch` on `room.phase.name` in `HostView`/`PlayerView`.
 Both have an explicit `ReactElement` return type — **that annotation is what
@@ -775,7 +863,13 @@ card ends on. Rules to keep:
   Nothing rides inside the swatch: a team's list is shared, so *which member*
   typed the duplicate is not the question a struck word asks. The TV and the
   phone must draw the same trail or two people are looking at one word and
-  counting different rivals.
+  counting different rivals — which is why **the trail has a size floor and does
+  not scale with the word.** `--word-size` is 15px on the TV and 19px on the
+  phone, so trailing it by 4px put the faces at 11px on the screen read from
+  furthest away. It is identity, not prose. The swatch is `1em` of the trail for
+  the same reason, and the trail's line box is 1.3 rather than 1: emoji draw well
+  outside the em box, and a clip box exists to cut the strip off when it is too
+  long, never to shave the tops off the faces.
 - **The host can strike any list; a player can strike only their own.** Same
   `selfStrike` event, with the host naming a scorer (`scorerId`) — honoured for
   the host alone, ignored from anyone else. The host is reading the round out to

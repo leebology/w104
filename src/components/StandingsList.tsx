@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import type { Player, RoomState } from "../../shared/state";
 import type { Standing } from "../../shared/standings";
 import { ordinal } from "../ordinal";
+import { ReadyMark } from "./ReadyMark";
 import { TeamBadge } from "./TeamBadge";
 
 /**
@@ -117,10 +118,11 @@ export function StandingsList({ room, standings }: Props) {
                 {dropped ? (
                   <span className="list-chip list-chip--dropped">DROPPED OFF</span>
                 ) : isReady ? (
-                  <span className="list-chip list-chip--ready">
-                    <i className="list-chip__dot" />
-                    READY
-                  </span>
+                  // The lobby's tag, not a second design of the same idea — see
+                  // `ReadyMark`. It used to be an ink chip with a mint dot,
+                  // which is one more thing to learn for a fact the room has
+                  // already been shown a shape for.
+                  <ReadyMark />
                 ) : team && here.some((p) => p.ready) ? (
                   // A part-ready team is the one waiting row worth a number:
                   // "who else on my team" is a question its members can act on.

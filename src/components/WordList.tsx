@@ -65,7 +65,12 @@ export function scorerMark(
 
 type Props = {
   entries: ScoredEntry[];
-  /** Entry size in px; the attribution emoji trail 3px behind it. */
+  /**
+   * Entry size in px. The attribution trail trails it by 4px but never goes
+   * below the phone's size — see `.word-row__also`, where the floor is: the
+   * faces are identity rather than prose, and the TV's narrow column had them
+   * at 11px.
+   */
   size?: number;
   empty?: string;
   /**

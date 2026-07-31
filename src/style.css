@@ -292,8 +292,9 @@ ul, ol { list-style: none; }
 /* One gold band per screen, carrying the single loudest thing on it. The
    slant is what separates it from a button — `.btn` is gold too, and a
    heading that looked tappable would be the one mistake this design can
-   make. `.get-ready` and `.banner` are the two other members of the family;
-   this is the quiet one, for a screen's title. */
+   make. `.banner` is the other member of the family; this is the quiet one,
+   for a screen's title. (`.get-ready` was a third until every countdown moved
+   to `GetReady`'s card.) */
 .plaque {
   align-self: center;
   background: var(--gold);
@@ -531,13 +532,22 @@ ul, ol { list-style: none; }
    app, and the button that abandons the phase must never be able to be
    mistaken for the one that starts it. An outline on the field instead —
    present, findable, and clearly not the primary. */
+/* A closed ✕ that opens into its words. The corner of a host screen is the one
+   place on a TV nothing should be competing for attention, and at rest this is
+   a circle; the label unrolls under a pointer, which only ever exists on the
+   laptop where a host is actually driving. The height is fixed and the ✕ has a
+   width of its own, so the header's bar does not change height when it opens
+   and the circle is a circle rather than a rounded square. */
 .host-exit {
   font: inherit;
   font-family: var(--display);
   font-size: 13px;
   line-height: 1;
   letter-spacing: 0.08em;
-  padding: 11px 18px;
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 8px;
   border: 3px solid var(--cream);
   border-radius: 99px;
   background: transparent;
@@ -545,6 +555,46 @@ ul, ol { list-style: none; }
   text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* An SVG, not a glyph — see `HostExit`. The viewBox is symmetric and the two
+   strokes run corner to corner inside it, so the cross is centred in the circle
+   by construction rather than by nudging a text baseline around. */
+.host-exit__x {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+}
+
+/* The lobby's Close room: the full button it always was, with no ✕ in front of
+   it. Everything else in this corner backs out of a phase; this ends the room. */
+.host-exit--pinned { padding: 0 18px; }
+.host-exit--pinned .host-exit__label { max-width: none; margin: 0; }
+
+/* `max-width` rather than a width transition, because the label's own width is
+   the target and there is no keyword for that which animates in every browser
+   the TV might be. The value only has to clear the longest label; the ease
+   simply finishes early. */
+.host-exit__label {
+  max-width: 0;
+  overflow: hidden;
+  transition: max-width 180ms ease, margin 180ms ease;
+}
+
+.host-exit:hover .host-exit__label,
+.host-exit:focus-visible .host-exit__label,
+.host-exit--active .host-exit__label {
+  max-width: 12em;
+  margin: 0 6px 0 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .host-exit__label { transition: none; }
 }
 
 /* Filled while the confirmation it opened is on screen, so the dialog behind
@@ -728,17 +778,30 @@ ul, ol { list-style: none; }
   box-shadow: none;
 }
 
-.player-pill__mark {
+/* "This one is ready", and the only drawing of it in the app — the lobby pill,
+   the standings row and the results card all render `ReadyMark`. It was the
+   lobby's tag, which is the first one a room ever sees; the standings had an
+   ink chip with a mint dot instead, and the results screen had nothing.
+
+   The ink outline is what the lobby's did not need: there it sits on a gold
+   pill, where cream alone is a tag, and everywhere else it sits on cream. Same
+   construction as `.badge` on the podium, for the same reason. */
+.ready-mark {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  background: var(--cream);
+  color: var(--ink);
+  border: 2px solid var(--ink);
   font-family: var(--display);
   font-size: 11px;
   letter-spacing: 0.12em;
   line-height: 1;
-  padding: 4px 9px;
+  padding: 3px 8px;
   border-radius: 99px;
   white-space: nowrap;
 }
 
-.player-pill--ready .player-pill__mark { background: var(--cream); }
 
 .player-pill--offline { opacity: 0.45; }
 
@@ -986,23 +1049,10 @@ ul, ol { list-style: none; }
   text-align: center;
 }
 
-/* A countdown is a state change, not a notification — it takes the slant and
-   the gold so it reads from across the room. */
-.get-ready {
-  background: var(--gold);
-  color: var(--ink-gold);
-  border: var(--border-heavy);
-  border-radius: 10px;
-  padding: 12px 26px;
-  transform: rotate(-2.5deg);
-  box-shadow: var(--shadow-btn);
-  font-family: var(--display);
-  font-size: 24px;
-  line-height: 1.06;
-  text-align: center;
-}
-
-.get-ready--small { font-size: 17px; padding: 10px 20px; }
+/* The old countdown plaque and its two sizes lived here. Every countdown in the
+   game is `GetReady` now — team select was the last screen still wearing the
+   plaque, on the TV and on the phone both, which made the count a room reads
+   from furthest away the one drawn smallest. See the `countdown` section. */
 
 /* ----------------------------------------------------------- host voting */
 
@@ -1056,6 +1106,53 @@ ul, ol { list-style: none; }
   color: var(--cream);
   text-align: center;
 }
+
+/* The one countdown in the game that is laid out rather than posed. Every
+   other screen the card interrupts is furniture the room has already read —
+   the lobby, the standings — so it sits over the middle of it and the screen
+   dims behind. Here the screen *is* the answer to the thing the room just
+   voted on, and it is up for five seconds only: a card over the middle of it
+   covered the winning categories, and covered the "no one voted" line
+   completely. So the two share the height instead.
+
+   **The stage owns the slack, and that is the whole point of it.** Left to the
+   screen's own column the reveal was the one flexible item, so it swallowed
+   every spare pixel and left the card pinned to the bottom edge with the
+   result floating high above it — two blocks at opposite ends of the screen
+   rather than a composition. Here both size to their content and the stage
+   spaces them, so the pair reads as one thing however tall the reveal turns
+   out to be. `space-around` rather than `center`: the reveal is the taller
+   block and a plain centring would put the card under the fold on a short TV.
+
+   The reveal is the one that gives under pressure — eleven surviving
+   categories at 720p want more height than the stage has — which is why the
+   closed screen's top row drops its 206px basis below and the card's band
+   never shrinks. A card told to shrink does not: its height is padding and a
+   150px numeral, so the box gets smaller and the card hangs out of the bottom
+   of the screen. */
+.host-voting__stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+}
+
+/* The bottom padding is clearance rather than rhythm: the card is tilted and
+   drops a 14px shadow, so its corners sit lower than the box the flexbox
+   measured. Without it, eleven surviving categories on a 720p TV push the
+   corner past the screen edge, where `.screen--host`'s `overflow: hidden`
+   shaves it off. */
+.host-voting__countdown {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding: 0 30px 16px;
+}
+
+/* Content height on the stage, not a share of it — see above. */
+.host-voting--closed .host-voting__result { flex: 0 1 auto; }
+.host-voting--closed .host-voting__row--top { flex: 0 1 206px; }
 
 /* Width is the odds: flex-grow carries the vote count, so a vote visibly
    grows its card with no measurement and no JS layout pass. */
@@ -1160,11 +1257,6 @@ ul, ol { list-style: none; }
 }
 
 .host-voting__footer .timer-track { flex: 1; height: 28px; }
-
-/* The countdown plaque, scaled for a TV. A separate class rather than an
-   override, so the phone-sized one keeps its numbers. Only team select still
-   wears it; every other countdown in the game is `GetReady` now. */
-.get-ready--tv { font-size: 40px; padding: 14px 36px; }
 
 /* HostVoting and HostVotingClosed render different DOM subtrees, so React
    remounts rather than transitioning between them — without this the reveal
@@ -1407,6 +1499,16 @@ ul, ol { list-style: none; }
 }
 
 .id-card__foot .id-card__meta { flex: 1; }
+
+/* The results card's left slot, holding the ready tag or nothing. It takes the
+   width either way, so the stats stay pinned to the right edge and a card that
+   has readied is the same shape as one that has not. */
+.id-card__status {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
 
 /* A clip box on this screen rather than an ellipsis — a name too long for its
    column travels. `.id-card__name`'s own `text-overflow` is inert once the run
@@ -1709,14 +1811,27 @@ ul, ol { list-style: none; }
 /* The clip box carries the pop and the run inside carries the travel — one
    transform each, so the two never fight. A clipped emoji is a missing
    attribution, so this scrolls rather than truncating. */
+/* The trail does not scale with the word, and that is the difference between
+   the two screens rather than an oversight in one of them. It is a strip of
+   faces and team swatches — identity, not prose — and identity has a floor
+   below which it stops being readable at all, which the TV's 15px column
+   pushed it under: at `--word-size - 4` the host's trail came out at 11px, a
+   third smaller than the phone's, on the screen being read from furthest
+   away. So the phone's size is the size, and a larger word may lead a trail
+   that does not grow with it.
+
+   `line-height` is the other half: emoji draw well outside the em box, so a
+   line box of exactly 1em under `overflow: hidden` shaves the tops and the
+   tails off every face in the trail. The clip box is here to cut the strip
+   off horizontally when it is too long to fit, never to trim the glyphs. */
 .word-row__also {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 40%;
   display: block;
   overflow: hidden;
-  font-size: calc(var(--word-size, 16px) - 4px);
-  line-height: 1;
+  font-size: max(15px, calc(var(--word-size, 16px) - 4px));
+  line-height: 1.3;
   color: var(--struck);
 }
 
@@ -1846,10 +1961,13 @@ ul, ol { list-style: none; }
 
    `--accent` is set per element by whoever renders it, exactly as `TeamBadge`
    does, so the swatch is correct wherever it is dropped. */
+/* Sized in `em`, so it tracks the trail it sits in rather than the word beside
+   it — a swatch stands where a face would, and the faces stopped following
+   `--word-size` when the trail got its floor above. */
 .word-row__team {
   display: inline-block;
-  width: calc(var(--word-size, 16px) - 3px);
-  height: calc(var(--word-size, 16px) - 3px);
+  width: 1em;
+  height: 1em;
   margin-right: 4px;
   border-radius: 4px;
   border: 1px solid var(--ink);
@@ -2775,18 +2893,8 @@ ul, ol { list-style: none; }
   flex: 0 0 auto;
 }
 
-/* Ready is the filled one — the room is counting these, so the state that
-   moves the match forward is the state that reads from a distance. */
-.podium-chip--ready { background: var(--ink); color: var(--mint); }
-
-.podium-chip__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 99px;
-  background: var(--mint-lit);
-  flex: 0 0 auto;
-}
-
+/* The ready state left here for `ReadyMark`, which is the one drawing of it in
+   the app now. What stays are the two states that are not ready. */
 .podium-chip--waiting,
 .podium-chip--dropped {
   border: 2px solid var(--cream-dim);
@@ -3324,18 +3432,19 @@ ul, ol { list-style: none; }
   flex: 0 0 auto;
 }
 
-.list-chip--ready { background: var(--ink); color: var(--mint); }
-
-.list-chip__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 99px;
-  background: var(--mint-lit);
-  flex: 0 0 auto;
-}
+/* `.list-chip--ready` and its mint dot lived here. The board wears `ReadyMark`
+   now, like the lobby and the results card — see the `.ready-mark` note. What
+   is left is the two chips that are *not* readiness: a team part-way there and
+   a row nobody is behind. */
 
 .standings-row--lead .list-chip { padding: 3px 11px; font-size: clamp(11px, 1.1vw, 12px); }
-.standings-row--lead .list-chip__dot { width: 8px; height: 8px; }
+
+/* The leader's row is taller and everything in it a size up, this included. */
+.standings-row--lead .ready-mark { padding: 4px 11px; font-size: clamp(11px, 1.1vw, 13px); }
+
+/* Two columns halve every row's width, so the tag steps down with the rest of
+   the row rather than crowding the points off the end. */
+.standings-rows--split .ready-mark { font-size: clamp(9px, 0.85vw, 11px); padding: 3px 7px; }
 
 /* Inside a cream row, "waiting" is drawn in the same de-emphasized ink the
    struck words use — a cream outline would vanish. */
@@ -4601,11 +4710,6 @@ ul, ol { list-style: none; }
   font-size: 14px;
   text-align: center;
 }
-
-/* The room's only brake lives on the phones, so the TV has to say so — a
-   screen with a running countdown and no visible way to stop it reads as
-   broken otherwise. */
-.host-teams__footer .get-ready--tv + .host-teams__hint { margin-top: 2px; }
 
 .host-teams__plaque { font-size: 22px; letter-spacing: 0.14em; padding: 8px 28px; }
 

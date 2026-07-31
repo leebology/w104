@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { Player } from "../../shared/state";
 import { isWaiting } from "../../shared/bots";
+import { ReadyMark } from "./ReadyMark";
 
 /**
  * A stable animation interval per player, 0.9s–1.6s, so the bobbing avatars on
@@ -50,7 +51,7 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
           sit here said only "somebody is writing", which every pill said at
           once — ten of them blinking out of step were the busiest thing on a
           screen whose job is the category. */}
-      {variant === "lobby" && ready && <span className="player-pill__mark">✓ READY</span>}
+      {variant === "lobby" && ready && <ReadyMark />}
     </>
   );
 

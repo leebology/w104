@@ -10,7 +10,13 @@ import { VOTING_MS } from "../../../shared/reduce";
 import { GetReady } from "../../components/GetReady";
 import { RoomChip } from "../../components/RoomChip";
 import { roomStore } from "../../net/room";
-import { HostExit, HostHeader, HostHeaderRight, VotingCount } from "./HostHeader";
+import {
+  HostBackToRoom,
+  HostExit,
+  HostHeader,
+  HostHeaderRight,
+  VotingCount,
+} from "./HostHeader";
 
 type Props = {
   room: RoomState;
@@ -65,11 +71,18 @@ function VoteFoot({
  * The back-out. One event, two destinations: with teams on it steps to team
  * select rather than all the way to the room — the server derives that, so
  * this only has to name it correctly.
+ *
+ * **Only one of the two asks first.** Going home ends the game and takes the
+ * confirmation every other "Back to room" takes; stepping back to team select
+ * ends nothing — no round has been played, the teams survive the trip, and the
+ * only casualty is a tally nobody has acted on yet. A dialog warning that the
+ * game will end would be warning about something that does not happen.
  */
 function VotingExit({ room }: { room: RoomState }) {
+  if (!teamsEnabled(room.settings)) return <HostBackToRoom />;
   return (
     <HostExit
-      label={teamsEnabled(room.settings) ? "Back to teams" : "Back to room"}
+      label="Back to teams"
       onClick={() => roomStore.send({ type: "backToLobby" })}
     />
   );
@@ -271,58 +284,70 @@ function HostVotingClosed({
         }
       />
 
-      <div className="host-voting__result countdown-dim">
-        {survivors.length === 0 ? (
-          // The deadline force-closes voting regardless of readiness, so this
-          // is reachable with nobody having voted at all. Say nothing about
-          // which category — the draw itself hasn't happened yet.
-          <p className="host-voting__no-votes">
-            No one voted — the room gets a random category.
-          </p>
-        ) : (
-          <>
-            <div className="host-voting__row host-voting__row--top">
-              {top.map((category, i) => (
-                <div className="vote-card" key={category} style={{ flexGrow: shares[category] }}>
-                  <span className="vote-card__name" style={{ fontSize: rankNameSize[i] }}>
-                    {cardLabel(category)}
-                  </span>
-                  <VoteFoot
-                    room={room}
-                    category={category}
-                    total={`${shares[category]}%`}
-                    totalStyle={{ fontSize: rankShareSize[i] }}
-                  />
-                </div>
-              ))}
-            </div>
-
-            {rest.length > 0 && (
-              <div className="host-voting__row host-voting__row--rest">
-                {rest.map((category) => (
-                  // Equal width below the top three: under ~10% the differences
-                  // are not worth a size difference.
-                  <div className="vote-card vote-card--small" key={category}>
-                    <span className="vote-card__name">{cardLabel(category)}</span>
-                    <VoteFoot room={room} category={category} total={`${shares[category]}%`} />
+      {/* The reveal and the countdown card are two blocks sharing one stage,
+          which is what this wrapper is for: it takes the height under the
+          header and spaces the pair inside it, rather than letting the reveal
+          absorb the slack and pin the card to the bottom edge. Neither is
+          dimmed and neither is posed over the other — this is the one screen
+          whose countdown interrupts nothing, because the result *is* what the
+          room is reading and the five seconds exist to let them read it. */}
+      <div className="host-voting__stage">
+        <div className="host-voting__result">
+          {survivors.length === 0 ? (
+            // The deadline force-closes voting regardless of readiness, so this
+            // is reachable with nobody having voted at all. Say nothing about
+            // which category — the draw itself hasn't happened yet.
+            <p className="host-voting__no-votes">
+              No one voted — the room gets a random category.
+            </p>
+          ) : (
+            <>
+              <div className="host-voting__row host-voting__row--top">
+                {top.map((category, i) => (
+                  <div className="vote-card" key={category} style={{ flexGrow: shares[category] }}>
+                    <span className="vote-card__name" style={{ fontSize: rankNameSize[i] }}>
+                      {cardLabel(category)}
+                    </span>
+                    <VoteFoot
+                      room={room}
+                      category={category}
+                      total={`${shares[category]}%`}
+                      totalStyle={{ fontSize: rankShareSize[i] }}
+                    />
                   </div>
                 ))}
               </div>
-            )}
-          </>
-        )}
-      </div>
 
-      {/* The same countdown card the lobby and the standings pose, over the
-          same dimmed screen. Nothing on it names the drawn category: it has not
-          been drawn yet — that happens at the whistle.
+              {rest.length > 0 && (
+                <div className="host-voting__row host-voting__row--rest">
+                  {rest.map((category) => (
+                    // Equal width below the top three: under ~10% the differences
+                    // are not worth a size difference.
+                    <div className="vote-card vote-card--small" key={category}>
+                      <span className="vote-card__name">{cardLabel(category)}</span>
+                      <VoteFoot room={room} category={category} total={`${shares[category]}%`} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
-          No Stop button: `cancelStart` from here lands back in `voting`, which
-          is a hair's breadth from where "Back to teams" goes and reads as the
-          same escape to anyone watching. One way out per screen, in the corner
-          every other host screen keeps it in. */}
-      <div className="countdown-pose">
-        <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
+        {/* The same countdown card the lobby and the standings pose — but a
+            block on the stage rather than a card over the screen. Centred over
+            the reveal it covered the winning categories, and covered the "no
+            one voted" line outright, which is the one thing on this screen a
+            room has to read. Nothing on it names the drawn category: it has not
+            been drawn yet — that happens at the whistle.
+
+            No Stop button: `cancelStart` from here lands back in `voting`, which
+            is a hair's breadth from where "Back to teams" goes and reads as the
+            same escape to anyone watching. One way out per screen, in the corner
+            every other host screen keeps it in. */}
+        <div className="host-voting__countdown">
+          <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
+        </div>
       </div>
     </main>
   );

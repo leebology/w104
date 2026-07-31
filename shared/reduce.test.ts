@@ -612,8 +612,42 @@ describe("backToLobby", () => {
     expect(reduce(before, { t: "backToLobby", playerId: "p0", now: 50_200 })).toBe(before);
   });
 
-  test("not reachable from scoring", () => {
-    const before = scored();
+  /**
+   * The results screen carries the same top-right back-out every other host
+   * screen does, so this is legal there — and it goes all the way home rather
+   * than one step. The one-step rule belongs to the phases *before* round one;
+   * from a round being scored there is nothing to step back into.
+   */
+  test("abandons a round mid-reveal, straight to the lobby", () => {
+    const room = reduce(scored(), { t: "backToLobby", playerId: "host", now: 50_200 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.history).toEqual([]);
+    expect(room.entries).toEqual({});
+  });
+
+  /** The round screen carries the back-out too, so a live round can be dropped. */
+  test("abandons a round being written", () => {
+    const room = reduce(playing(), { t: "backToLobby", playerId: "host", now: 20_000 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.entries).toEqual({});
+  });
+
+  /**
+   * A hold belongs to the phase it was taken in. Carried into the lobby it
+   * freezes the room outright — `tick` returns early while `paused` is set, so
+   * no countdown could ever open again — and both phases a host can hold now
+   * have a back-out on screen while the hold is on.
+   */
+  test("a held phase does not carry its hold home", () => {
+    let room = reduce(playing(), { t: "debugPause", playerId: "host", paused: true, now: 15_000 });
+    expect(room.paused).not.toBeNull();
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 16_000 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.paused).toBeNull();
+  });
+
+  test("still refuses the phases with no way out", () => {
+    const before = seed(2);
     expect(reduce(before, { t: "backToLobby", playerId: "host", now: 50_200 })).toBe(before);
   });
 });
