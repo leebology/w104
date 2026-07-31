@@ -444,7 +444,14 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
     return () => {
       if (frame !== 0) cancelAnimationFrame(frame);
       mirrorPump.current = () => {};
-      for (const timer of mirrorIdle.current.values()) clearTimeout(timer);
+      for (const [id, timer] of mirrorIdle.current) {
+        clearTimeout(timer);
+        // Clearing the timer cancels the callback that would have taken the
+        // class off, so drop it here too — otherwise a column driven within
+        // MIRROR_IDLE of a late re-rank keeps its marker until somebody
+        // scrolls it again.
+        lists.current.get(id)?.classList.remove("word-list--driven");
+      }
       mirrorIdle.current.clear();
     };
   }, [rankStage, reduced]);
