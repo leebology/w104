@@ -365,34 +365,51 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
 
   // Buffered from the moment they arrive, whether or not the cards have settled
   // yet — see the gate below.
-  useEffect(
-    () =>
-      roomStore.onColumnScroll((scorer, at) => {
-        mirrorTargets.current.set(scorer, at);
-        mirrorPump.current();
+  //
+  // This effect owns the idle timers from creation to teardown: it schedules
+  // them, so it clears them. Hanging that on the rAF effect below would tie it
+  // to `rankStage`, which is wrong twice — that effect registers no cleanup at
+  // all until `rankStage` first reaches 2, so an unmount before then (the host
+  // hitting Standings inside the ~600ms the button is live before the swap
+  // settles) strands both the timer and the class; and a 2 -> 0 re-rank would
+  // wipe markers that should still be showing, since a marker's life is the
+  // phone's last scroll, not the swap's.
+  useEffect(() => {
+    const off = roomStore.onColumnScroll((scorer, at) => {
+      mirrorTargets.current.set(scorer, at);
+      mirrorPump.current();
 
-        /**
-         * The driven marker, toggled straight on the node rather than through
-         * a class in the render tree — same reason as the scroll itself, and it
-         * keeps the whole mirror out of React.
-         *
-         * Safe against a re-render: `WordList` renders a constant
-         * `className="word-list"`, so React's diff finds no change and never
-         * rewrites the attribute. A `viewNonce` remount does drop it, which is
-         * correct — that is a fresh screen.
-         */
-        const box = lists.current.get(scorer);
-        if (!box) return;
-        box.classList.add("word-list--driven");
-        const prev = mirrorIdle.current.get(scorer);
-        if (prev !== undefined) clearTimeout(prev);
-        mirrorIdle.current.set(
-          scorer,
-          setTimeout(() => box.classList.remove("word-list--driven"), MIRROR_IDLE),
-        );
-      }),
-    [],
-  );
+      /**
+       * The driven marker, toggled straight on the node rather than through
+       * a class in the render tree — same reason as the scroll itself, and it
+       * keeps the whole mirror out of React.
+       *
+       * Safe against a re-render: `WordList` renders a constant
+       * `className="word-list"`, so React's diff finds no change and never
+       * rewrites the attribute. A `viewNonce` remount does drop it, which is
+       * correct — that is a fresh screen.
+       */
+      const box = lists.current.get(scorer);
+      if (!box) return;
+      box.classList.add("word-list--driven");
+      const prev = mirrorIdle.current.get(scorer);
+      if (prev !== undefined) clearTimeout(prev);
+      mirrorIdle.current.set(
+        scorer,
+        setTimeout(() => box.classList.remove("word-list--driven"), MIRROR_IDLE),
+      );
+    });
+    return () => {
+      off();
+      for (const [id, timer] of mirrorIdle.current) {
+        clearTimeout(timer);
+        // Clearing a timer cancels the callback that would have taken the class
+        // off, so drop it here too.
+        lists.current.get(id)?.classList.remove("word-list--driven");
+      }
+      mirrorIdle.current.clear();
+    };
+  }, []);
 
   /**
    * The mirror engages only once the cards are settled in final order.
@@ -444,15 +461,6 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
     return () => {
       if (frame !== 0) cancelAnimationFrame(frame);
       mirrorPump.current = () => {};
-      for (const [id, timer] of mirrorIdle.current) {
-        clearTimeout(timer);
-        // Clearing the timer cancels the callback that would have taken the
-        // class off, so drop it here too — otherwise a column driven within
-        // MIRROR_IDLE of a late re-rank keeps its marker until somebody
-        // scrolls it again.
-        lists.current.get(id)?.classList.remove("word-list--driven");
-      }
-      mirrorIdle.current.clear();
     };
   }, [rankStage, reduced]);
 
