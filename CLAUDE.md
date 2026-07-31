@@ -706,8 +706,19 @@ card ends on. Rules to keep:
 ## Workflow
 
 Branch off `main`, open a PR. CI (`.github/workflows/ci.yml`) runs typecheck,
-tests, build. Merges to `main` deploy production (Vercel for the app, GitHub
-Actions → `wrangler deploy` for the Worker).
+tests, build — on PRs into **either** long-lived branch, since merging to
+`staging` deploys the Worker people are testing against. Merges to `main`
+deploy production (Vercel for the app, GitHub Actions → `wrangler deploy` for
+the Worker).
+
+**The deploy workflow re-runs those three commands itself, in the same job as
+`wrangler deploy`.** CI answers a pull request; this answers the *push*, so it
+also covers a commit that reached a deployed branch without one — a direct
+push, or a PR merged past a red run because the branch has no protection rule
+requiring it. Splitting the check into its own workflow would report the
+failure while the deploy raced ahead anyway, which is the thing being
+prevented. A red CI run does not block a merge on its own: that takes a branch
+protection rule naming the check.
 
 **Every PR bumps the version.** Vite's `define` substitutes `package.json`'s
 `version` as `__APP_VERSION__`, which renders in Landing's corner and in the

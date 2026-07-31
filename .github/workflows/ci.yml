@@ -1,10 +1,18 @@
 name: CI
 
-# Runs on every PR and on pushes to main. This is the quality gate that
-# branch protection requires to pass before a PR can be merged.
+# Runs on every PR into either long-lived branch, and on pushes to main. This
+# is the quality gate that branch protection requires to pass before a PR can
+# be merged.
+#
+# `staging` is on the list because merging there deploys the staging Worker —
+# the URL people are asked to open on their phones — so a PR into it is the
+# last cheap moment to find out the branch does not typecheck. Note this only
+# *reports*: what makes a red run actually stop a merge is requiring the check
+# in the branch's protection rules. The deploy workflow re-runs these same
+# three commands before it ships, which is the belt to this braces.
 on:
   pull_request:
-    branches: [main]
+    branches: [main, staging]
   push:
     branches: [main]
 
