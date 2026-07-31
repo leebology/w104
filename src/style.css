@@ -1053,16 +1053,43 @@ ul, ol { list-style: none; }
    covered the winning categories, and covered the "no one voted" line
    completely. So the two share the height instead.
 
-   The band sizes to the card and the reveal above takes what is left, which
-   is why the closed screen's top row may shrink below its 206px — the card is
-   a fixed object and the cards are the ones that can afford to give. */
+   **The stage owns the slack, and that is the whole point of it.** Left to the
+   screen's own column the reveal was the one flexible item, so it swallowed
+   every spare pixel and left the card pinned to the bottom edge with the
+   result floating high above it — two blocks at opposite ends of the screen
+   rather than a composition. Here both size to their content and the stage
+   spaces them, so the pair reads as one thing however tall the reveal turns
+   out to be. `space-around` rather than `center`: the reveal is the taller
+   block and a plain centring would put the card under the fold on a short TV.
+
+   The reveal is the one that gives under pressure — eleven surviving
+   categories at 720p want more height than the stage has — which is why the
+   closed screen's top row drops its 206px basis below and the card's band
+   never shrinks. A card told to shrink does not: its height is padding and a
+   150px numeral, so the box gets smaller and the card hangs out of the bottom
+   of the screen. */
+.host-voting__stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+}
+
+/* The bottom padding is clearance rather than rhythm: the card is tilted and
+   drops a 14px shadow, so its corners sit lower than the box the flexbox
+   measured. Without it, eleven surviving categories on a 720p TV push the
+   corner past the screen edge, where `.screen--host`'s `overflow: hidden`
+   shaves it off. */
 .host-voting__countdown {
   flex: 0 0 auto;
   display: flex;
   justify-content: center;
-  padding: 4px 30px 26px;
+  padding: 0 30px 16px;
 }
 
+/* Content height on the stage, not a share of it — see above. */
+.host-voting--closed .host-voting__result { flex: 0 1 auto; }
 .host-voting--closed .host-voting__row--top { flex: 0 1 206px; }
 
 /* Width is the odds: flex-grow carries the vote count, so a vote visibly

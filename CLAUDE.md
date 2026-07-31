@@ -611,9 +611,14 @@ rule. Everywhere else the card interrupts furniture the room has already read.
 There it would cover the only thing on screen worth reading — the winning
 categories, or the "no one voted" line outright — and that screen exists for
 five seconds precisely so the room can read it. So the two share the height and
-nothing dims. The phone's copy of that screen stays posed: it is a locked
-never-scrolling screen with a personal recap on it, and there is no height to
-share.
+nothing dims: `.host-voting__stage` takes everything under the header and spaces
+the pair with `space-around`, both sized to their content. **The reveal is the
+one that gives** — eleven surviving categories want more height than a 720p TV
+has, so the top row drops its 206px basis and the card's band never shrinks. A
+card told to shrink does not: its height is padding and a 150px numeral, so only
+the box gets smaller and the card hangs off the bottom of the screen. The phone's
+copy of that screen stays posed: it is a locked never-scrolling screen with a
+personal recap on it, and there is no height to share.
 
 **Every host screen's back-out lives top-right, as `HostExit`** — a cream
 outline on the field, deliberately not a `.btn`. Gold with a hard shadow means
