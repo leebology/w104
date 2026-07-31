@@ -1034,9 +1034,16 @@ function apply(room: Room, ev: RoomEvent): Room {
       // `inTeamSelect` rather than a bare `=== "teams"`: the host's Back button
       // stays on screen through the countdown out of team select, so it has to
       // work there too.
+      //
+      // `scoring` is here because the results screen carries the same top-right
+      // back-out every other host screen does. It abandons a round mid-reveal,
+      // which is exactly what a host pressing it is asking for, and the D1
+      // archive simply never sees that round: `maybeArchiveBank` keys off the
+      // `scoring -> standings` transition, and this is not one.
       if (
         room.phase.name !== "standings" &&
         room.phase.name !== "voting" &&
+        room.phase.name !== "scoring" &&
         !postVotingCountdown &&
         !inTeamSelect(room)
       ) {

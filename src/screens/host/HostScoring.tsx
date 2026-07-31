@@ -37,7 +37,7 @@ import { currentRound } from "../../../shared/state";
 import type { Player, PlayerId, RoomState } from "../../../shared/state";
 import { rosterOf } from "../../../shared/teams";
 import type { ScorerId } from "../../../shared/teams";
-import { HostHeader } from "./HostHeader";
+import { HostBackToRoom, HostHeader, HostHeaderRight } from "./HostHeader";
 
 /**
  * One row up to five players, two balanced rows up to the ten-player cap —
@@ -554,7 +554,16 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
         left={<RoomChip code={room.code} />}
         round={round}
         of={room.settings.roundCount}
-        right={<h1 className="host-scoring__title">Results · {room.category}</h1>}
+        right={
+          <HostHeaderRight>
+            <h1 className="host-scoring__title">Results · {room.category}</h1>
+            {/* The results screen was the one host screen with no way off it
+                but forward. Abandoning a round mid-reveal is a real thing to
+                want — see `backToLobby` in shared/reduce.ts, which now allows
+                this phase — and it asks first, like every other one. */}
+            <HostBackToRoom />
+          </HostHeaderRight>
+        }
       />
 
       <div

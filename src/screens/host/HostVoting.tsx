@@ -10,7 +10,13 @@ import { VOTING_MS } from "../../../shared/reduce";
 import { GetReady } from "../../components/GetReady";
 import { RoomChip } from "../../components/RoomChip";
 import { roomStore } from "../../net/room";
-import { HostExit, HostHeader, HostHeaderRight, VotingCount } from "./HostHeader";
+import {
+  HostBackToRoom,
+  HostExit,
+  HostHeader,
+  HostHeaderRight,
+  VotingCount,
+} from "./HostHeader";
 
 type Props = {
   room: RoomState;
@@ -65,11 +71,18 @@ function VoteFoot({
  * The back-out. One event, two destinations: with teams on it steps to team
  * select rather than all the way to the room — the server derives that, so
  * this only has to name it correctly.
+ *
+ * **Only one of the two asks first.** Going home ends the game and takes the
+ * confirmation every other "Back to room" takes; stepping back to team select
+ * ends nothing — no round has been played, the teams survive the trip, and the
+ * only casualty is a tally nobody has acted on yet. A dialog warning that the
+ * game will end would be warning about something that does not happen.
  */
 function VotingExit({ room }: { room: RoomState }) {
+  if (!teamsEnabled(room.settings)) return <HostBackToRoom />;
   return (
     <HostExit
-      label={teamsEnabled(room.settings) ? "Back to teams" : "Back to room"}
+      label="Back to teams"
       onClick={() => roomStore.send({ type: "backToLobby" })}
     />
   );

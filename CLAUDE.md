@@ -123,6 +123,13 @@ replaced wholesale on each `state` push; every client action is a *request*.
   voting, and standings, and is still the one exception (host solo-start
   bypasses `MIN_PLAYERS`), and `reduce` skips `settle` for it. From a lobby with
   teams on it opens team select rather than a countdown.
+- **`backToLobby` is legal from `scoring` as well**, so the results screen can
+  carry the same top-right back-out every other host screen does. It abandons a
+  round mid-reveal, which is what a host pressing it is asking for, and that
+  round never reaches the D1 archive for free: `maybeArchiveBank` keys off the
+  `scoring -> standings` transition and this is not one. It goes all the way
+  home, teams or not — the one-step-back rule belongs to the phases *before*
+  round one, and from a round being scored there is nothing to step back into.
 - Voting is bookended by a countdown on both sides, so `countdown` carries a
   `to: "voting" | "playing"`. It is the one phase field that is stored rather
   than derived: two distinct countdowns now sit at `history.length === 0`, so
@@ -623,11 +630,40 @@ personal recap on it, and there is no height to share.
 **Every host screen's back-out lives top-right, as `HostExit`** — a cream
 outline on the field, deliberately not a `.btn`. Gold with a hard shadow means
 "go forward" in this app, so the footer carries exactly one forward action and
-the button that abandons the phase is never beside it. Closing the room is the
-one host action that asks first (`ConfirmDialog`), because `endGame` kicks
-everyone and cannot be undone by pressing it again. The round marker is
+the button that abandons the phase is never beside it. The round marker is
 **omitted** on team select and voting: both only happen at `history.length ===
 0`, so `HostHeader`'s `round` is optional.
+
+**It is a closed ✕ that opens into its words on hover**, and the label is the
+button's `aria-label` either way — which is the whole reason the collapse is
+safe. There is no pointer on a TV, so on the device this screen is usually
+being *watched* on the ✕ is all there is; the words are for the laptop it is
+being *driven* from. `active` holds it open and filled while the dialog it
+opened is up, because a dialog whose opener has collapsed behind it has no
+visible subject.
+
+**Every back-out that ends a game asks first, as `HostBackToRoom`** — the
+button and its `ConfirmDialog` in one component, because the question is the
+same on all four screens that carry it. Two deliberately do not:
+
+- **The final standings**, where the match is already over. Nothing is running
+  to end, and the footer's gold button does the same thing unguarded.
+- **"Back to teams"**, the voting screen's back-out *with teams on*. That steps
+  to team select rather than home (see `backToLobby`), so no round is lost and
+  the only casualty is a tally nobody has acted on. Warning that the game will
+  end would be warning about something that does not happen.
+
+Closing the room from the lobby keeps its own dialog rather than this one:
+`endGame` kicks everybody out of the room itself, which is a different and
+larger thing than ending the game inside it.
+
+**The room chip leads the header and the screen's own title takes the far end.**
+The join instruction is the one thing on a TV that has to be in the same corner
+every time — somebody walking in reads that corner and nothing else — so no
+screen gets to lead with its own name. The standings had it the other way round,
+on the screen a room sits in front of longest. The final board is the exception
+that proves it: the match is over, there is nobody left to join, and it leads
+with the MATCH OVER plaque instead.
 
 **The standings are a staircase, and a step's height is keyed to `place`, not
 to its column index** (`src/components/Podium.tsx`). That is what makes two

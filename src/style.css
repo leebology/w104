@@ -532,13 +532,22 @@ ul, ol { list-style: none; }
    app, and the button that abandons the phase must never be able to be
    mistaken for the one that starts it. An outline on the field instead —
    present, findable, and clearly not the primary. */
+/* A closed ✕ that opens into its words. The corner of a host screen is the one
+   place on a TV nothing should be competing for attention, and at rest this is
+   a circle; the label unrolls under a pointer, which only ever exists on the
+   laptop where a host is actually driving. The height is fixed and the ✕ has a
+   width of its own, so the header's bar does not change height when it opens
+   and the circle is a circle rather than a rounded square. */
 .host-exit {
   font: inherit;
   font-family: var(--display);
   font-size: 13px;
   line-height: 1;
   letter-spacing: 0.08em;
-  padding: 11px 18px;
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 8px;
   border: 3px solid var(--cream);
   border-radius: 99px;
   background: transparent;
@@ -546,6 +555,36 @@ ul, ol { list-style: none; }
   text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
+}
+
+.host-exit__x {
+  width: 22px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* `max-width` rather than a width transition, because the label's own width is
+   the target and there is no keyword for that which animates in every browser
+   the TV might be. The value only has to clear the longest label; the ease
+   simply finishes early. */
+.host-exit__label {
+  max-width: 0;
+  overflow: hidden;
+  transition: max-width 180ms ease, margin 180ms ease;
+}
+
+.host-exit:hover .host-exit__label,
+.host-exit:focus-visible .host-exit__label,
+.host-exit--active .host-exit__label {
+  max-width: 12em;
+  margin: 0 6px 0 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .host-exit__label { transition: none; }
 }
 
 /* Filled while the confirmation it opened is on screen, so the dialog behind

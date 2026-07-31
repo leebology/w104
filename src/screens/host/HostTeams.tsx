@@ -7,7 +7,7 @@ import { pulseInterval } from "../../components/Roster";
 import { roomStore } from "../../net/room";
 import { TEAM_COLORS, membersOf } from "../../../shared/teams";
 import type { RoomState } from "../../../shared/state";
-import { HostExit, HostHeader } from "./HostHeader";
+import { HostBackToRoom, HostHeader } from "./HostHeader";
 
 type Props = {
   room: RoomState;
@@ -40,12 +40,7 @@ export function HostTeams({ room, countdown }: Props) {
           so the number could not change while this screen is up. */}
       <HostHeader
         left={<RoomChip code={room.code} />}
-        right={
-          <HostExit
-            label="Back to room"
-            onClick={() => roomStore.send({ type: "backToLobby" })}
-          />
-        }
+        right={<HostBackToRoom />}
       />
 
       <p className={`plaque host-teams__plaque${dim}`}>Pick a team</p>

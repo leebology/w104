@@ -612,9 +612,23 @@ describe("backToLobby", () => {
     expect(reduce(before, { t: "backToLobby", playerId: "p0", now: 50_200 })).toBe(before);
   });
 
-  test("not reachable from scoring", () => {
-    const before = scored();
-    expect(reduce(before, { t: "backToLobby", playerId: "host", now: 50_200 })).toBe(before);
+  /**
+   * The results screen carries the same top-right back-out every other host
+   * screen does, so this is legal there — and it goes all the way home rather
+   * than one step. The one-step rule belongs to the phases *before* round one;
+   * from a round being scored there is nothing to step back into.
+   */
+  test("abandons a round mid-reveal, straight to the lobby", () => {
+    const room = reduce(scored(), { t: "backToLobby", playerId: "host", now: 50_200 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.history).toEqual([]);
+    expect(room.entries).toEqual({});
+  });
+
+  test("still refuses the phases with no way out", () => {
+    for (const before of [playing(), seed(2)]) {
+      expect(reduce(before, { t: "backToLobby", playerId: "host", now: 50_200 })).toBe(before);
+    }
   });
 });
 
