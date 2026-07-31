@@ -2010,7 +2010,11 @@ Add the close, beside `bankRound`:
  * No countdown on this edge: the transition between the two screens is an
  * animation, not a phase. See the design brief's §1c.
  */
-function closeCreating(room: Room, now: number, roll = 0): Room {
+// `roll` has NO default. `settle` — the everyone-finished path, which is the
+// common one — has no tick behind it, and a defaulted seed would make both
+// shuffles computable offline and hand authorship to anyone who bothered.
+// `tick` passes its own roll; `settle` passes `seedRoll(room.code, now)`.
+function closeCreating(room: Room, now: number, roll: number): Room {
   const quota = quotaOf(room);
   const playerIds = room.players.map((p) => p.id);
   const pool = buildPool(playerIds, room.drafts, quota, CATEGORIES, roll);
