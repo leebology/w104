@@ -1459,6 +1459,89 @@ describe("backToLobby from team select", () => {
   });
 });
 
+/** A room with `n` players, teams on, and custom categories on. */
+function seedTeamsCustom(n: number, teamCount = 2, now = 1000): Room {
+  const room = seed(n, now);
+  return reduce(room, {
+    t: "setSettings",
+    playerId: "host",
+    values: { teamCount },
+    choices: { categorySource: "custom" },
+    now,
+  });
+}
+
+/** A room sitting in team select with `n` players, teams and custom both on. */
+function inTeamsCustom(n: number, teamCount = 2, now = 2000): Room {
+  return readyAll(seedTeamsCustom(n, teamCount), now);
+}
+
+/**
+ * Regression coverage for 07b54ee: with teams **and** custom categories both
+ * on, the countdown out of team select is `to: "creating"` rather than
+ * `to: "voting"` — `afterLobby` routes a custom match through the writing
+ * phase instead. Before that commit, `inTeamSelect`/`backPhase` recognised
+ * only a `to: "voting"` countdown as "out of team select", so this exact
+ * countdown fell outside every rule that assumes leaving a team can cancel
+ * it.
+ */
+describe("team select with custom categories on", () => {
+  test("the host's Continue opens the countdown to creating, not to voting", () => {
+    let room = inTeamsCustom(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 2200 + COUNTDOWN_MS, to: "creating",
+    });
+  });
+
+  test("leaving a team during that countdown still cancels it, back to team select", () => {
+    // This is the bug 07b54ee fixed: `inTeamSelect` used to return false for
+    // a `to: "creating"` countdown, so `leaveTeam` was rejected outright here
+    // and the countdown ran to completion under a player no longer on a team.
+    let room = inTeamsCustom(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
+    expect(room.phase.name).toBe("countdown");
+    room = reduce(room, { t: "leaveTeam", playerId: "p1", now: 2300 });
+    expect(room.phase).toEqual({ name: "teams" });
+    const p1 = room.players.find((p) => p.id === "p1")!;
+    expect(p1.teamId).toBeNull();
+    expect(p1.ready).toBe(false);
+  });
+
+  test("backToLobby out of the creating phase itself steps back to team select", () => {
+    // Mirrors "backToLobby from voting" with teams on: `creating` joins
+    // `voting` in `backToLobby`'s one-step-back branch (shared/reduce.ts),
+    // both being one step out from the lobby rather than the match's start.
+    // (The countdown *to* creating is different: like the countdown to
+    // voting, `backToLobby` there is not in that branch and goes all the way
+    // home — see "works during the countdown too" above.)
+    let room = inTeamsCustom(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
+    room = reduce(room, { t: "tick", now: 2200 + COUNTDOWN_MS, roll: 0.5 });
+    expect(room.phase.name).toBe("creating");
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 3000 });
+    expect(room.phase).toEqual({ name: "teams" });
+    expect(room.players.every((p) => p.teamId === null)).toBe(true);
+  });
+
+  test("cancelStart is still rejected on the to:creating countdown", () => {
+    // Same protection as the to:voting teams countdown: cancelling would
+    // clear readiness with everyone still on a team and nothing left for them
+    // to leave, wedging the room in `teams` with no way to become ready
+    // again. `reduce`'s "no change" contract is identity, not mere equality —
+    // assert `toBe`, not just an unchanged phase name.
+    let room = inTeamsCustom(2);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2100 });
+    expect(room.phase.name).toBe("countdown");
+    expect((room.phase as { to: string }).to).toBe("creating");
+    const next = reduce(room, { t: "cancelStart", playerId: "host", now: 2200 });
+    expect(next).toBe(room);
+  });
+});
+
 /** A room in the voting phase with teams on, p0 on t0 and p1 on t1. */
 function votingInTeams(): Room {
   let room = inTeams(2);
