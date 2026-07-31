@@ -2,14 +2,14 @@ import { describe, expect, test, it } from "vitest";
 import { createRoom, currentRound, matchComplete, preRoundPhase } from "./state";
 import type { Room } from "./state";
 import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, TIMESUP_MS, VOTING_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
-import { voteBudget } from "./voting";
+import { voteBudget, votesSpent } from "./voting";
 import { CATEGORIES, RANDOM_CATEGORY } from "./categories";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS } from "./teams";
 import { rowKey } from "./reveal";
 import { isSelfStruck } from "./selfstrike";
 import type { SelfMarks } from "./selfstrike";
 import type { Results } from "./scoring";
-import { MAX_CATEGORY_LEN, WRITE_MS, quotaFor } from "./customCategories";
+import { MAX_CATEGORY_LEN, VOTE_BUDGET, WRITE_MS, quotaFor } from "./customCategories";
 
 /** A room with `n` joined players, none ready, plus a host. */
 function seed(n: number, now = 1000): Room {
@@ -2142,6 +2142,16 @@ function allWritten(n: number, roundCount: number, now = 1000): Room {
   return room;
 }
 
+/**
+ * A custom room already in `voting`: the pool is built, hands are dealt, and
+ * nobody has voted yet. `allWritten` already drives the real edge from
+ * `creating` into `voting`, so this is just the name the voting tests know it
+ * by.
+ */
+function votingRoom(n: number, roundCount: number, now = 1000): Room {
+  return allWritten(n, roundCount, now);
+}
+
 describe("the creating phase", () => {
   const custom = (players: number, roundCount = 3) => {
     let room = seed(players); // existing helper: N connected, unready players
@@ -2268,6 +2278,34 @@ describe("the creating phase", () => {
     let room = seed(3);
     room = reduce(room, { t: "startGame", playerId: room.hostId!, now: 0 });
     expect(room.phase).toEqual({ name: "countdown", endsAt: COUNTDOWN_MS, to: "voting" });
+  });
+});
+
+describe("voting on hands", () => {
+  it("accepts a card in one of my hands and refuses one that is not", () => {
+    let room = votingRoom(4, 3); // helper: custom room already in `voting`
+    const me = room.players[0].id;
+    const mine = room.deal[me][0].cardIds[0];
+    const theirs = room.deal[room.players[1].id][0].cardIds
+      .find((id) => !room.deal[me].some((h) => h.cardIds.includes(id)))!;
+    const after = reduce(room, { t: "castVote", playerId: me, category: mine, now: 1 });
+    expect(after.votes[me][mine]).toBe(1);
+    const refused = reduce(room, { t: "castVote", playerId: me, category: theirs, now: 1 });
+    expect(refused).toBe(room);
+  });
+
+  it("stops at the budget and readies on the last vote", () => {
+    let room = votingRoom(4, 3);
+    const me = room.players[0].id;
+    for (const hand of room.deal[me]) {
+      room = reduce(room, { t: "castVote", playerId: me, category: hand.cardIds[0], now: 1 });
+    }
+    expect(votesSpent(room.votes[me])).toBe(VOTE_BUDGET);
+    expect(room.players[0].ready).toBe(true);
+    const extra = reduce(room, {
+      t: "castVote", playerId: me, category: room.deal[me][0].cardIds[1], now: 2,
+    });
+    expect(extra).toBe(room);
   });
 });
 

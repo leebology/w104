@@ -15,8 +15,10 @@ import {
   WRITE_MS,
   buildDeal,
   buildPool,
+  pickCustomCategory,
   quotaFor,
   seedRoll,
+  voteBudgetFor,
 } from "./customCategories";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, balanceTeams, makeTeams, rosterOf, teamsEnabled } from "./teams";
@@ -363,6 +365,26 @@ function closeCreating(room: Room, now: number, roll: number): Room {
 }
 
 /**
+ * Closing voting hands the clients authorship. It is the reveal, so it happens
+ * once, on the way out of `voting`, and never on any earlier edge.
+ */
+function closeVoting(room: Room, now: number): Room {
+  return {
+    ...room,
+    phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to: "playing" },
+    authorsRevealed: customEnabled(room.settings) ? true : room.authorsRevealed,
+  };
+}
+
+/** The round's category, from whichever pool this match is playing. */
+function drawCategory(room: Room, roll: number): string {
+  if (customEnabled(room.settings) && room.pool) {
+    return pickCustomCategory(room.pool, room.votes, spentCategories(room), roll);
+  }
+  return pickCategory(room.votes, spentCategories(room), roll);
+}
+
+/**
  * The pre-round <-> countdown edge is derived, not commanded: any event that
  * changes readiness re-evaluates it, so un-readying mid-countdown backs out
  * without needing its own case.
@@ -407,7 +429,7 @@ function settle(room: Room, now: number): Room {
   }
 
   if (phase.name === "voting") {
-    return everyoneReady(room, 1) ? openCountdown(room, now, "playing") : room;
+    return everyoneReady(room, 1) ? closeVoting(room, now) : room;
   }
 
   if (phase.name === "scoring") {
@@ -626,7 +648,7 @@ function jumpTo(room: Room, to: ViewId, now: number, roll: number): Room {
         // Drawn here for the same reason the whistle draws it: `playing` is the
         // first screen that shows the category, so it is the first that needs
         // one. Weighted by whatever votes the room has, uniform when it has none.
-        category: pickCategory(staged.votes, spentCategories(staged), roll),
+        category: drawCategory(staged, roll),
         phase: { name: "playing", endsAt: now + staged.settings.durationSec * 1_000 },
         // A round starts empty. This is also what makes jumping to `playing`
         // the way to re-run a round from the top, rather than resuming into a
@@ -791,6 +813,14 @@ function apply(room: Room, ev: RoomEvent): Room {
           phase: { name: "countdown", endsAt: ev.now + COUNTDOWN_MS, to: afterLobby(room) },
         };
       }
+      // A solo host closing voting still hands out authorship the same way a
+      // natural close does — `closeVoting` is the one place that flag flips.
+      if (from === "voting") {
+        return {
+          ...closeVoting(room, ev.now),
+          players: room.players.map((p) => ({ ...p, ready: true })),
+        };
+      }
       return {
         ...room,
         players: room.players.map((p) => ({ ...p, ready: true })),
@@ -798,8 +828,7 @@ function apply(room: Room, ev: RoomEvent): Room {
           name: "countdown",
           endsAt: ev.now + COUNTDOWN_MS,
           // Only `lobby` (with teams off — the teams-on lobby returned above)
-          // heads for writing or voting; `voting` and `standings` head for a
-          // round.
+          // heads for writing or voting; `standings` heads for a round.
           to: from === "lobby" ? afterLobby(room) : "playing",
         },
       };
@@ -922,12 +951,22 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "castVote": {
       if (room.phase.name !== "voting") return room;
-      // A hand-rolled socket message is not bound by the UI, so the ballot and
-      // the budget are both checked here rather than trusted. The *ballot*,
-      // not the pool: `random` is votable but is not a category.
-      if (!(BALLOT as readonly string[]).includes(ev.category)) return room;
       if (!room.players.some((p) => p.id === ev.playerId)) return room;
-      const budget = voteBudget(room.settings);
+
+      if (customEnabled(room.settings)) {
+        // The hand is the ballot. A hand-rolled socket message is not bound by
+        // the UI, so what a player was actually dealt is checked here rather
+        // than trusted — otherwise anyone could vote for a card they were
+        // never shown, which is exactly what equal exposure exists to prevent.
+        const hands = room.deal[ev.playerId] ?? [];
+        if (!hands.some((h) => h.cardIds.includes(ev.category))) return room;
+      } else if (!(BALLOT as readonly string[]).includes(ev.category)) {
+        return room;
+      }
+
+      const budget = customEnabled(room.settings)
+        ? voteBudgetFor()
+        : voteBudget(room.settings);
       const row = room.votes[ev.playerId] ?? {};
       const spent = votesSpent(row);
       if (spent >= budget) return room;
@@ -1320,7 +1359,7 @@ function tick(room: Room, now: number, roll: number): Room {
       // the countdown opens means there is no window in which a cancelled
       // countdown could re-roll it, and nothing on the countdown screen can
       // leak it.
-      category: pickCategory(room.votes, spentCategories(room), roll),
+      category: drawCategory(room, roll),
       phase: { name: "playing", endsAt: now + room.settings.durationSec * 1_000 },
     };
   }
@@ -1330,7 +1369,7 @@ function tick(room: Room, now: number, roll: number): Room {
   if (phase.name === "voting" && now >= phase.endsAt) {
     // The global deadline closes voting into the same countdown the other two
     // triggers open, so a round always starts the same way.
-    return { ...room, phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to: "playing" } };
+    return closeVoting(room, now);
   }
   if (phase.name === "playing" && now >= phase.endsAt) {
     return { ...room, phase: { name: "timesup", endsAt: now + TIMESUP_MS } };
