@@ -137,6 +137,11 @@ export function HostVoting({ room, offset, countdown }: Props) {
   const remaining = useRemaining(
     countdown?.endsAt ?? (room.phase.name === "voting" ? room.phase.endsAt : 0),
     countdown?.offset ?? offset,
+    // The debug menu can hold the voting window like it holds a round, and a
+    // held phase's `endsAt` is stale by design — without the banked figure this
+    // clock would run to 0:00 under a vote that is merely stopped. Never during
+    // the countdown, which cannot be held.
+    countdown ? null : room.paused,
   );
   const budget = voteBudget(room.settings);
   const cast = Object.values(totals).reduce((a, b) => a + b, 0);

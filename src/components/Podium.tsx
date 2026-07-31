@@ -114,8 +114,17 @@ export function Podium({ room, standings, final }: Props) {
             )}
 
             {team ? (
+              // Faces *and* names. A row of emoji says how many people a team
+              // is, which is not the question anyone asks of a final board —
+              // "who was on that?" is, and at the end of a match it is the only
+              // place the answer still exists on screen.
               <span className="podium-col__roster">
-                {members.map((p) => p.emoji).join("")}
+                {members.map((p) => (
+                  <span className="podium-col__member" key={p.id}>
+                    <span className="podium-col__member-emoji">{p.emoji}</span>
+                    <span className="podium-col__member-name">{p.name || "…"}</span>
+                  </span>
+                ))}
               </span>
             ) : (
               <span className="podium-col__avatar">{s.emoji}</span>

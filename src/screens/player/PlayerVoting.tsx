@@ -39,6 +39,9 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
   const remaining = useRemaining(
     closed ? countdown.endsAt : votingEndsAt,
     closed ? countdown.offset : offset,
+    // Held from the debug menu, the voting deadline stops being maintained —
+    // see HostVoting. The countdown that follows it cannot be held.
+    closed ? null : room.paused,
   );
 
   // The numeral is the loudest thing on the screen and it changes on every

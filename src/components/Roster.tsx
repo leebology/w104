@@ -20,6 +20,23 @@ type PillProps = {
   onKick?: (id: string) => void;
 };
 
+/** The kick. A boot, because the word underneath it is "kick". */
+function BootGlyph() {
+  return (
+    <svg
+      className="player-pill__boot"
+      viewBox="0 0 24 24"
+      width="15"
+      height="15"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      {/* Leg down the left, foot out to the right, sole across the bottom. */}
+      <path d="M5 2h5v9c0 1.6 1 2.6 2.6 3.3l5.1 2.2c1.4.6 2.3 1.4 2.3 2.8V22H5V2z" />
+    </svg>
+  );
+}
+
 export function PlayerPill({ player, variant, onKick }: PillProps) {
   const classes = ["pill", "player-pill"];
   // Readiness is the whole pill, not a glyph beside the name: a ready player
@@ -35,8 +52,9 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
   }
   if (!player.connected) classes.push("player-pill--offline");
   const bobbing = variant === "lobby" && !ready;
-  return (
-    <li className={classes.join(" ")}>
+
+  const body = (
+    <>
       <span
         className={bobbing ? "player-pill__avatar player-pill__avatar--bob" : "player-pill__avatar"}
         style={bobbing ? ({ "--bob": pulseInterval(player.id) } as CSSProperties) : undefined}
@@ -56,16 +74,41 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
       ) : (
         ready && <span className="player-pill__mark">✓ READY</span>
       )}
-      {onKick && (
-        <button
-          type="button"
-          className="player-pill__kick"
-          aria-label={`Remove ${player.name || "player"}`}
-          onClick={() => onKick(player.id)}
-        >
-          ×
-        </button>
-      )}
+    </>
+  );
+
+  // Without a kick handler the pill is a read-out, and a read-out is not a
+  // control: it stays an `li` with no tab stop and nothing to press.
+  if (!onKick) return <li className={classes.join(" ")}>{body}</li>;
+
+  /**
+   * The whole pill is the kick target — there is no × any more.
+   *
+   * The × was a 24px circle inside a pill on a screen read from a sofa, and it
+   * had to sit next to READY without being mistaken for part of it. Hovering
+   * the pill instead gives the action the whole shape to say itself in: the
+   * pill goes to ink, tilts off true, and the roster row is replaced outright
+   * by a boot and the word KICK. Nothing about it is subtle, which is the
+   * point — this removes a person from the game on a single click.
+   *
+   * The label rides *over* the pill rather than replacing its children, so the
+   * pill keeps the width its name gave it and the row does not reflow under
+   * the cursor.
+   */
+  return (
+    <li className="player-pill-slot">
+      <button
+        type="button"
+        className={`${classes.join(" ")} player-pill--kickable`}
+        aria-label={`Kick ${player.name || "player"}`}
+        onClick={() => onKick(player.id)}
+      >
+        {body}
+        <span className="player-pill__kick" aria-hidden="true">
+          <BootGlyph />
+          KICK
+        </span>
+      </button>
     </li>
   );
 }

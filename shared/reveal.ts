@@ -3,6 +3,7 @@ import type { Results, ScorerResult } from "./scoring";
 import { NO_SELF_MARKS, isSelfStruck, markCount } from "./selfstrike";
 import type { SelfMarks } from "./selfstrike";
 import type { ScorerId } from "./teams";
+import type { Rng } from "./rng";
 
 /**
  * The scoring reveal, as pure arithmetic.
@@ -66,29 +67,16 @@ export function rowKey(scorerId: ScorerId, index: number): RowKey {
 
 export type RowRef = { scorerId: ScorerId; index: number };
 
-export type Rng = () => number;
-
 /**
- * mulberry32 over an FNV-1a hash of the seed string. Seeded rather than
- * `Math.random` so a replay of the same round deals and reveals in the same
- * order — the reveal is watched by a room, and "run it again" has to show them
+ * Re-exported, not redeclared: the generator moved to `shared/rng.ts` once
+ * `balanceTeams` needed one too, and every existing import site here — both
+ * scoring screens and this module's own tests — keeps working. Seeding is what
+ * makes a replayed round deal and reveal in the same order, which matters
+ * because the reveal is watched by a room and "run it again" has to show them
  * the same thing.
  */
-export function seededRng(seed: string): Rng {
-  let hash = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    hash ^= seed.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  let state = hash | 0;
-  return () => {
-    state = (state + 0x6d2b79f5) | 0;
-    let t = state;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+export { seededRng } from "./rng";
+export type { Rng } from "./rng";
 
 function shuffled<T>(items: readonly T[], rng: Rng): T[] {
   const out = [...items];

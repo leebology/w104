@@ -1,4 +1,5 @@
 import { MAX_TEAM_COUNT, MIN_TEAM_COUNT, modeSpec } from "./gamemodes";
+import { seededRng } from "./rng";
 import type { MatchSettings, Player, PlayerId, Room } from "./state";
 
 export type TeamId = string;
@@ -170,34 +171,47 @@ export function assignStragglers(players: Player[], teams: Team[]): Player[] {
 }
 
 /**
- * The host's "Auto sort" button. Two different jobs behind one action,
- * chosen by what the room looks like when it is pressed:
+ * The host's "Auto sort" button: deal **everybody** out again, at random,
+ * across teams of as equal a size as the roster allows.
  *
- * - Anyone still picking: delegate to `assignStragglers` — only the
- *   unassigned move, exactly as if they had each tapped the smallest team.
- * - Everyone already on a team: reshuffle the whole roster round-robin
- *   across teams in colour order, which is the only way to *shrink* an
- *   uneven split rather than just stop it from growing.
+ * One job, not two. It used to leave anyone already on a team where they were
+ * and only place the stragglers, which meant the button could not fix the case
+ * it was most often pressed for — six people who all piled onto Red. Everyone
+ * is dealt, including the ones who chose, and including the bots, which are
+ * seats in every layout this screen is used to look at.
+ *
+ * `roll` is a uniform [0,1) from the caller, exactly as the category draw takes
+ * one: the shuffle has to be *random* — a deterministic round-robin makes a
+ * second press a no-op, and the host pressing again wants a different answer —
+ * while this function stays pure and testable against a fixed roll.
+ *
+ * Order out is order in. Only `teamId` moves, so the roster's own order — which
+ * every other screen derives a stable member list from — is untouched.
  *
  * Returns the identical array when nothing changes, per the no-op rule.
  */
-export function balanceTeams(players: Player[], teams: Team[]): Player[] {
-  if (teams.length === 0) return players;
-  const live = new Set(teams.map((t) => t.id));
-  const assigned = (p: Player) => p.teamId !== null && live.has(p.teamId);
-  if (!players.every(assigned)) return assignStragglers(players, teams);
+export function balanceTeams(players: Player[], teams: Team[], roll: number): Player[] {
+  if (teams.length === 0 || players.length === 0) return players;
 
-  const counts = new Map<TeamId, number>(teams.map((t) => [t.id, 0]));
+  const rng = seededRng(`balance:${roll}`);
+  // Deal positions, not players: `order[i]` is the index in `players` of the
+  // i-th person dealt. Assigning round-robin over a shuffled order is what
+  // makes the split even *and* the pairing arbitrary — shuffling the teams
+  // instead would only rename an even split, and shuffling the assignment
+  // itself would let one team come out three larger.
+  const order = players.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+
+  const next = [...players];
   let changed = false;
-  const next = players.map((p) => {
-    let best = teams[0];
-    for (const t of teams) {
-      if (counts.get(t.id)! < counts.get(best.id)!) best = t;
-    }
-    counts.set(best.id, counts.get(best.id)! + 1);
-    if (p.teamId === best.id) return p;
+  order.forEach((index, dealt) => {
+    const team = teams[dealt % teams.length];
+    if (next[index].teamId === team.id) return;
+    next[index] = { ...next[index], teamId: team.id };
     changed = true;
-    return { ...p, teamId: best.id };
   });
   return changed ? next : players;
 }

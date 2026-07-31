@@ -517,6 +517,12 @@ export class W104 extends Server<Env> {
       case "cancelStart":
         this.room = reduce(this.room, { t: "cancelStart", playerId, now });
         break;
+      case "leaveRoom":
+        // The socket closes itself right after this; `onClose` then reduces a
+        // `disconnect` for a player who is no longer in the list, which is a
+        // no-op on `players` by construction.
+        this.room = reduce(this.room, { t: "leaveRoom", playerId, now });
+        break;
       case "kick": {
         const before = this.room;
         this.room = reduce(this.room, { t: "kick", playerId, targetId: msg.targetId, now });
@@ -604,7 +610,11 @@ export class W104 extends Server<Env> {
         this.room = reduce(this.room, { t: "leaveTeam", playerId, now });
         break;
       case "balanceTeams":
-        this.room = reduce(this.room, { t: "balanceTeams", playerId, now });
+        // The deal's randomness enters here, like the category draw's, so
+        // `reduce` stays pure and a second press can give a second answer.
+        this.room = reduce(this.room, {
+          t: "balanceTeams", playerId, roll: Math.random(), now,
+        });
         break;
       case "debugPause":
         this.room = reduce(this.room, {

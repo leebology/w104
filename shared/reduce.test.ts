@@ -733,6 +733,61 @@ describe("entering voting", () => {
   });
 });
 
+describe("leaving the room", () => {
+  test("gives the seat up, unlike a disconnect", () => {
+    // A dropped connection deliberately keeps the seat warm so a locked phone
+    // can reclaim it. This is the deliberate version and takes the seat.
+    let room = seed(2);
+    room = reduce(room, { t: "leaveRoom", playerId: "p0", now: 2000 });
+    expect(room.players.map((p) => p.id)).toEqual(["p1"]);
+  });
+
+  test("it takes their words and their votes with them", () => {
+    let room = seed(2);
+    room = { ...room, entries: { p0: [], p1: [] }, votes: { p0: { song: 1 } } };
+    room = reduce(room, { t: "leaveRoom", playerId: "p0", now: 2000 });
+    expect(room.entries.p0).toBeUndefined();
+    expect(room.votes.p0).toBeUndefined();
+  });
+
+  test("it is not a ban — they can come straight back", () => {
+    let room = seed(2);
+    room = reduce(room, { t: "leaveRoom", playerId: "p0", now: 2000 });
+    expect(room.kicked).toEqual([]);
+    room = reduce(room, {
+      t: "join", playerId: "p0", name: "P0", emoji: "🐙", now: 2100,
+    });
+    expect(room.players.map((p) => p.id)).toEqual(["p1", "p0"]);
+  });
+
+  test("the room re-settles around them", () => {
+    // p0 was the one holding the room up; with them gone the room is ready.
+    let room = seed(3);
+    room = reduce(room, { t: "ready", playerId: "p1", ready: true, now: 2000 });
+    room = reduce(room, { t: "ready", playerId: "p2", ready: true, now: 2100 });
+    expect(room.phase.name).toBe("lobby");
+    room = reduce(room, { t: "leaveRoom", playerId: "p0", now: 2200 });
+    expect(room.phase.name).toBe("countdown");
+  });
+
+  test("leaving during the countdown can drop it below the floor", () => {
+    let room = readyAll(seed(2), 2000);
+    expect(room.phase.name).toBe("countdown");
+    room = reduce(room, { t: "leaveRoom", playerId: "p0", now: 2100 });
+    expect(room.phase).toEqual({ name: "lobby" });
+  });
+
+  test("it is a lobby action — mid-match it is a no-op", () => {
+    const room = seedVoting(2);
+    expect(reduce(room, { t: "leaveRoom", playerId: "p0", now: 3000 })).toBe(room);
+  });
+
+  test("someone who is not in the room leaving is a no-op", () => {
+    const room = seed(2);
+    expect(reduce(room, { t: "leaveRoom", playerId: "nobody", now: 2000 })).toBe(room);
+  });
+});
+
 describe("casting votes", () => {
   test("a vote lands and counts against the budget", () => {
     let room = seedVoting(2);
@@ -1670,10 +1725,39 @@ describe("debug pause", () => {
     expect(attempt).toBe(room);
   });
 
-  test("only the playing phase can be held", () => {
+  test("the lobby cannot be held — there is no deadline on it", () => {
     const room = seed(2);
     const attempt = reduce(room, {
       t: "debugPause", playerId: "host", paused: true, now: 2000,
+    });
+    expect(attempt).toBe(room);
+  });
+
+  test("the voting window can be held, and resuming spends the bank forward", () => {
+    // The other phase with a deadline a room can still be deciding against.
+    const room = seedVoting(2);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 20_000,
+    });
+    expect(held.paused).toBe(20_000);
+    // A held phase's own deadline is stale by design, so the tick that would
+    // have closed voting has to do nothing at all.
+    expect(reduce(held, { t: "tick", now: endsAt + 60_000, roll: 0 })).toBe(held);
+
+    const resumed = reduce(held, {
+      t: "debugPause", playerId: "host", paused: false, now: endsAt + 3_600_000,
+    });
+    expect(resumed.paused).toBeNull();
+    expect((resumed.phase as { endsAt: number }).endsAt).toBe(endsAt + 3_600_000 + 20_000);
+  });
+
+  test("a countdown cannot be held", () => {
+    // Short, fixed-length, and on its way somewhere: nothing to decide.
+    let room = readyAll(seed(2), 2000);
+    expect(room.phase.name).toBe("countdown");
+    const attempt = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: 2100,
     });
     expect(attempt).toBe(room);
   });
@@ -1713,9 +1797,22 @@ describe("debug skip", () => {
     expect(attempt).toBe(room);
   });
 
-  test("skipping outside a round is a no-op", () => {
+  test("skipping outside a timed phase is a no-op", () => {
     const room = seed(2);
     expect(reduce(room, { t: "debugSkip", playerId: "host", now: 2000 })).toBe(room);
+  });
+
+  test("skipping the vote closes it down the deadline's own path", () => {
+    // Not a transition of its own: the tick that follows is the one the 60s
+    // deadline would have fired, so a skipped vote and an expired vote open
+    // the identical countdown.
+    const room = seedVoting(2);
+    const skipped = reduce(room, { t: "debugSkip", playerId: "host", now: 5_000 });
+    expect((skipped.phase as { endsAt: number }).endsAt).toBe(5_000);
+    const ticked = reduce(skipped, { t: "tick", now: 5_000, roll: 0 });
+    expect(ticked.phase).toEqual({
+      name: "countdown", endsAt: 5_000 + COUNTDOWN_MS, to: "playing",
+    });
   });
 });
 

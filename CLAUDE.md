@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (531 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (550 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -70,6 +70,12 @@ shared/   pure game logic — no DOM, no Cloudflare runtime, fully unit-tested
 party/    server.ts — thin DO shell: persist, broadcast, schedule alarms
 src/      React client — net/room.ts socket store + screens/{host,player}
 ```
+
+`shared/rng.ts` is the one seeded generator, in a module of its own because its
+two callers sit on opposite sides of the codebase: the reveal, which needs the
+*same* deal on a replay, and `balanceTeams`, which needs a different one on every
+press. `shared/reveal.ts` re-exports it, so its existing import sites are
+unchanged.
 
 The layering is the point: **all game rules live in `shared/`** so they test in
 milliseconds. `party/server.ts` is plumbing only. If you find yourself writing a
@@ -249,6 +255,15 @@ Three distinct ids, easy to confuse:
 
 - `playerId` — UUID in `localStorage`, stable across reloads so a locked phone
   reclaims its seat and its words.
+**Losing the socket and giving up the seat are different things.** A disconnect
+leaves the player in the room, greyed out, so a locked phone reclaims its seat
+and its words — which is right for a phone that died and wrong for somebody who
+meant to leave. `leaveRoom` is the deliberate version: everything a kick does to
+the room, minus the ban, and not host-only since it only ever acts on the
+sender. Lobby and its countdown only — walking out mid-match would leave a
+half-scored round and a hole in the standings, and closing the tab is still
+there for anyone who wants it.
+
 - `session` — fresh per `connect()` call. partysocket reuses the query string
   across its *own* auto-reconnects, so a matching session means "the kicked
   socket is retrying itself" (stay banned) and a new one means "the player came
@@ -348,9 +363,21 @@ computed while nobody was looking.
 - **A rename never recolours.** `Team.colorIndex` is written once at creation;
   the colour is what the room navigates by.
 - **Team panels are fixed-width and wrap; they never rescale.** `.team-grid`
-  is `repeat(var(--cols), 182px)`, not `1fr` tracks. Adding a team adds a
+  is `repeat(var(--cols), 228px)`, not `1fr` tracks. Adding a team adds a
   panel — players are aiming at a colour on a TV, and a target that moves when
-  somebody else joins is the one thing this screen cannot do.
+  somebody else joins is the one thing this screen cannot do. **Height is the
+  opposite**: rows are `auto` and a panel grows to hold its whole roster, since
+  a list that scrolls inside a panel on a TV is hiding people who are in the
+  room looking at it. The grid takes the overflow instead, under
+  `align-content: safe center` — plain `center` would put its first row out of
+  reach above the scrollport.
+- **Auto sort deals everybody, at random, every press.** `balanceTeams` takes a
+  `roll` from the caller like the category draw does: it must be able to give a
+  different answer to a second press, and `reduce` must stay pure. It no longer
+  has a stragglers-only branch — the case it is actually pressed for is six
+  people who all piled onto Red, and leaving the ones who chose where they were
+  meant it could not fix that. Bots are dealt like anyone else. Order out is
+  order in; only `teamId` moves.
 - **A team is named by `TeamBadge`, on every screen that shows one.** The
   tilted name tab in the team's accent, overhanging the card's top-left corner
   — team select on the TV and on the phones, the round, and the results. It is
@@ -380,11 +407,18 @@ all three are host-only and enforced on the server.
 
 The Debug section holds the round controls.
 
-- **Its three controls are host-only and `playing`-only, enforced on the
-  server.** `debugPause` and `debugSkip` are rejected in `shared/reduce.ts`;
-  `debugFill` is rejected in `party/server.ts`. The panel also disables the
-  buttons for non-hosts, but **that is a courtesy, not the boundary** — the
-  panel renders in production, so the server assumes the buttons are missing.
+- **Its three controls are host-only, enforced on the server.** `debugPause`
+  and `debugSkip` are rejected in `shared/reduce.ts`; `debugFill` is rejected in
+  `party/server.ts`. The panel also disables the buttons for non-hosts, but
+  **that is a courtesy, not the boundary** — the panel renders in production, so
+  the server assumes the buttons are missing.
+- **Hold and skip cover `playing` *and* `voting` — `isHoldable` is the list.**
+  Those are the two phases running a deadline a room can still be *deciding*
+  against; the countdown and `timesup` are short fixed screens on their way
+  somewhere. Auto-fill is `playing` alone, because it writes words. Every screen
+  showing a holdable deadline must pass `room.paused` as `useRemaining`'s third
+  argument — both voting screens do — or the clock runs to 0:00 under a phase
+  that is merely stopped.
 - **`Room.paused` holds the milliseconds remaining, not the moment of
   pausing.** `phase.endsAt` is absolute and a pause must survive an arbitrary
   wait; resuming is `endsAt = now + paused`. While it is non-null `phase.endsAt`

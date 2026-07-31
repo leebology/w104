@@ -630,21 +630,38 @@ ul, ol { list-style: none; }
   max-width: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px;
+  /* 6px all round is clearance for the pills' offset shadows, handed back to
+     the layout by the negative margin so nothing moves. The extra 20px at the
+     bottom is *scroll slack* and is deliberately not cancelled: it is what
+     lets the last row come clear of the fade band instead of ending under it. */
+  padding: 6px 6px 26px;
   margin: -6px;
 }
 
-/* There are players below the fold. The bottom band fades rather than cutting,
-   so a half-visible pill reads as "keep scrolling" instead of as a rendering
-   fault — and it goes the moment the list is scrolled to its end, so a room
-   that fits on screen never wears it. `-webkit-` first for the iOS versions
-   that only have the prefixed property; both are the same gradient.
+/* There are players past the edge. The band fades rather than cutting, so a
+   half-visible pill reads as "keep scrolling" instead of as a rendering fault
+   — and each end wears it only while there is something out there, so a room
+   that fits on screen never wears either. `-webkit-` first for the iOS
+   versions that only have the prefixed property; both are the same gradient.
 
    40px is a pill and a half of fade, measured against `.roster-row`'s own
    14px gap. */
 .roster-row--more {
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent 100%);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent 100%);
+}
+
+.roster-row--above {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 40px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 40px);
+}
+
+/* Scrolled into the middle of a long roster: both ends are cut, so both fade.
+   Spelled out as its own rule because `mask-image` does not compose — the two
+   above would simply override one another. */
+.roster-row--above.roster-row--more {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 40px, #000 calc(100% - 40px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 40px, #000 calc(100% - 40px), transparent 100%);
 }
 
 /* ------------------------------------------------------------ player pill */
@@ -705,22 +722,55 @@ ul, ol { list-style: none; }
 
 .player-pill--offline { opacity: 0.45; }
 
-.player-pill__kick {
+/* The pill is a `<button>` when the host can kick with it, so it has to give
+   back everything a button assumes about its own text and box. */
+.player-pill--kickable {
+  position: relative;
   font: inherit;
-  font-size: 15px;
-  line-height: 1;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 2px solid var(--ink);
-  border-radius: 99px;
-  background: transparent;
-  color: var(--ink);
+  text-align: left;
   cursor: pointer;
-  flex: 0 0 auto;
+  transition: transform 120ms ease-out;
 }
 
-.player-pill__kick:hover { background: var(--ink); color: var(--cream); }
+.player-pill--kickable:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+
+/* Hovered, the pill *becomes* the kick: ink, tilted off true, with the roster
+   row covered over by a boot and the word. The tilt is what stops it reading
+   as a colour change — every other dark surface in this app sits square.
+   Keyboard focus gets the same treatment, or the control is invisible to
+   anyone not using a mouse. */
+.player-pill--kickable:hover,
+.player-pill--kickable:focus-visible {
+  transform: rotate(-3deg) scale(1.03);
+}
+
+.player-pill__kick {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-radius: inherit;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+  pointer-events: none;
+}
+
+.player-pill--kickable:hover .player-pill__kick,
+.player-pill--kickable:focus-visible .player-pill__kick { opacity: 1; }
+
+.player-pill__boot { flex: 0 0 auto; transform: rotate(-8deg); }
+
+/* A bare wrapper: the pill it holds is the button, and every pill style now
+   lives on that. It exists only because `.roster-row` is a list. */
+.player-pill-slot { display: flex; min-width: 0; }
 
 @keyframes pulseDot {
   0%, 100% { opacity: 0.25; transform: scale(0.8); }
@@ -2495,15 +2545,46 @@ ul, ol { list-style: none; }
 /* A team has no avatar of its own, so its members' stand in — the same trail
    that follows a team name everywhere else. Two lines at most: a team of nine
    must not push the step off the bottom of the screen. */
+/* One row per member, face then name, rather than a run of emoji. A column is
+   narrow, so the name is the part that clips — the face is 1ch and always
+   readable, and a clipped name still identifies somebody in a room where they
+   are sitting. */
 .podium-col__roster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  min-width: 0;
+  /* The plinth is what the board is built around; a ten-strong team must push
+     its own list into a scroll rather than the staircase down the screen. */
+  max-height: 30%;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.podium-col__member {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.podium-col__member-emoji {
   font-size: clamp(13px, 1.5vw, 20px);
   line-height: 1.15;
-  text-align: center;
-  max-width: 100%;
+  flex: 0 0 auto;
+}
+
+.podium-col__member-name {
+  font-family: var(--display);
+  font-size: clamp(9px, 1.05vw, 14px);
+  line-height: 1.2;
+  min-width: 0;
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .podium-col__name {
@@ -4235,13 +4316,18 @@ ul, ol { list-style: none; }
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(var(--cols, 5), 228px);
-  /* Capped rather than `1fr`, which stretched a panel to whatever height the
-     screen had left over — five members' worth of content in a column tall
-     enough for twenty. A cap keeps the panel roughly as tall as it is wide at
-     one row and still lets two rows fit. */
-  grid-auto-rows: minmax(0, 24vh);
+  /* Sized to the roster, not to a slice of the viewport. A capped row (24vh)
+     kept the panels tidy but scrolled the members inside them, which on a TV
+     is a list nobody can scroll — the people it is hiding are in the room
+     looking at it. Panels grow instead, and the *grid* takes the overflow in
+     the one case that can outgrow a screen: a room dressed with bots.
+     `safe center` is what makes that survivable — plain `center` overflows in
+     both directions at once and puts the first row out of reach above the
+     scrollport. */
+  grid-auto-rows: minmax(0, auto);
   justify-content: center;
-  align-content: center;
+  align-content: safe center;
+  overflow-y: auto;
   gap: 56px 12px;
   width: 100%;
   padding: 18px 34px 8px;
@@ -4341,10 +4427,10 @@ ul, ol { list-style: none; }
 
 .host-teams__plaque { font-size: 22px; letter-spacing: 0.14em; padding: 8px 28px; }
 
+/* Grows with the roster rather than scrolling inside a fixed panel — see
+   `.team-grid`. Nobody walks up to the TV to scroll a team's member list. */
 .team-panel__members {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 8px;

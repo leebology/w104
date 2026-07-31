@@ -32,30 +32,38 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
   const [closing, setClosing] = useState(false);
 
   /**
-   * Whether the roster is scrolled to its end.
+   * Which ends of the roster have players past them.
    *
-   * The list fades out along its bottom edge while there is more below, and
-   * only then — a permanent fade would say "there is more" to a room of four
-   * people, and no fade at all leaves the pills that overflow looking like
-   * they were cut off rather than scrolled past.
+   * Each end fades only while there is something out there — a permanent fade
+   * would say "there is more" to a room of four people, and no fade at all
+   * leaves the pills that overflow looking cut off rather than scrolled past.
    *
    * Re-measured on every join as well as on scroll: a new pill changes
    * `scrollHeight` without the list moving, so no scroll event fires.
    */
   const roster = useRef<HTMLUListElement>(null);
-  const [atBottom, setAtBottom] = useState(true);
+  const [edges, setEdges] = useState({ above: false, below: false });
   const players = room.players.length;
   useEffect(() => {
     const el = roster.current;
     if (!el) return;
-    // A pixel of slack: fractional scroll positions and device pixel ratios
-    // mean an exact equality never quite lands on a real screen.
+    // A pixel of slack at each end: fractional scroll positions and device
+    // pixel ratios mean an exact equality never quite lands on a real screen.
     const update = () =>
-      setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight <= 1);
+      setEdges({
+        above: el.scrollTop > 1,
+        below: el.scrollHeight - el.scrollTop - el.clientHeight > 1,
+      });
     update();
     el.addEventListener("scroll", update, { passive: true });
     return () => el.removeEventListener("scroll", update);
   }, [players]);
+  const rosterClass = [
+    "roster-row",
+    "roster-row--inline",
+    edges.above ? "roster-row--above" : "",
+    edges.below ? "roster-row--more" : "",
+  ].filter(Boolean).join(" ");
 
   // Only the null <-> open transitions cross the wire: switching straight from
   // one drawer to the other must not flap the server flag, which would drop and
@@ -123,10 +131,7 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
             reading the nine above it. Reversed here rather than in `players`,
             which is join order and is what every other screen — team rosters,
             the reveal grid — derives a stable order from. */}
-        <ul
-          className={atBottom ? "roster-row roster-row--inline" : "roster-row roster-row--inline roster-row--more"}
-          ref={roster}
-        >
+        <ul className={rosterClass} ref={roster}>
           {[...room.players].reverse().map((p) => (
             <PlayerPill
               key={p.id}
