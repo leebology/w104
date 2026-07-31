@@ -14,6 +14,7 @@ import { getPlayerId } from "../net/identity";
 import { roomStore, useRoom } from "../net/room";
 import { VIEWS, currentView } from "../../shared/views";
 import { MAX_BOTS, isBot } from "../../shared/bots";
+import { MAX_LINE_MS, MIN_LINE_MS, REVEAL_TIMING } from "../../shared/reveal";
 
 /**
  * The debug menu: a corner triangle that opens a drawer of development tools.
@@ -179,7 +180,7 @@ export function DebugPanel() {
           <DebugControls state={state} />
           <ViewJumper state={state} />
           <BotBench state={state} />
-          <Experiments />
+          <Experiments state={state} />
           <UsageSection
             result={result}
             loading={loading}
@@ -416,7 +417,64 @@ function BotBench({ state }: { state: ReturnType<typeof useRoom> }) {
 
 // ------------------------------------------------------------- experiments
 
-function Experiments() {
+/**
+ * The reveal's cadence, as a slider.
+ *
+ * The one control in this section that is **not** local to the device, and the
+ * only one that is host-only and server-enforced. It cannot be local: every
+ * phone builds the same reveal schedule the TV does and strikes each word on the
+ * same beat, so a cadence one device kept to itself would put the room on two
+ * different reveals — see `Room.revealLineMs`.
+ *
+ * Sent on every input event rather than on release, so dragging it *during* a
+ * running reveal is the point rather than a side effect. The schedule is derived
+ * from `scoring.startedAt` and this figure, so a change mid-reveal re-times every
+ * line at once, including the ones already out.
+ *
+ * Inverted between the control and the value: the slider runs left-to-right
+ * slow-to-fast, which is how a speed control has to read, while the number
+ * underneath is a *delay* and therefore runs the other way.
+ */
+function RevealSpeed({ state }: { state: ReturnType<typeof useRoom> }) {
+  const room = state.room;
+  const isHost = room !== null && room.hostId === getPlayerId();
+  const lineMs = room?.revealLineMs ?? REVEAL_TIMING.LINE_INTERVAL;
+  // The slider's own value: high is fast. See the note above.
+  const slider = MIN_LINE_MS + MAX_LINE_MS - lineMs;
+
+  return (
+    <div className="debug-slider">
+      <label className="debug-slider__row" htmlFor="debug-reveal-speed">
+        <span className="debug-slider__label">Reveal speed</span>
+        <span className="debug-slider__value">{lineMs}ms / word</span>
+      </label>
+      <input
+        id="debug-reveal-speed"
+        type="range"
+        min={MIN_LINE_MS}
+        max={MAX_LINE_MS}
+        step={10}
+        value={slider}
+        disabled={!isHost}
+        onChange={(e) =>
+          roomStore.send({
+            type: "debugRevealSpeed",
+            lineMs: MIN_LINE_MS + MAX_LINE_MS - Number(e.target.value),
+          })
+        }
+      />
+      <p className="debug-section__detail">
+        {!room
+          ? "Not in a room."
+          : !isHost
+            ? "Host device only."
+            : `How fast words appear on the results screen. Moves every phone in the room. Default ${REVEAL_TIMING.LINE_INTERVAL}ms.`}
+      </p>
+    </div>
+  );
+}
+
+function Experiments({ state }: { state: ReturnType<typeof useRoom> }) {
   const [flags, setFlags] = useState(readExperiments);
 
   function toggle(id: string) {
@@ -436,8 +494,13 @@ function Experiments() {
   return (
     <section className="debug-section">
       <h3 className="debug-section__title">Experimental features</h3>
+      <RevealSpeed state={state} />
+      {/* Said here rather than at the top of the section: the slider above is
+          the exception to it, and a blanket "local to this device" over a
+          control that moves every phone in the room would be a lie. */}
       <p className="debug-section__detail">
-        Local to this device — toggling does not change anyone else's game.
+        The switches below are local to this device — toggling one does not
+        change anyone else's game.
       </p>
       {EXPERIMENTS.map((exp) => (
         <label key={exp.id} className="debug-toggle">

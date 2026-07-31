@@ -9,7 +9,7 @@ import {
 } from "../../reveal";
 import { RoomChip } from "../../components/RoomChip";
 import { TeamBadge } from "../../components/TeamBadge";
-import { WordList } from "../../components/WordList";
+import { WordList, scorerMark } from "../../components/WordList";
 import type { RowReveal } from "../../components/WordList";
 import { useMarquee } from "../../marquee";
 import { roomStore } from "../../net/room";
@@ -147,8 +147,11 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
         playerOrder: "shortest",
         lineOrder: "entry",
         rng: seededRng(`${seed}:reveal`),
+        // Off the room, not off this device: the phones build the identical
+        // schedule and would otherwise strike each word on a different beat.
+        lineMs: room.revealLineMs,
       }),
-    [results, seed],
+    [results, seed, room.revealLineMs],
   );
 
   // Round one has nothing to deal in the order of; every round after deals in
@@ -255,9 +258,11 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
   useEffect(() => {
     if (ranked || acking || !dealt) return;
     if (step < schedule.lastStep) return;
-    const id = setTimeout(() => setRanked(true), REVEAL_TIMING.LINE_INTERVAL * 2);
+    // Two beats of the cadence this schedule was actually built at, which is
+    // not necessarily the default one — see `RevealSchedule.lineMs`.
+    const id = setTimeout(() => setRanked(true), schedule.lineMs * 2);
     return () => clearTimeout(id);
-  }, [ranked, acking, dealt, step, schedule.lastStep]);
+  }, [ranked, acking, dealt, step, schedule.lastStep, schedule.lineMs]);
 
   // FAST FORWARD, arriving as room state so the TV and the phones land every
   // outstanding strike on the same frame. Depends on `skipped` alone and guards
@@ -497,13 +502,15 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
   const results_ = useMarquee<HTMLDivElement>([step, phase, rankStage, marks]);
 
   const teams = results.scorers.some((s) => s.colorIndex !== null);
-  const emojiOf = (id: string) => room.players.find((p) => p.id === id)?.emoji ?? "";
-  // A team has no emoji of its own, so it identifies itself by name in the
-  // "somebody else had this too" trail.
+  const playerOf = (id: string) => room.players.find((p) => p.id === id);
+  const emojiOf = (id: string) => playerOf(id)?.emoji ?? "";
+  const nameOf = (id: string) => playerOf(id)?.name || "…";
+
+  // Who else had this word, in the trail behind it — a face, or a team's swatch.
+  // The phones draw the identical trail; see `scorerMark`.
   const labelFor = (id: string) => {
     const s = byId.get(id);
-    if (!s) return "?";
-    return s.colorIndex === null ? s.emoji : ` ${s.name}`;
+    return s ? scorerMark(s) : "?";
   };
 
   // Asks the server rather than jumping locally: the phones are watching the
@@ -569,7 +576,8 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
             if (!row.revealed) return null;
             return {
               // A word its own scorer disowned reads the same as one another
-              // column took: it lost. Only the phone that struck it can undo it.
+              // column took: it lost. The scorer whose list it is can take it
+              // back from their phone, and so can the host from here.
               struck: row.struck || row.selfStruck,
               strikeDelayMs: row.backCheck ? 0 : REVEAL_TIMING.STRIKE_HOLD,
               alsoShown: row.alsoShown,
@@ -640,10 +648,15 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
                   ) : (
                     // Who the team is — the round and the match both score the
                     // team, so this is the only place a player's own face
-                    // appears on the results screen.
+                    // appears on the results screen. Faces *and* names: a row
+                    // of bare emoji says how many people a team is, and "who
+                    // wrote that" is the question the list below it provokes.
                     <div className="id-card__members">
                       {scorer.members.map((member) => (
-                        <span key={member}>{emojiOf(member)}</span>
+                        <span className="id-card__member" key={member}>
+                          <span className="id-card__member-emoji">{emojiOf(member)}</span>
+                          <span className="id-card__member-name">{nameOf(member)}</span>
+                        </span>
                       ))}
                     </div>
                   )}
@@ -696,6 +709,12 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
 
                 {/* The list scrolls inside its card; the grid around it never
                     grows, so the footer button stays on screen. */}
+                {/* The host can strike *any* column, not only the one their own
+                    phone would own — they have none, and they are reading the
+                    round out to the room. It is the same event a player sends,
+                    with the scorer named; `reduce` honours that from the host
+                    alone. Words the round already struck stay inert here exactly
+                    as they do on a phone. */}
                 <WordList
                   entries={scorer.entries}
                   size={15}
@@ -707,6 +726,14 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
                   listRef={(el) => {
                     lists.current.set(id, el);
                   }}
+                  onSelfStrike={(index) =>
+                    roomStore.send({
+                      type: "selfStrike",
+                      scorerId: id,
+                      index,
+                      struck: !rowView(schedule, id, index, step, marks).selfStruck,
+                    })
+                  }
                 />
               </div>
             </section>

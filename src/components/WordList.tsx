@@ -1,6 +1,8 @@
-import type { CSSProperties, Ref } from "react";
+import { Fragment } from "react";
+import type { CSSProperties, ReactNode, Ref } from "react";
 import type { ScoredEntry } from "../../shared/scoring";
 import type { PlayerId } from "../../shared/state";
+import { TEAM_COLORS } from "../../shared/teams";
 import type { ScorerId } from "../../shared/teams";
 
 /**
@@ -33,13 +35,45 @@ export type RowReveal = {
   selfMark: "strike-a" | "strike-b" | "restore-a" | "restore-b" | null;
 };
 
+/**
+ * How one scorer appears in another scorer's "somebody else had this too" trail.
+ *
+ * A player is their own face. A team has none, so it is a bare swatch in its own
+ * accent — the colour is what the room navigates teams by all game, and it says
+ * which team in less room than the name did while leaving the word beside it the
+ * width it needs. Nothing rides inside the swatch: a team's list is shared, so
+ * *which member* typed the duplicate is not what a struck word is asking.
+ *
+ * Shared by both results screens rather than written twice — the TV and the
+ * phone draw the identical trail, and a trail that disagreed between them would
+ * have two people looking at the same word and counting different rivals.
+ */
+export function scorerMark(
+  scorer: { name: string; emoji: string; colorIndex: number | null },
+): ReactNode {
+  if (scorer.colorIndex === null) return scorer.emoji;
+  return (
+    <span
+      className="word-row__team"
+      // Set per element, exactly as `TeamBadge` does, so the swatch is correct
+      // wherever it is dropped.
+      style={{ "--accent": `var(${TEAM_COLORS[scorer.colorIndex].token})` } as CSSProperties}
+      title={scorer.name}
+    />
+  );
+}
+
 type Props = {
   entries: ScoredEntry[];
   /** Entry size in px; the attribution emoji trail 3px behind it. */
   size?: number;
   empty?: string;
-  /** Short label for another scorer that also had the word. */
-  labelFor: (id: ScorerId) => string;
+  /**
+   * How another scorer that also had this word is shown in the trail: a face
+   * for a player, a swatch in the team's colour for a team. A node rather than
+   * a string because of the swatch — see `.word-row__team`.
+   */
+  labelFor: (id: ScorerId) => ReactNode;
   /**
    * Author label, rendered only in team play — the list is shared there, so
    * "who wrote this" is real information. Omitted, nothing is shown.
@@ -140,7 +174,11 @@ export function WordList({
                 }
                 data-marquee=""
               >
-                <span className="marquee">{alsoShown.map(labelFor).join("")}</span>
+                <span className="marquee">
+                  {alsoShown.map((id, k) => (
+                    <Fragment key={`${id}-${k}`}>{labelFor(id)}</Fragment>
+                  ))}
+                </span>
               </span>
             )}
           </>

@@ -83,6 +83,23 @@ export const isWaiting = (player: Player): boolean => player.ready || isBot(play
 export const botCount = (players: Player[]): number => players.filter(isBot).length;
 
 /**
+ * Sets every bot's `ready` flag, leaving the humans exactly as they are.
+ *
+ * Called at the standings edge, and only there. Everywhere else a bot's flag
+ * stays honestly false and `isWaiting` does the excusing — but the standings
+ * board draws a marker per row rather than a tally, and a bot sitting under a
+ * blank marker is the room being told it is waiting on a thing that never
+ * readies. Nothing about the rules moves: `isWaiting` was already true for a
+ * bot, so no countdown opens or closes because of this.
+ *
+ * Returns the identical array when there are no bots, per the no-op rule.
+ */
+export function readyBots(players: Player[]): Player[] {
+  if (!players.some(isBot)) return players;
+  return players.map((p) => (isBot(p) ? { ...p, ready: true } : p));
+}
+
+/**
  * Grows or shrinks the bot population to exactly `count`, clamped to
  * 0..MAX_BOTS. Idempotent, which is what lets the panel be a plain stepper
  * instead of two separate add/remove events.

@@ -3,9 +3,9 @@ import type { Player } from "../../shared/state";
 import { isWaiting } from "../../shared/bots";
 
 /**
- * A stable animation interval per player, 0.9s–1.6s, so the dots and bobbing
- * avatars on the host screen move out of step with each other. Derived from
- * the id rather than randomised, or every re-render would resynchronise them.
+ * A stable animation interval per player, 0.9s–1.6s, so the bobbing avatars on
+ * the host screen move out of step with each other. Derived from the id rather
+ * than randomised, or every re-render would resynchronise them.
  */
 export function pulseInterval(id: string): string {
   let hash = 0;
@@ -15,7 +15,7 @@ export function pulseInterval(id: string): string {
 
 type PillProps = {
   player: Player;
-  /** `playing` shows the activity dot; `lobby` shows readiness. */
+  /** `lobby` shows readiness; `playing` is the name and the face alone. */
   variant: "playing" | "lobby";
   onKick?: (id: string) => void;
 };
@@ -46,18 +46,11 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
         {player.emoji}
       </span>
       <span className="player-pill__name">{player.name || "…"}</span>
-      {variant === "playing" ? (
-        // Purely decorative. It says somebody is writing, never how much —
-        // per-player counts are deliberately absent from the broadcast and
-        // must not become inferable from this dot.
-        <span
-          className="player-pill__dot"
-          style={{ "--pulse": pulseInterval(player.id) } as CSSProperties}
-          aria-hidden="true"
-        />
-      ) : (
-        ready && <span className="player-pill__mark">✓ READY</span>
-      )}
+      {/* Nothing trails the name during a round. The pulsing dot that used to
+          sit here said only "somebody is writing", which every pill said at
+          once — ten of them blinking out of step were the busiest thing on a
+          screen whose job is the category. */}
+      {variant === "lobby" && ready && <span className="player-pill__mark">✓ READY</span>}
     </>
   );
 
@@ -78,7 +71,16 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
    * The label rides *over* the pill rather than replacing its children, so the
    * pill keeps the width its name gave it and the row does not reflow under
    * the cursor.
+   *
+   * **How wide the pill is decides which words fit on it.** A ready pill carries
+   * the READY tag, which is enough width for KICK PLAYER behind any name at all.
+   * A waiting pill is only as wide as the name, so a short one leaves the label
+   * hanging off both ends as a bubble visibly bigger than the thing it belongs
+   * to — that pill gets the one word instead. The `aria-label` says the whole
+   * thing either way; this is only what is drawn.
    */
+  const short = (player.name || "").trim().length < 7 && !ready;
+
   return (
     <li className="player-pill-slot">
       <button
@@ -88,7 +90,9 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
         onClick={() => onKick(player.id)}
       >
         {body}
-        <span className="player-pill__kick" aria-hidden="true">Kick player</span>
+        <span className="player-pill__kick" aria-hidden="true">
+          {short ? "Kick" : "Kick player"}
+        </span>
       </button>
     </li>
   );

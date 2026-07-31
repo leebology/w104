@@ -5,7 +5,7 @@ import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIE
 import { voteBudget } from "./voting";
 import { CATEGORIES, RANDOM_CATEGORY } from "./categories";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS } from "./teams";
-import { rowKey } from "./reveal";
+import { MAX_LINE_MS, MIN_LINE_MS, rowKey } from "./reveal";
 import { isSelfStruck } from "./selfstrike";
 import type { SelfMarks } from "./selfstrike";
 import type { Results } from "./scoring";
@@ -1816,6 +1816,62 @@ describe("debug skip", () => {
   });
 });
 
+describe("debug reveal speed", () => {
+  test("sets the room's cadence, from any phase", () => {
+    const room = seed(2);
+    const set = reduce(room, {
+      t: "debugRevealSpeed", playerId: "host", lineMs: 90, now: 2000,
+    });
+    expect(set.revealLineMs).toBe(90);
+    // Mid-round too: the slider exists to be dragged while a reveal runs.
+    const playing = reduce(playingRoom(30), {
+      t: "debugRevealSpeed", playerId: "host", lineMs: 90, now: 2000,
+    });
+    expect(playing.revealLineMs).toBe(90);
+    expect(playing.phase.name).toBe("playing");
+  });
+
+  test("a player cannot move it", () => {
+    const room = seed(2);
+    expect(
+      reduce(room, { t: "debugRevealSpeed", playerId: "p0", lineMs: 90, now: 2000 }),
+    ).toBe(room);
+  });
+
+  test("the wire is not trusted: the figure is clamped", () => {
+    const room = seed(2);
+    expect(
+      reduce(room, { t: "debugRevealSpeed", playerId: "host", lineMs: 0, now: 2000 })
+        .revealLineMs,
+    ).toBe(MIN_LINE_MS);
+    expect(
+      reduce(room, { t: "debugRevealSpeed", playerId: "host", lineMs: 1e9, now: 2000 })
+        .revealLineMs,
+    ).toBe(MAX_LINE_MS);
+  });
+
+  test("setting the cadence it already has is a no-op", () => {
+    const room = seed(2);
+    expect(
+      reduce(room, {
+        t: "debugRevealSpeed", playerId: "host", lineMs: room.revealLineMs, now: 2000,
+      }),
+    ).toBe(room);
+  });
+
+  /** Inert scenery, like `debugBots`: it opens and closes nothing. */
+  test("it does not disturb a countdown", () => {
+    let room = seed(2);
+    room = reduce(room, { t: "ready", playerId: "p0", ready: true, now: 2000 });
+    room = reduce(room, { t: "ready", playerId: "p1", ready: true, now: 2001 });
+    expect(room.phase.name).toBe("countdown");
+    const set = reduce(room, {
+      t: "debugRevealSpeed", playerId: "host", lineMs: 90, now: 2002,
+    });
+    expect(set.phase).toEqual(room.phase);
+  });
+});
+
 describe("the results screen", () => {
   test("entering it clears readiness, so nothing skips the reveal", () => {
     const room = scored();
@@ -1936,8 +1992,52 @@ describe("selfStrike", () => {
 
   test("somebody who was not in the round cannot mark anything", () => {
     const before = scored();
+    // The host holds no seat, so with no scorer named there is nothing of
+    // theirs to mark — they do not fall through onto somebody else's list.
     expect(
       reduce(before, { t: "selfStrike", playerId: "host", index: 0, struck: true, now: 50_000 }),
+    ).toBe(before);
+  });
+
+  test("the host may strike any scorer's word by naming them", () => {
+    const before = scored();
+    const index = indexOf(before, "p0", "Beyonce");
+    const after = reduce(before, {
+      t: "selfStrike", playerId: "host", scorerId: "p0", index, struck: true, now: 50_000,
+    });
+    expect(isSelfStruck(marksOf(after), rowKey("p0", index))).toBe(true);
+  });
+
+  test("a player naming somebody else still marks only their own list", () => {
+    const before = scored();
+    // p1's list is Adele alone, which the round already struck — so if the
+    // `scorerId` were honoured this would be a no-op, and if it is ignored p0's
+    // own row 0 is marked instead. The latter is what must happen.
+    const after = reduce(before, {
+      t: "selfStrike", playerId: "p0", scorerId: "p1", index: 1, struck: true, now: 50_000,
+    });
+    expect(isSelfStruck(marksOf(after), rowKey("p0", 1))).toBe(true);
+    expect(isSelfStruck(marksOf(after), rowKey("p1", 1))).toBe(false);
+  });
+
+  test("a host naming a scorer that does not exist marks nothing", () => {
+    const before = scored();
+    expect(
+      reduce(before, {
+        t: "selfStrike", playerId: "host", scorerId: "nobody", index: 0, struck: true, now: 50_000,
+      }),
+    ).toBe(before);
+  });
+
+  test("the host cannot strike a word the round already struck either", () => {
+    const before = scored();
+    // "Adele" is on both lists, so it is already out and there is no point to
+    // take back — the same refusal a player gets.
+    const index = indexOf(before, "p0", "Adele");
+    expect(
+      reduce(before, {
+        t: "selfStrike", playerId: "host", scorerId: "p0", index, struck: true, now: 50_000,
+      }),
     ).toBe(before);
   });
 
@@ -2026,3 +2126,67 @@ describe("selfStrike in team play", () => {
 function marksOfPhase(room: Room): SelfMarks {
   return (room.phase as { selfMarks: SelfMarks }).selfMarks;
 }
+
+/**
+ * The readiness floor is MIN_PLAYERS in the lobby and 1 past it — see
+ * `readyFloor`. A match that has begun belongs to whoever is still in it.
+ */
+describe("the readiness floor", () => {
+  test("the lobby still needs MIN_PLAYERS", () => {
+    const room = reduce(seed(1), { t: "ready", playerId: "p0", ready: true, now: 2000 });
+    expect(room.phase.name).toBe("lobby");
+  });
+
+  test("one player alone on a team closes team select", () => {
+    let room = reduce(seedTeams(1), { t: "startGame", playerId: "host", now: 2000 });
+    expect(room.phase.name).toBe("teams");
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 2100 + COUNTDOWN_MS, to: "voting",
+    });
+    // And leaving still stops it dead, which is the only brake this screen has.
+    room = reduce(room, { t: "leaveTeam", playerId: "p0", now: 2200 });
+    expect(room.phase.name).toBe("teams");
+  });
+
+  test("a lone player readying at standings opens the next countdown", () => {
+    let room = reduce(scored(3), { t: "showStandings", playerId: "host", now: 11_000 });
+    room = reduce(room, { t: "disconnect", playerId: "p1", now: 11_100 });
+    expect(room.phase.name).toBe("standings");
+    room = reduce(room, { t: "ready", playerId: "p0", ready: true, now: 11_200 });
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 11_200 + COUNTDOWN_MS, to: "playing",
+    });
+  });
+
+  /**
+   * The half this fixes that the floor alone did not: the countdown branch used
+   * MIN_PLAYERS too, so a solo start opened a countdown that the very next
+   * message tore straight back down.
+   */
+  test("a solo inter-round countdown is not torn down by the next event", () => {
+    let room = reduce(scored(3), { t: "showStandings", playerId: "host", now: 11_000 });
+    room = reduce(room, { t: "disconnect", playerId: "p1", now: 11_100 });
+    room = reduce(room, { t: "ready", playerId: "p0", ready: true, now: 11_200 });
+    expect(room.phase.name).toBe("countdown");
+    const after = reduce(room, {
+      t: "setProfile", playerId: "p0", name: "Renamed", emoji: "🦊", now: 11_300,
+    });
+    expect(after.phase).toEqual(room.phase);
+  });
+
+  test("a lone player readying on the results screen banks the round", () => {
+    let room = reduce(scored(3), { t: "disconnect", playerId: "p1", now: 10_900 });
+    expect(room.phase.name).toBe("scoring");
+    room = reduce(room, { t: "ready", playerId: "p0", ready: true, now: 11_000 });
+    expect(room.phase.name).toBe("standings");
+    expect(room.history).toHaveLength(1);
+  });
+
+  test("nobody connected opens nothing, whatever the flags say", () => {
+    let room = reduce(scored(3), { t: "showStandings", playerId: "host", now: 11_000 });
+    room = reduce(room, { t: "disconnect", playerId: "p0", now: 11_100 });
+    room = reduce(room, { t: "disconnect", playerId: "p1", now: 11_200 });
+    expect(room.phase.name).toBe("standings");
+  });
+});

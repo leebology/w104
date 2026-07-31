@@ -132,9 +132,22 @@ replaced wholesale on each `state` push; every client action is a *request*.
   `settle` closes voting before anyone has voted. It happens in exactly one
   place — the tick that opens `voting`. **Opening `scoring` clears them for the
   same reason** — see "The scoring reveal" — as does banking a round.
-- The post-voting countdown is not readiness-cancellable. `everyoneReady` needs
-  `MIN_PLAYERS`, so after a host solo-start that branch would tear it down on
-  the next event.
+- **The readiness floor is `MIN_PLAYERS` in the lobby and 1 past it**
+  (`readyFloor` in `shared/reduce.ts`). The lobby's floor is the one that is
+  really a minimum — nobody's Ready button should start a match they would play
+  alone, and the host's Start is the override that says so. Once the match is
+  *running* the room is whoever is still in it: with a floor of `MIN_PLAYERS`
+  there a solo host-started match could not reach round two, team select would
+  not close for the last person standing on a team, and a game four of five
+  people walked out of hung on a count it could no longer reach. A countdown
+  answers for whichever phase it would fall back to, so the "would this open?"
+  and "does it stay open?" halves cannot disagree about the same moment.
+- The post-voting countdown is not readiness-cancellable **at all**, and that is
+  not about the floor. On that side of the edge `ready` means "votes spent", and
+  the 60-second deadline closes voting whether or not anybody spent theirs — so
+  a room where one person never voted arrives there already not-ready, and
+  tearing the countdown down would drop it through `backPhase` to the *lobby*,
+  abandoning the match.
 - The server implements `onAlarm()`, **not** `alarm()`. PartyServer's own
   `alarm()` initializes the object then calls `onAlarm()`; overriding `alarm()`
   skips `onStart()` on a cold wake, `this.room` stays null, and the round hangs
@@ -173,8 +186,9 @@ replaced wholesale on each `state` push; every client action is a *request*.
   own.
 - **Local dev stays plain http.** An https page cannot open a `ws://` socket, so
   no `--local-protocol https`.
-- The host is not a player. A natural start needs 2+ *connected* players all
-  ready; the host's Start button force-readies everyone and can start solo.
+- The host is not a player. A natural start *out of the lobby* needs 2+
+  *connected* players all ready; the host's Start button force-readies everyone
+  and can start solo. Past the lobby the floor is 1 — see `readyFloor`.
 - **The round number is derived, never stored.** `currentRound(room)` is
   `history.length + 1`. A stored counter would have to increment when an
   inter-round countdown opens and decrement when it is cancelled; history only
@@ -400,10 +414,12 @@ computed while nobody was looking.
 
 ### Debug menu
 
-Mostly off every game path — the Usage and Experimental sections are deletable
-without the game noticing. Three sections are the exception: **Debug**, **Views**
-and **Bots** are the only things outside normal play that mutate a live room, and
-all three are host-only and enforced on the server.
+Mostly off every game path — the Usage section is deletable without the game
+noticing. Three sections are the exception: **Debug**, **Views** and **Bots** are
+the only things outside normal play that mutate a live room, and all three are
+host-only and enforced on the server. **Experimental is a fourth, in part**: its
+on/off switches are local to the device, but the reveal-speed slider is not and
+cannot be — see `Room.revealLineMs` below.
 
 The Debug section holds the round controls.
 
@@ -500,6 +516,30 @@ can see a crowded screen.
   humans picking; a placeholder has nothing to pick with, and an empty panel is
   the one thing that screen is dressed to avoid.
 
+**The reveal-speed slider** (`Room.revealLineMs`, the Experimental section) sets
+how many milliseconds the scoring reveal spends per line.
+
+- **It is room state, and that is not a convenience.** Every phone builds the
+  same schedule the TV does and strikes each word on the same beat, so a cadence
+  one device kept to itself would put the room on two different reveals — the
+  same reasoning that puts FAST FORWARD and `viewNonce` in `RoomState`. It is
+  therefore host-only and rejected in `shared/reduce.ts` like its siblings, and
+  it is the one control in Experimental that is not local to the device.
+- **The column pause rides the cadence rather than staying fixed.** At a sixth
+  of the default interval a full second between columns stops being a beat the
+  eye follows and becomes the whole reveal.
+- **`clampLineMs` guards it at every door** — the event, the schedule and
+  `load()`. It is the denominator of every step in `timeOf`, so an undefined or
+  a zero would land every line on the same millisecond.
+- **`REVEAL_TIMING` now lives in `shared/revealtiming.ts`**, re-exported by
+  `shared/reveal.ts` so no import site changed. Same arrangement as
+  `shared/rng.ts` and for the same reason: `shared/state.ts` needs the default
+  cadence to seed the field, and it cannot import `reveal.ts` without closing a
+  cycle through `scoring.ts`.
+- **Read the cadence back off `RevealSchedule.lineMs`, not off the constant.**
+  `HostScoring` paces one beat after the last line, and that beat has to be the
+  same length as the ones before it.
+
 The rest is off every game path, and deletable without the game noticing.
 
 - **`GET /debug/usage` on the Worker, live in every environment including
@@ -548,6 +588,20 @@ See "The debug usage panel" in `HOSTING.md` for the API token setup.
 Entries render optimistically and reconcile on `entryAck` (a 30s round cannot
 wait on a round trip); `seq` is present only while an entry is unacked.
 
+**Every countdown in the game is one card** (`src/components/GetReady.tsx`), on
+the TV and on the phones. The lobby's count into the vote, the one after voting
+closes and the one between rounds are the same moment, so they are the same
+object: the gold plaque, the teal tab overhanging its top-left corner naming
+where it leads, and — on the host screens that can stop it — a Stop button. No
+caption: the Ready button that opened the count is still under the player's thumb
+and still says Not ready, and a five-second card is not read. It is **posed
+over** the screen it interrupts
+rather than replacing it, and whatever it is posed over wears `countdown-dim`.
+Which parts dim is stated per screen and is not incidental: the phones keep their
+Ready button lit through the count, because un-readying is the room's brake on
+it. Team select is the one countdown still on the old plaque — it is not
+cancellable at all (see `cancelStart`), so it has no note to carry.
+
 **Every host screen's back-out lives top-right, as `HostExit`** — a cream
 outline on the field, deliberately not a `.btn`. Gold with a hard shadow means
 "go forward" in this app, so the footer carries exactly one forward action and
@@ -580,14 +634,35 @@ different jobs, and a host toggle only ever puts the wrong one up. Both read
 the same `computeStandings` array in the same order, so **nothing about
 placement or ties may depend on which is showing.**
 
+**A round pays out inverted, and the highest total wins.** First takes a point
+for every scorer *that round had* and last always takes exactly one, so a round
+is worth more the bigger the room and a total only ever grows. The size comes
+from the round's own `places` record, never from the room as it now stands — a
+player who joined for round three must not reprice round one — and a shared
+place shares its payout while the places a tie skips are simply never awarded.
+`Standing.badges` stays a list of *places*, deliberately: what a place was worth
+depends on how big its round was, so a strip of payouts would say what the room
+was worth rather than what the scorer did. This inverts the golf scoring the
+match-structure spec describes; that document is now historical on this point.
+
 `StandingsList` runs full width to five scorers and **splits into two columns
 from six**, filled *down* the first column before the second so reading order
 stays 1st to last. That is why it is a `grid` with `grid-auto-flow: column` and
 a row-track list built in the component: the leader's row is taller only in the
 single-column board, because with two columns row one is shared with whoever
 sits at the top of column two. It carries no per-round chips — the podium's
-badge strip is where the golf sum is itemised, and between rounds the room
-wants the total, not the arithmetic.
+badge strip is where a whole match is itemised — but it does carry `last`, what
+the round just played paid, immediately left of the total. That is the one piece
+of arithmetic a room between rounds actually asks for.
+
+**Readiness on the standings board is a marker per row, never a tally.** The
+footer's "n of m READY" is gone: a count says how many are left when what the
+host wants is *which*. A ready row wears the chip, a waiting one wears nothing,
+and a part-ready *team* is the single exception that still gets a number. It is
+also why banking a round readies the bots (`readyBots` in `shared/bots.ts`) —
+`isWaiting` already excused them, but under a per-row marker a bot with a blank
+chip reads as the holdout. That is cosmetic by construction: the flag it sets
+was already true to every rule that reads it.
 
 Screens are a pure `switch` on `room.phase.name` in `HostView`/`PlayerView`.
 Both have an explicit `ReactElement` return type — **that annotation is what
@@ -615,7 +690,22 @@ card ends on. Rules to keep:
   **`PlayerScoring` run the identical reveal on every phone** — it builds the
   same schedule from the same arguments and strikes each word on the beat the TV
   does. Nothing about the reveal is ticked over the wire, and the two schedules
-  must not drift: `playerOrder`/`lineOrder`/seed are the same in both screens.
+  must not drift: `playerOrder`/`lineOrder`/seed **and `lineMs`** are the same in
+  both screens, which is why the cadence is room state and not a preference.
+- **The trail is `scorerMark`, shared by both screens.** A rival player is their
+  own face; a rival team is a bare swatch in its accent — the colour is what the
+  room navigates teams by, and it identifies one in less room than its name did.
+  Nothing rides inside the swatch: a team's list is shared, so *which member*
+  typed the duplicate is not the question a struck word asks. The TV and the
+  phone must draw the same trail or two people are looking at one word and
+  counting different rivals.
+- **The host can strike any list; a player can strike only their own.** Same
+  `selfStrike` event, with the host naming a scorer (`scorerId`) — honoured for
+  the host alone, ignored from anyone else. The host is reading the round out to
+  the room off the TV, and "that is not a real one" has to be sayable about a
+  word that is not yours. The host holds no seat, so a host who names nobody
+  marks nothing rather than falling through to somebody's list, and a duplicate
+  is refused from either of them.
 - **FAST FORWARD is room state (`scoring.skipped`), not a local jump.** A skip
   the TV kept to itself would leave the phones crawling through lines the room
   has already been shown.
@@ -688,8 +778,10 @@ card ends on. Rules to keep:
 - `docs/superpowers/specs/2026-07-25-w104-mvp-design.md` — the design spec:
   decisions, rationale, failure-handling table. Read before non-trivial changes.
 - `docs/superpowers/specs/2026-07-26-match-structure-design.md` — the match
-  structure spec: host-set round count/timer, the standings phase, golf
-  placement scoring. Supersedes the single-round scope in the MVP spec above.
+  structure spec: host-set round count/timer, the standings phase, placement
+  scoring. Supersedes the single-round scope in the MVP spec above. **Its golf
+  direction is historical** — the payout is inverted now and the highest total
+  wins; see "Which shape is up" above.
 - `docs/superpowers/specs/2026-07-26-category-voting-design.md` — the category
   voting spec: the 10-category pool, vote budget, the weighted draw, spent
   categories. Supersedes the fixed `"woman"` category assumed by the MVP spec

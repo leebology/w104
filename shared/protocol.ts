@@ -24,11 +24,14 @@ export type ClientMessage =
   /** Host-only, `scoring` only: land every outstanding strike of the reveal. */
   | { type: "fastForward" }
   /**
-   * Self-validation, `scoring` only: strike one of your own words out by hand,
-   * or take it back. `index` is into your own scorer's `results` entries. Not
-   * host-only — it is the player's own list.
+   * Validation, `scoring` only: strike a word out by hand, or take it back.
+   *
+   * `index` is into that scorer's `results` entries. Not host-only — a player
+   * marks their own list, and `scorerId` is ignored from them. The **host** may
+   * name any scorer with `scorerId` and mark that list instead, which is how a
+   * wrong answer gets struck off the TV.
    */
-  | { type: "selfStrike"; index: number; struck: boolean }
+  | { type: "selfStrike"; index: number; struck: boolean; scorerId?: ScorerId }
   /**
    * The scroll mirror, `scoring` only: put my scorer's column on the host TV at
    * this fraction of its scrollable range. Accepted only from that column's
@@ -62,6 +65,12 @@ export type ClientMessage =
    * 0..MAX_BOTS on arrival. Legal from every phase.
    */
   | { type: "debugBots"; count: number }
+  /**
+   * Sets the scoring reveal's cadence, in milliseconds per line, clamped on
+   * arrival. Host-only, and it moves the whole room: every phone builds the
+   * same reveal schedule the TV does.
+   */
+  | { type: "debugRevealSpeed"; lineMs: number }
   | { type: "endGame" };
 
 export type ServerMessage =

@@ -83,20 +83,50 @@ describe("computeStandings", () => {
     expect(standings.map((s) => s.badges)).toEqual([[], [], []]);
   });
 
-  test("one round: points are that round's places", () => {
+  test("one round: a place pays out inverted, three scorers", () => {
     const standings = computeStandings(roster, [round(["a", 7, 7], ["b", 5, 5], ["c", 2, 2])]);
-    expect(standings.map((s) => [s.id, s.points])).toEqual([["a", 1], ["b", 2], ["c", 3]]);
+    expect(standings.map((s) => [s.id, s.points])).toEqual([["a", 3], ["b", 2], ["c", 1]]);
   });
 
-  test("points accumulate and the lowest total ranks first", () => {
+  test("last place always takes exactly one, whatever the room size", () => {
+    const two = computeStandings([player("a"), player("b")], [round(["a", 7, 7], ["b", 5, 5])]);
+    expect(two.map((s) => [s.id, s.points])).toEqual([["a", 2], ["b", 1]]);
+  });
+
+  test("points accumulate and the highest total ranks first", () => {
     const history = [
-      round(["a", 7, 7], ["b", 5, 5], ["c", 2, 2]), // a=1 b=2 c=3
-      round(["a", 1, 1], ["b", 9, 9], ["c", 4, 4]), // a=3 b=1 c=2
-      round(["a", 8, 8], ["b", 1, 1], ["c", 4, 4]), // a=1 b=3 c=2
+      round(["a", 7, 7], ["b", 5, 5], ["c", 2, 2]), // a=1 b=2 c=3 -> 3 2 1
+      round(["a", 1, 1], ["b", 9, 9], ["c", 4, 4]), // a=3 b=1 c=2 -> 1 3 2
+      round(["a", 8, 8], ["b", 1, 1], ["c", 4, 4]), // a=1 b=3 c=2 -> 3 1 2
     ];
     const standings = computeStandings(roster, history);
-    // a=1+3+1=5, b=2+1+3=6, c=3+2+2=7
-    expect(standings.map((s) => [s.id, s.points])).toEqual([["a", 5], ["b", 6], ["c", 7]]);
+    // a=3+1+3=7, b=2+3+1=6, c=1+2+2=5
+    expect(standings.map((s) => [s.id, s.points])).toEqual([["a", 7], ["b", 6], ["c", 5]]);
+  });
+
+  test("`last` is what the round just played paid, and null for a sit-out", () => {
+    const history: RoundSummary[] = [
+      round(["a", 7, 7], ["b", 5, 5], ["c", 2, 2]),
+      { category: "woman", places: placeRound(results(["a", 3, 3], ["c", 1, 1])) },
+    ];
+    const standings = computeStandings(roster, history);
+    // Round two had two scorers: a came 1st for 2, c came 2nd for 1.
+    expect(standings.find((s) => s.id === "a")!.last).toBe(2);
+    expect(standings.find((s) => s.id === "c")!.last).toBe(1);
+    expect(standings.find((s) => s.id === "b")!.last).toBeNull();
+  });
+
+  test("`last` is null before any round has been banked", () => {
+    expect(computeStandings(roster, []).map((s) => s.last)).toEqual([null, null, null]);
+  });
+
+  test("a shared place shares its payout, and the skipped one is never awarded", () => {
+    // b and c tie on unique, so both take 2nd of three: 2 points each, and the
+    // 1 that 3rd place would have paid goes to nobody.
+    const standings = computeStandings(roster, [
+      round(["a", 7, 7], ["b", 5, 5], ["c", 5, 5]),
+    ]);
+    expect(standings.map((s) => [s.id, s.points])).toEqual([["a", 3], ["b", 2], ["c", 2]]);
   });
 
   test("badges record the place from each round in play order", () => {
@@ -110,8 +140,8 @@ describe("computeStandings", () => {
 
   test("players level on points are co-winners sharing first place", () => {
     const history = [
-      round(["a", 7, 7], ["b", 5, 5], ["c", 2, 2]), // a=1 b=2 c=3
-      round(["a", 2, 2], ["b", 5, 5], ["c", 7, 7]), // a=3 b=2 c=1
+      round(["a", 7, 7], ["b", 5, 5], ["c", 2, 2]), // a=1 b=2 c=3 -> 3 2 1
+      round(["a", 2, 2], ["b", 5, 5], ["c", 7, 7]), // a=3 b=2 c=1 -> 1 2 3
     ];
     const standings = computeStandings(roster, history);
     // Every player totals 4.
@@ -129,7 +159,9 @@ describe("computeStandings", () => {
     const history = [round(["a", 7, 7], ["b", 5, 5], ["c", 2, 2])];
     const standings = computeStandings([player("a"), player("c")], history);
     expect(standings.map((s) => s.id)).toEqual(["a", "c"]);
-    expect(standings.find((s) => s.id === "c")!.points).toBe(3);
+    // The round is still scored as the three-hander it was: c came 3rd of
+    // three and took 1, and the kick does not reprice it.
+    expect(standings.find((s) => s.id === "c")!.points).toBe(1);
   });
 
   test("carries name and emoji from the live roster, not from history", () => {
@@ -146,7 +178,9 @@ describe("computeStandings", () => {
     ];
     const b = computeStandings(roster, history).find((s) => s.id === "b")!;
     expect(b.badges).toEqual([2]);
-    expect(b.points).toBe(2);
+    // 2nd of the two scorers round one had, and nothing for the round they
+    // were not in.
+    expect(b.points).toBe(1);
   });
 });
 

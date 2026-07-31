@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { DEFAULT_MODE } from "./gamemodes";
+import { REVEAL_TIMING } from "./revealtiming";
 import { countdownScreen, createRoom, currentRound, matchComplete, preRoundPhase, toRoomState } from "./state";
 import type { Room } from "./state";
 
@@ -43,6 +44,10 @@ describe("toRoomState", () => {
       "paused",
       "phase",
       "players",
+      // Public on purpose as well: the phones build the reveal's schedule from
+      // this too, and a cadence the TV kept to itself would be a room watching
+      // two different reveals.
+      "revealLineMs",
       "serverTime",
       "settings",
       "teams",
@@ -76,6 +81,7 @@ describe("toRoomState", () => {
       configuring: false,
       paused: null,
       viewNonce: 0,
+      revealLineMs: REVEAL_TIMING.LINE_INTERVAL,
       serverTime: 9000,
     });
   });

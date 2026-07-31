@@ -15,7 +15,7 @@ import { driverOf } from "../shared/mirror";
 import { isViewId } from "../shared/views";
 import type { ViewId } from "../shared/views";
 import { SCORING_VERSION, scoreRound } from "../shared/scoring";
-import { withSelfStrikes } from "../shared/reveal";
+import { REVEAL_TIMING, clampLineMs, withSelfStrikes } from "../shared/reveal";
 import { NO_SELF_MARKS } from "../shared/selfstrike";
 import { placeRound } from "../shared/standings";
 import {
@@ -201,6 +201,10 @@ export class W104 extends Server<Env> {
       // Debug-only, so an absent one is harmless — but `undefined + 1` is NaN,
       // and a NaN React key would stop remounting the view on every later jump.
       viewNonce: rest.viewNonce ?? 0,
+      // Debug-only too, but an absent one is *not* harmless: it is the
+      // denominator of every step in the reveal's schedule, and undefined there
+      // would put every line of a stored room's next reveal on one millisecond.
+      revealLineMs: clampLineMs(rest.revealLineMs ?? REVEAL_TIMING.LINE_INTERVAL),
       teams: rest.teams ?? [],
       // Two backfills in one pass. `teamId` gives players stored before teams
       // existed a null slot, and `by` gives their words an author — redundant
@@ -623,6 +627,11 @@ export class W104 extends Server<Env> {
         this.room = reduce(this.room, {
           t: "selfStrike",
           playerId,
+          // Passed through as sent. `reduce` honours it for the host alone and
+          // ignores it from anyone else, so nothing here has to know who this
+          // connection is — and an id naming no scorer finds none and is a
+          // no-op, which is the same answer as a bad index.
+          scorerId: typeof msg.scorerId === "string" ? msg.scorerId : undefined,
           // A hand-rolled message can send anything at all here; `reduce`
           // rejects an index that is not one of this scorer's rows, and
           // `Number` keeps a string or a null from indexing the array at all.
@@ -672,6 +681,16 @@ export class W104 extends Server<Env> {
           // A hand-rolled message can send anything at all; `setBotCount`
           // clamps and floors, so a non-number only has to arrive as one.
           count: Number(msg.count),
+          now,
+        });
+        break;
+      case "debugRevealSpeed":
+        this.room = reduce(this.room, {
+          t: "debugRevealSpeed",
+          playerId,
+          // A hand-rolled message can send anything; `clampLineMs` bounds and
+          // floors it, so a non-number only has to arrive as one.
+          lineMs: Number(msg.lineMs),
           now,
         });
         break;

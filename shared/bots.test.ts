@@ -145,6 +145,20 @@ describe("debugBots", () => {
     expect(trimmed.entries.p0).toHaveLength(1);
   });
 
+  test("a bot dealt onto the standings board arrives ready", () => {
+    const room = reduce(seed(2), {
+      t: "debugJump", playerId: "host", to: "standings", roll: 0.5, now: 2000,
+    });
+    const dressed = withBots(room, 3, "host", 2500);
+    expect(dressed.players.filter(isBot).every((b) => b.ready)).toBe(true);
+    expect(dressed.players.filter((p) => !isBot(p)).every((p) => !p.ready)).toBe(true);
+  });
+
+  test("a bot dealt anywhere else does not", () => {
+    const dressed = withBots(seed(2), 3);
+    expect(dressed.players.filter(isBot).some((b) => b.ready)).toBe(false);
+  });
+
   test("bots seat themselves when team select opens", () => {
     const room = withBots({ ...seed(2), settings: { ...seed(2).settings, teamCount: 2 } }, 4);
     const teams = reduce(room, { t: "startGame", playerId: "host", now: 3000 });
@@ -180,6 +194,23 @@ describe("bots are inert", () => {
     let room = withBots(seed(MAX_PLAYERS - 1), MAX_BOTS);
     room = reduce(room, { t: "join", playerId: "late", name: "Late", emoji: "🦊", now: 3000 });
     expect(room.players.some((p) => p.id === "late")).toBe(true);
+  });
+
+  /**
+   * A running match's floor is one connected human (see `readyFloor`), so a
+   * lone player readying at standings *does* open the next countdown — and it
+   * has to be the human that opens it. A room of nothing but bots is not a room
+   * that plays on by itself.
+   */
+  test("a room of bots alone never opens a countdown at standings", () => {
+    let room = withBots(seed(0), 6);
+    room = reduce(room, {
+      t: "debugJump", playerId: "host", to: "standings", roll: 0.5, now: 3000,
+    });
+    expect(room.players.filter(isBot).every((b) => b.ready)).toBe(true);
+    // Nothing to react to, and nothing did.
+    expect(reduce(room, { t: "debugBots", playerId: "host", count: 7, now: 3100 }).phase.name)
+      .toBe("standings");
   });
 });
 

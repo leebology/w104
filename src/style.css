@@ -555,12 +555,21 @@ ul, ol { list-style: none; }
   color: var(--ink);
 }
 
+/* A centred column, not a centring box, so NAME A: and the banner are one
+   block with a gap between them rather than a label pinned to the top of the
+   stage and a banner floating in the middle of it. Same relationship the lobby
+   gives ROOM CODE: and the room code — see `.host-lobby__label`.
+
+   Still `position: relative`: the roster is absolutely pinned to the bottom of
+   this box and the banner still bleeds past both of its edges. */
 .host-stage {
   flex: 1;
   min-height: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: 16px;
   position: relative;
 }
 
@@ -588,10 +597,6 @@ ul, ol { list-style: none; }
 }
 
 .name-a {
-  position: absolute;
-  top: 26px;
-  left: 0;
-  right: 0;
   text-align: center;
   font-family: var(--display);
   font-size: clamp(22px, 3.2vw, 38px);
@@ -599,6 +604,18 @@ ul, ol { list-style: none; }
   letter-spacing: 0.18em;
   color: var(--cream);
   z-index: 3;
+}
+
+/* The banner keeps its full bleed while sitting in the stage's flow: stretched
+   to the stage's width and then pulled 40px past each edge, which is exactly
+   what the absolute `left/right: -40px` bought it before. The lobby's room-code
+   banner does the same thing with a wider pull. */
+.host-stage .banner {
+  position: relative;
+  left: auto;
+  right: auto;
+  align-self: stretch;
+  margin: 0 -40px;
 }
 
 .roster-row {
@@ -630,6 +647,20 @@ ul, ol { list-style: none; }
   max-width: 100%;
   min-height: 0;
   overflow-y: auto;
+  /* This box scrolls *vertically*. Two things inside it stick out sideways and
+     neither is content anyone can scroll to: the kick label, which is sized to
+     its own words and deliberately overhangs a pill narrower than them, and the
+     3-degree tilt the pill takes under the cursor. Left as `auto` — which is
+     what `overflow-y: auto` computes the other axis to — a short unready name
+     was enough to put a horizontal scrollbar under the whole roster.
+
+     `clip` rather than `hidden` because the two are not the same here: `hidden`
+     is still a scroll container, so the overhang would merely be scrolled to by
+     a focus ring instead of by a bar. The margin is the overhang's allowance —
+     the tab is meant to be seen hanging off the pill, just not to be scrolled
+     after. */
+  overflow-x: clip;
+  overflow-clip-margin: 24px;
   /* 6px all round is clearance for the pills' offset shadows, handed back to
      the layout by the negative margin so nothing moves. The extra 20px at the
      bottom is *scroll slack* and is deliberately not cancelled: it is what
@@ -676,17 +707,6 @@ ul, ol { list-style: none; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-/* The ONLY activity signal on the host screen. Decorative by design: it says
-   that someone is writing and must never encode how much. */
-.player-pill__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 99px;
-  background: var(--teal);
-  flex: 0 0 auto;
-  animation: pulseDot var(--pulse, 1.2s) infinite;
 }
 
 /* Readiness is the whole pill. A ready player lifts off the page in gold; a
@@ -1141,27 +1161,19 @@ ul, ol { list-style: none; }
 
 .host-voting__footer .timer-track { flex: 1; height: 28px; }
 
-.host-voting__closed-footer {
-  flex: 0 0 126px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 14px;
-}
-
 /* The countdown plaque, scaled for a TV. A separate class rather than an
-   override, so the phone-sized one keeps its numbers. */
+   override, so the phone-sized one keeps its numbers. Only team select still
+   wears it; every other countdown in the game is `GetReady` now. */
 .get-ready--tv { font-size: 40px; padding: 14px 36px; }
 
 /* HostVoting and HostVotingClosed render different DOM subtrees, so React
    remounts rather than transitioning between them — without this the reveal
    is a hard cut. This only covers the incoming side: the result area and the
-   plaque fade in. A true cross-fade that also fades the zero-vote cards out
-   first would need the two screens to share one DOM subtree (FLIP-style),
+   countdown card fade in. A true cross-fade that also fades the zero-vote cards
+   out first would need the two screens to share one DOM subtree (FLIP-style),
    which is deliberately not attempted here. */
 .host-voting--closed .host-voting__result,
-.host-voting--closed .get-ready--tv {
+.host-voting--closed .get-ready-pose {
   animation: voting-reveal-in 260ms ease-out both;
 }
 
@@ -1173,7 +1185,7 @@ ul, ol { list-style: none; }
 @media (prefers-reduced-motion: reduce) {
   .vote-card { transition: none; }
   .host-voting--closed .host-voting__result,
-  .host-voting--closed .get-ready--tv {
+  .host-voting--closed .get-ready-pose {
     animation: none;
   }
 }
@@ -1256,11 +1268,33 @@ ul, ol { list-style: none; }
 
 /* The team's roster, under the card — the only place a player's own face
    appears on the results screen. */
+/* Faces and names, wrapping. A team column is 240px at its narrowest, so three
+   or four members go onto two lines rather than shrinking the card's one job —
+   the word list under them — by a row. */
 .id-card__members {
   display: flex;
-  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 10px;
   font-size: 18px;
   padding-top: 6px;
+}
+
+.id-card__member {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.id-card__member-name {
+  font-family: var(--display);
+  font-size: 12px;
+  line-height: 1.1;
+  max-width: 10ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .id-card__who {
@@ -1800,6 +1834,27 @@ ul, ol { list-style: none; }
   font-size: calc(var(--word-size, 16px) - 4px);
   color: var(--ink-dim);
   flex: 0 0 auto;
+}
+
+/* A rival *team* in the trail: a bare swatch in that team's accent, standing
+   where another player's face would. The colour is the team — it is what the
+   room navigates teams by all game — and it says which one in less room than
+   the team's name did, which is what the word beside it needs.
+
+   A hairline rule rather than the app's usual 2–3px: at emoji size a heavy
+   stroke eats the colour it is drawn around, and the whole swatch is the colour.
+
+   `--accent` is set per element by whoever renders it, exactly as `TeamBadge`
+   does, so the swatch is correct wherever it is dropped. */
+.word-row__team {
+  display: inline-block;
+  width: calc(var(--word-size, 16px) - 3px);
+  height: calc(var(--word-size, 16px) - 3px);
+  margin-right: 4px;
+  border-radius: 4px;
+  border: 1px solid var(--ink);
+  background: var(--accent, var(--teal));
+  vertical-align: middle;
 }
 
 .word-list__empty { font-size: 15px; color: var(--ink-dim); }
@@ -2407,10 +2462,9 @@ ul, ol { list-style: none; }
 
 .back-pill:hover { background: var(--cream); color: var(--ink); }
 
-/* The pulse is the only motion in the app; freezing it visible keeps the
+/* The bob is the only motion left in the roster; freezing it keeps the
    "who is here" signal without the animation. */
 @media (prefers-reduced-motion: reduce) {
-  .player-pill__dot { animation: none; opacity: 1; transform: none; }
   .player-pill__avatar--bob,
   .team-member__avatar--bob { animation: none; transform: none; }
   .btn, .timer-track__fill { transition: none; }
@@ -2901,23 +2955,63 @@ ul, ol { list-style: none; }
   font-size: clamp(11px, 1.1vw, 14px);
 }
 
-/* ------------------------------------------------------- host countdown */
+/* ----------------------------------------------------------- countdown */
 
-/* Posed over the dimmed staircase. Square-cornered and tilted off the grid so
-   it reads as something dropped onto the screen rather than another card in
-   the layout. */
-.host-standings__countdown {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 20%;
+/* One card for every countdown in the game — the lobby, the one after the
+   category vote, and the one between rounds — on the TV and on the phones.
+   Square-cornered and tilted off the grid so it reads as something dropped onto
+   the screen rather than another card in the layout. See src/components/GetReady.tsx.
+
+   `.get-ready-pose` is only the column: whoever renders it owns where on the
+   screen it sits, because that differs (over a dimmed board, over a lobby, in a
+   voting footer) and the card does not. */
+.get-ready-pose {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 18px;
 }
 
+/* Posed over the dimmed staircase. */
+.host-standings__countdown {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 20%;
+  display: flex;
+  justify-content: center;
+}
+
+/* The same pose over the lobby and over the closed vote. `inset: 0` with the
+   content centred rather than a top offset: those two screens have their own
+   furniture at the top, and a card measured down from it would land somewhere
+   different on each. Clicks fall through to the Stop button's own layer — the
+   note is the only thing on this overlay that is pressable. */
+.countdown-pose {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 5;
+}
+
+/* The Stop button is the only thing on this overlay that is pressable. */
+.countdown-pose .get-ready-pose > .btn { pointer-events: auto; }
+
+/* What a running countdown pushes into the background. Applied by hand per
+   screen rather than by a descendant selector on the root, so that each screen
+   states which of its parts step back — the phones deliberately keep their
+   Ready button lit through the count, because un-readying is the room's brake
+   on it. */
+.countdown-dim {
+  opacity: 0.3;
+  pointer-events: none;
+}
+
 .get-ready-card {
+  position: relative;
   background: var(--gold);
   color: var(--ink-gold);
   border: 5px solid var(--ink);
@@ -2927,6 +3021,30 @@ ul, ol { list-style: none; }
   display: flex;
   flex-direction: column;
   align-items: center;
+}
+
+/* Which countdown this is, on a tab overhanging the card's top-left corner —
+   the same move `TeamBadge` makes, and for the same reason: it names the thing
+   without taking a line inside it. Teal because gold is the card and the card
+   is the moment; a second gold surface would read as part of it.
+
+   The card needs `position: relative` and no `overflow: hidden` for this, which
+   is exactly the contract a team badge's host card has. */
+.get-ready-card__tab {
+  position: absolute;
+  top: -23px;
+  left: -14px;
+  background: var(--teal);
+  color: var(--cream);
+  border: var(--border);
+  border-radius: 8px;
+  padding: 5px 14px;
+  transform: rotate(-4deg);
+  font-family: var(--display);
+  font-size: clamp(13px, 1.3vw, 18px);
+  letter-spacing: 0.1em;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 .get-ready-card__label {
@@ -2941,35 +3059,6 @@ ul, ol { list-style: none; }
   line-height: 1;
 }
 
-.get-ready-note {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  background: var(--ink);
-  border-radius: 99px;
-  padding: 8px 20px;
-  font-size: clamp(12px, 1.1vw, 14px);
-  color: var(--cream-dim);
-}
-
-.get-ready-note__round {
-  font-family: var(--display);
-  font-size: clamp(13px, 1.2vw, 15px);
-  color: var(--mint);
-}
-
-.get-ready-note__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 99px;
-  background: var(--mint-lit);
-  flex: 0 0 auto;
-  animation: pulseDot var(--pulse, 1.1s) infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .get-ready-note__dot { animation: none; opacity: 1; transform: none; }
-}
 
 /* --------------------------------------------------- standings list view */
 
@@ -3069,14 +3158,21 @@ ul, ol { list-style: none; }
 .standings-rows--split .standings-row--lead .standings-row__avatar {
   font-size: clamp(20px, 2vw, 28px);
 }
-.standings-rows--split .standings-row__roster { font-size: clamp(13px, 1.3vw, 17px); }
+.standings-rows--split .standings-row__roster {
+  font-size: clamp(13px, 1.3vw, 17px);
+  max-width: clamp(110px, 11vw, 170px);
+  gap: 2px 7px;
+}
+.standings-rows--split .standings-row__member-name { font-size: clamp(9px, 0.9vw, 11px); }
 .standings-rows--split .standings-row__name,
 .standings-rows--split .standings-row--lead .standings-row__name {
   font-size: clamp(14px, 1.4vw, 19px);
 }
 .standings-rows--split .standings-row__who { gap: 8px; }
 .standings-rows--split .standings-row--lead .standings-row__who { flex-wrap: nowrap; }
-.standings-rows--split .standings-row__score { width: clamp(58px, 6vw, 84px); gap: 5px; }
+/* Wider than it was: the two-column board still has to fit "+6pts 24 PTS". */
+.standings-rows--split .standings-row__score { width: clamp(92px, 9.5vw, 132px); gap: 5px; }
+.standings-rows--split .standings-row__delta { font-size: clamp(9px, 0.9vw, 12px); }
 .standings-rows--split .standings-row__points,
 .standings-rows--split .standings-row--lead .standings-row__points {
   font-size: clamp(22px, 2.3vw, 32px);
@@ -3143,11 +3239,36 @@ ul, ol { list-style: none; }
 
 .standings-row--lead .standings-row__avatar { font-size: clamp(34px, 4vw, 52px); }
 
+/* A team's members, face and name. It wraps rather than scrolling — a row that
+   hid half a team behind a clipped edge would be hiding people who are in the
+   room looking at it — and it is capped so a five-person team cannot push the
+   points off the end of the row. */
 .standings-row__roster {
   font-size: clamp(16px, 1.7vw, 22px);
   line-height: 1.15;
-  max-width: 5em;
+  max-width: clamp(150px, 17vw, 260px);
   flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 10px;
+}
+
+.standings-row__member {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.standings-row__member-name {
+  font-family: var(--display);
+  font-size: clamp(11px, 1.1vw, 14px);
+  line-height: 1.1;
+  max-width: 9ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .standings-row__who {
@@ -3240,6 +3361,17 @@ ul, ol { list-style: none; }
   font-family: var(--display);
   font-size: clamp(28px, 3.1vw, 40px);
   line-height: 0.95;
+}
+
+/* What the round just played paid, riding to the left of the total. Teal on
+   cream and deliberately small: it is the arithmetic behind the big number, not
+   a second score competing with it. */
+.standings-row__delta {
+  font-family: var(--display);
+  font-size: clamp(12px, 1.2vw, 16px);
+  line-height: 1;
+  color: var(--teal);
+  white-space: nowrap;
 }
 
 .standings-row--lead .standings-row__points {
@@ -3344,10 +3476,8 @@ ul, ol { list-style: none; }
   inset: 0;
   padding-bottom: 108px;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 14px;
   pointer-events: none;
 }
 
@@ -3546,6 +3676,17 @@ ul, ol { list-style: none; }
 }
 
 .standings-table__dot--ready { background: var(--teal); border-color: var(--teal); }
+
+/* What the last round paid, immediately left of the total. Small and teal: the
+   arithmetic behind the number, not a second number beside it. */
+.standings-table__delta {
+  font-family: var(--display);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--teal);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
 
 .standings-table__points {
   font-family: var(--display);
@@ -5137,6 +5278,43 @@ ul, ol { list-style: none; }
   height: 5px;
   margin-top: 0;
 }
+
+/* ---- reveal speed ---- */
+
+/* The panel's one slider. Native `input[type=range]`, restyled only as far as
+   the accent colour: the panel is deliberately not in the game's visual
+   language, and a hand-built track here would be a widget to maintain for no
+   gain over the one the browser already ships. */
+.debug-slider { margin-bottom: 12px; }
+
+.debug-slider__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.debug-slider__label {
+  font-size: 12px;
+  letter-spacing: 0.02em;
+}
+
+.debug-slider__value {
+  font-size: 11px;
+  color: var(--teal);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.debug-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--teal);
+  cursor: pointer;
+}
+
+.debug-slider input[type="range"]:disabled { cursor: default; opacity: 0.4; }
 
 /* ---- experiment switches ---- */
 
