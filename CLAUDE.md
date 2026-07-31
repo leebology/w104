@@ -675,12 +675,33 @@ of arithmetic a room between rounds actually asks for.
 
 **Readiness on the standings board is a marker per row, never a tally.** The
 footer's "n of m READY" is gone: a count says how many are left when what the
-host wants is *which*. A ready row wears the chip, a waiting one wears nothing,
+host wants is *which*. A ready row wears the mark, a waiting one wears nothing,
 and a part-ready *team* is the single exception that still gets a number. It is
 also why banking a round readies the bots (`readyBots` in `shared/bots.ts`) —
 `isWaiting` already excused them, but under a per-row marker a bot with a blank
 chip reads as the holdout. That is cosmetic by construction: the flag it sets
 was already true to every rule that reads it.
+
+**There is one ready marker in the app and it is the lobby's**
+(`src/components/ReadyMark.tsx`). The same tag is worn by the lobby pill, the
+standings row, the podium's mid-match state and the results card — it had been
+drawn three different ways for one fact, and a host reading the room off a TV
+should not have to learn a second shape for it halfway through a match. It
+carries an ink outline the lobby's did not need, because only there does it sit
+on gold; everywhere else the ground is cream. Sizing is the host screen's to set
+(the leader's row takes a step up, the split board a step down), the drawing is
+not. **Its predicate is `isWaiting`, never `player.ready` alone** — a bot never
+readies, and a readout that disagreed with the rules would report scenery as the
+holdout.
+
+**The results card shows readiness where RANK used to be, and dropping RANK is
+the point rather than a side effect.** Readying up on that screen is what banks
+the round, so the room's answer belongs on the card that is asking; the rank was
+already said twice by the time it meant anything — the columns re-order into it
+and the top three take a medal. The slot is always rendered, holding the tag or
+nothing: `id-card__head` is `flex: 0 0 auto` above a list that takes the rest, so
+a line that came and went would push a whole column of words down the instant
+somebody readied, mid-reveal, on the screen built not to move under the eye.
 
 Screens are a pure `switch` on `room.phase.name` in `HostView`/`PlayerView`.
 Both have an explicit `ReactElement` return type — **that annotation is what

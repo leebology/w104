@@ -729,17 +729,30 @@ ul, ol { list-style: none; }
   box-shadow: none;
 }
 
-.player-pill__mark {
+/* "This one is ready", and the only drawing of it in the app — the lobby pill,
+   the standings row and the results card all render `ReadyMark`. It was the
+   lobby's tag, which is the first one a room ever sees; the standings had an
+   ink chip with a mint dot instead, and the results screen had nothing.
+
+   The ink outline is what the lobby's did not need: there it sits on a gold
+   pill, where cream alone is a tag, and everywhere else it sits on cream. Same
+   construction as `.badge` on the podium, for the same reason. */
+.ready-mark {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  background: var(--cream);
+  color: var(--ink);
+  border: 2px solid var(--ink);
   font-family: var(--display);
   font-size: 11px;
   letter-spacing: 0.12em;
   line-height: 1;
-  padding: 4px 9px;
+  padding: 3px 8px;
   border-radius: 99px;
   white-space: nowrap;
 }
 
-.player-pill--ready .player-pill__mark { background: var(--cream); }
 
 .player-pill--offline { opacity: 0.45; }
 
@@ -1437,6 +1450,16 @@ ul, ol { list-style: none; }
 }
 
 .id-card__foot .id-card__meta { flex: 1; }
+
+/* The results card's left slot, holding the ready tag or nothing. It takes the
+   width either way, so the stats stay pinned to the right edge and a card that
+   has readied is the same shape as one that has not. */
+.id-card__status {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
 
 /* A clip box on this screen rather than an ellipsis — a name too long for its
    column travels. `.id-card__name`'s own `text-overflow` is inert once the run
@@ -2821,18 +2844,8 @@ ul, ol { list-style: none; }
   flex: 0 0 auto;
 }
 
-/* Ready is the filled one — the room is counting these, so the state that
-   moves the match forward is the state that reads from a distance. */
-.podium-chip--ready { background: var(--ink); color: var(--mint); }
-
-.podium-chip__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 99px;
-  background: var(--mint-lit);
-  flex: 0 0 auto;
-}
-
+/* The ready state left here for `ReadyMark`, which is the one drawing of it in
+   the app now. What stays are the two states that are not ready. */
 .podium-chip--waiting,
 .podium-chip--dropped {
   border: 2px solid var(--cream-dim);
@@ -3370,18 +3383,19 @@ ul, ol { list-style: none; }
   flex: 0 0 auto;
 }
 
-.list-chip--ready { background: var(--ink); color: var(--mint); }
-
-.list-chip__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 99px;
-  background: var(--mint-lit);
-  flex: 0 0 auto;
-}
+/* `.list-chip--ready` and its mint dot lived here. The board wears `ReadyMark`
+   now, like the lobby and the results card — see the `.ready-mark` note. What
+   is left is the two chips that are *not* readiness: a team part-way there and
+   a row nobody is behind. */
 
 .standings-row--lead .list-chip { padding: 3px 11px; font-size: clamp(11px, 1.1vw, 12px); }
-.standings-row--lead .list-chip__dot { width: 8px; height: 8px; }
+
+/* The leader's row is taller and everything in it a size up, this included. */
+.standings-row--lead .ready-mark { padding: 4px 11px; font-size: clamp(11px, 1.1vw, 13px); }
+
+/* Two columns halve every row's width, so the tag steps down with the rest of
+   the row rather than crowding the points off the end. */
+.standings-rows--split .ready-mark { font-size: clamp(9px, 0.85vw, 11px); padding: 3px 7px; }
 
 /* Inside a cream row, "waiting" is drawn in the same de-emphasized ink the
    struck words use — a cream outline would vanish. */

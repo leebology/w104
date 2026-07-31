@@ -7,6 +7,7 @@ import {
   selfMarkClass,
   useRevealStep,
 } from "../../reveal";
+import { ReadyMark } from "../../components/ReadyMark";
 import { RoomChip } from "../../components/RoomChip";
 import { TeamBadge } from "../../components/TeamBadge";
 import { WordList, scorerMark } from "../../components/WordList";
@@ -31,8 +32,9 @@ import { totalMarks } from "../../../shared/selfstrike";
 import type { SelfMarks } from "../../../shared/selfstrike";
 import type { Results } from "../../../shared/scoring";
 import { computeStandings } from "../../../shared/standings";
+import { isWaiting } from "../../../shared/bots";
 import { currentRound } from "../../../shared/state";
-import type { RoomState } from "../../../shared/state";
+import type { Player, PlayerId, RoomState } from "../../../shared/state";
 import { rosterOf } from "../../../shared/teams";
 import type { ScorerId } from "../../../shared/teams";
 import { HostHeader } from "./HostHeader";
@@ -506,6 +508,24 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
   const emojiOf = (id: string) => playerOf(id)?.emoji ?? "";
   const nameOf = (id: string) => playerOf(id)?.name || "…";
 
+  /**
+   * Whether this card has said it has seen enough.
+   *
+   * Readying up on the results screen banks the round (`settle` treats
+   * `scoring` like `standings`), so this is the same flag the standings board
+   * reports and it is worth the same to a host deciding whether to press
+   * Standings — without it the TV shows a room of finished readers as a room
+   * still reading. `isWaiting` rather than the raw flag, so a bot never reads as
+   * the one being waited on; a team is ready when everyone still connected on it
+   * is, matching `StandingsList`, and a scorer nobody is left behind is not.
+   */
+  const isReady = (members: PlayerId[]): boolean => {
+    const here = members
+      .map(playerOf)
+      .filter((p): p is Player => p !== undefined && p.connected);
+    return here.length > 0 && here.every(isWaiting);
+  };
+
   // Who else had this word, in the trail behind it — a face, or a team's swatch.
   // The phones draw the identical trail; see `scorerMark`.
   const labelFor = (id: string) => {
@@ -662,11 +682,21 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
                   )}
 
                   <div className="id-card__foot">
-                    {/* Deal order is not rank. A placeholder number would be
-                        read as a standing, and hiding the line would shift the
-                        row's height when the real one arrives. */}
-                    <span className="id-card__meta">
-                      {rankStage >= 1 ? `RANK ${rank}` : "—"}
+                    {/* Where RANK n used to be, and it is a better use of the
+                        slot: the rank was already on the card twice over by the
+                        time it meant anything — the columns re-order into it and
+                        the top three take a medal — while readiness had nowhere
+                        at all, on the one screen where readying up is what banks
+                        the round.
+
+                        The slot is always here, holding the tag or nothing. The
+                        head is `flex: 0 0 auto` above a list that takes the
+                        rest, so a line that came and went with the tag would
+                        push every word in that column down the moment somebody
+                        readied, mid-reveal, on the screen built not to move
+                        under the eye. */}
+                    <span className="id-card__status">
+                      {isReady(scorer.members) && <ReadyMark />}
                     </span>
                     <div className="id-card__stats">
                       <div className="stat">
