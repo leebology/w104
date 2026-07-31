@@ -29,6 +29,14 @@ export const IDLE_REAP_MS = 15_000;
 export const HOST_GRACE_MS = 15_000;
 export const MAX_ENTRY_LEN = 64;
 export const MAX_ENTRIES = 200;
+/**
+ * The floor for a word submitted *for* a player when the round timer catches
+ * them mid-type. Five is where `allowedEdits` already stops offering typo
+ * tolerance — below it an entry is too short to guess at — so the flush uses
+ * the line the scoring already draws. Counted on the trimmed text as typed,
+ * never on the `normalize()` form: "Mr. T" is five characters and flushes.
+ */
+export const MIN_FLUSH_LEN = 5;
 export const MIN_PLAYERS = 2;
 /**
  * The host results screen lays players out as at most two rows of five, and
@@ -1249,7 +1257,7 @@ function tick(room: Room, now: number, roll: number): Room {
 }
 
 export type RejectReason =
-  | "not-playing" | "empty" | "too-long" | "duplicate" | "limit";
+  | "not-playing" | "empty" | "too-long" | "duplicate" | "limit" | "too-short";
 
 export type SubmitResult = {
   room: Room;
@@ -1258,20 +1266,17 @@ export type SubmitResult = {
 };
 
 /**
- * Kept out of `reduce` because it is the only mutation that touches the
- * server-only entries map, and it is the only one that answers back.
+ * Everything an entry must satisfy once a phase gate has let it through.
+ * Shared by `submitEntry` and `flushEntry` so the two paths cannot drift: a
+ * duplicate check that applied on one and not the other is exactly the gap two
+ * copies of these rules would open.
  */
-export function submitEntry(
+function addEntry(
   room: Room,
   playerId: PlayerId,
-  text: string,
+  trimmed: string,
   now: number,
 ): SubmitResult {
-  if (room.phase.name !== "playing") {
-    return { room, accepted: false, reason: "not-playing" };
-  }
-  const trimmed = text.trim();
-  if (trimmed === "") return { room, accepted: false, reason: "empty" };
   if (trimmed.length > MAX_ENTRY_LEN) {
     return { room, accepted: false, reason: "too-long" };
   }
@@ -1301,6 +1306,54 @@ export function submitEntry(
     },
     accepted: true,
   };
+}
+
+/**
+ * Kept out of `reduce` because it is the only mutation that touches the
+ * server-only entries map, and it is the only one that answers back.
+ */
+export function submitEntry(
+  room: Room,
+  playerId: PlayerId,
+  text: string,
+  now: number,
+): SubmitResult {
+  if (room.phase.name !== "playing") {
+    return { room, accepted: false, reason: "not-playing" };
+  }
+  const trimmed = text.trim();
+  if (trimmed === "") return { room, accepted: false, reason: "empty" };
+  return addEntry(room, playerId, trimmed, now);
+}
+
+/**
+ * The buffer a player still had in the box when the round ended, submitted for
+ * them. Separate from `submitEntry` rather than a flag on it, so that being
+ * accepted late never becomes something an ordinary submit can ask for.
+ *
+ * **The window is `timesup`.** The phone cannot fire this until it learns the
+ * round is over, which is a round trip after the alarm that ended it — gated on
+ * `playing` alone it would refuse every flush it exists for. `timesup` closes
+ * at the tick that computes `Results`, so that boundary is the honest one:
+ * past it the scores exist and the word is genuinely too late.
+ *
+ * `at` is `now` and is deliberately not clamped back to the deadline. A flushed
+ * word sorts last in the team merge and last in the reveal because it was.
+ */
+export function flushEntry(
+  room: Room,
+  playerId: PlayerId,
+  text: string,
+  now: number,
+): SubmitResult {
+  if (room.phase.name !== "playing" && room.phase.name !== "timesup") {
+    return { room, accepted: false, reason: "not-playing" };
+  }
+  const trimmed = text.trim();
+  if (trimmed.length < MIN_FLUSH_LEN) {
+    return { room, accepted: false, reason: "too-short" };
+  }
+  return addEntry(room, playerId, trimmed, now);
 }
 
 /**
