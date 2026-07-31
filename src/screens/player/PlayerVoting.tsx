@@ -2,14 +2,18 @@ import { useEffect, useState } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
 import { BALLOT, RANDOM_CATEGORY } from "../../../shared/categories";
 import { VOTING_MS } from "../../../shared/reduce";
+import { customEnabled } from "../../../shared/gamemodes";
+import type { Hand } from "../../../shared/customCategories";
 import { voteBudget, voteShares, votesSpent } from "../../../shared/voting";
 import { isWaiting } from "../../../shared/bots";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import { roomStore } from "../../net/room";
+import { PlayerVotingCustom } from "./PlayerVotingCustom";
 
 type Props = {
   room: RoomState;
   playerId: PlayerId;
+  hands: Hand[];
   /** `state.clockOffset` — needed even outside `countdown` so the open voting
       deadline counts down against the same clock as everything else. */
   offset: number;
@@ -17,7 +21,16 @@ type Props = {
   countdown?: { endsAt: number; offset: number };
 };
 
-export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
+export function PlayerVoting({ room, playerId, hands, offset, countdown }: Props) {
+  if (customEnabled(room.settings) && room.pool) {
+    return (
+      <PlayerVotingCustom
+        room={room} playerId={playerId} hands={hands}
+        offset={offset} countdown={countdown}
+      />
+    );
+  }
+
   const me = room.players.find((p) => p.id === playerId);
   const mine = room.votes[playerId] ?? {};
   const budget = voteBudget(room.settings);

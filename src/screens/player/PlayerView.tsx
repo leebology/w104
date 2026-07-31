@@ -108,7 +108,14 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
     case "lobby":
       return <PlayerLobby room={room} playerId={getPlayerId()} onLeave={onLeave} />;
     case "voting":
-      return <PlayerVoting room={room} playerId={getPlayerId()} offset={state.clockOffset} />;
+      return (
+        <PlayerVoting
+          room={room}
+          playerId={getPlayerId()}
+          hands={state.hands}
+          offset={state.clockOffset}
+        />
+      );
     case "countdown": {
       const countdown = { endsAt: room.phase.endsAt, offset: state.clockOffset };
       const screen = countdownScreen(room);
@@ -132,6 +139,7 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
           <PlayerVoting
             room={room}
             playerId={getPlayerId()}
+            hands={state.hands}
             offset={state.clockOffset}
             countdown={countdown}
           />

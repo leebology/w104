@@ -5803,3 +5803,140 @@ ul, ol { list-style: none; }
   }
   .slot-strip__chip { transition: none; }
 }
+
+/* -------------------------------------------------------- player voting, custom */
+
+/* The hand, and later the picks-only review — both are the same object: a
+   flex column of full cards, `flex: 1` each, never a grid. Same role as
+   `.player-voting__grid` but a column, because a hand is dealt one at a time
+   and the picks review can run to `VOTE_BUDGET` (4) cards without scrolling —
+   the same no-scroll trick `.player-creating__ready-cards` already relies on. */
+.player-voting__hand {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Bigger than the stock ballot tile on purpose — dealing hands of three
+   instead of showing a ten-category grid buys the room to go big. */
+.vote-tile--hand {
+  flex: 1;
+  font-size: 28px;
+  line-height: 1.12;
+  padding: 16px;
+}
+
+/* The picks-only review renders `<div>`s, not `<button>`s — a spent hand
+   cannot be revisited — and needs the box model spelled out explicitly, the
+   same as the stock locked grid: without it the picks measure wider than the
+   cards they replace. */
+.vote-tile--picked {
+  box-sizing: border-box;
+  /* Not a button: nothing to tap, so nothing should press. */
+  pointer-events: none;
+}
+
+/* Chance and authorship share a row, chance on the left where the stock tile
+   already puts it, the author chip pinned to the right of it. */
+.vote-tile__pick-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.vote-tile__pick-foot .vote-tile__chance { margin-top: 0; }
+
+.author-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-family: var(--display);
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 11px;
+  border-radius: 99px;
+  border: var(--border);
+  background: var(--paper-lit);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  transform: rotate(-2.5deg);
+  animation: plaquePop 280ms cubic-bezier(0.34, 1.42, 0.64, 1) both;
+}
+
+.author-chip__emoji { font-size: 17px; line-height: 1; }
+
+/* Gold on `--ink-gold`, the DONE-stamp pairing: the house is the game itself,
+   never a player, so it never wears the paper-lit "this is somebody's" chip. */
+.author-chip--house {
+  background: var(--gold);
+  color: var(--ink-gold);
+}
+
+/* The hand swap, 840ms total. `pickFlashA`/`pickFlashB` and `dealInA`/
+   `dealInB` are identical pairs, not two designs — the three hand slots are
+   the same three elements for the whole voting phase, so an unchanged
+   `animation` value would not restart on the very next hand. The exit motion
+   (the picked card lifting away, the other two dropping) is a plain
+   transition instead, which does not have that problem: the slots always
+   pass back through their un-exited rest state before the next hand deals,
+   so the same target values retrigger correctly every time. */
+@keyframes pickFlashA {
+  0% { background: var(--cream); }
+  45% { background: var(--gold); }
+  100% { background: var(--cream); }
+}
+
+@keyframes pickFlashB {
+  0% { background: var(--cream); }
+  45% { background: var(--gold); }
+  100% { background: var(--cream); }
+}
+
+.vote-tile--flash-a { animation: pickFlashA 180ms ease-out; }
+.vote-tile--flash-b { animation: pickFlashB 180ms ease-out; }
+
+.vote-tile--exit-up {
+  transition: transform 200ms ease-in, opacity 200ms ease-in;
+  transform: translateY(-40px);
+  opacity: 0;
+}
+
+.vote-tile--exit-down {
+  transition: transform 180ms ease-in;
+  transform: translateY(24px);
+}
+
+@keyframes dealInA {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes dealInB {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+
+.vote-tile--deal-a { animation: dealInA 320ms cubic-bezier(0.34, 1.42, 0.64, 1) both; }
+.vote-tile--deal-b { animation: dealInB 320ms cubic-bezier(0.34, 1.42, 0.64, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vote-tile--flash-a,
+  .vote-tile--flash-b,
+  .vote-tile--deal-a,
+  .vote-tile--deal-b {
+    animation: none;
+  }
+  .vote-tile--exit-up,
+  .vote-tile--exit-down {
+    transition: none;
+  }
+  .author-chip {
+    animation: none;
+    transform: rotate(-2.5deg);
+  }
+}
