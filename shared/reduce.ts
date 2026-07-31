@@ -10,7 +10,14 @@ import {
   customEnabled, isGameModeId, isNumericSpec, modeSpec, normalizeChoice, normalizeSetting,
 } from "./gamemodes";
 import type { CategorySource, ChoiceSettingKey, NumericSettingKey } from "./gamemodes";
-import { MAX_CATEGORY_LEN, WRITE_MS, buildDeal, buildPool, quotaFor } from "./customCategories";
+import {
+  MAX_CATEGORY_LEN,
+  WRITE_MS,
+  buildDeal,
+  buildPool,
+  quotaFor,
+  seedRoll,
+} from "./customCategories";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, balanceTeams, makeTeams, rosterOf, teamsEnabled } from "./teams";
 import type { TeamId } from "./teams";
@@ -338,7 +345,7 @@ function bankRound(room: Room, results: Results): Room {
  * No countdown on this edge: the transition between the two screens is an
  * animation, not a phase. See the design brief's §1c.
  */
-function closeCreating(room: Room, now: number, roll = 0): Room {
+function closeCreating(room: Room, now: number, roll: number): Room {
   const quota = quotaOf(room);
   const playerIds = room.players.map((p) => p.id);
   const pool = buildPool(playerIds, room.drafts, quota, CATEGORIES, roll);
@@ -389,7 +396,14 @@ function settle(room: Room, now: number): Room {
     // `ready` means "every slot committed" here — `commitDraft` and
     // `clearDraft` own the flag, the way `castVote` owns it during voting.
     // Which is why clearing a card tears the close down for free.
-    return everyoneReady(room, MIN_PLAYERS) ? closeCreating(room, now) : room;
+    //
+    // `settle` has no `roll` on its event — unlike `tick`, nothing here carries
+    // one — so the seed comes from `seedRoll`: the room code and this instant,
+    // neither client-controlled and both already in hand, rather than a fixed
+    // default that would make the pool and the deal computable offline.
+    return everyoneReady(room, MIN_PLAYERS)
+      ? closeCreating(room, now, seedRoll(room.code, now))
+      : room;
   }
 
   if (phase.name === "voting") {
@@ -569,6 +583,12 @@ function jumpTo(room: Room, to: ViewId, now: number, roll: number): Room {
                 ? "voting"
                 : "playing",
         },
+        // Matches the `creating` case below: a countdown headed there must not
+        // carry over the last close's pool and deal, or a room jumped back to
+        // re-write would land its next close atop the previous shuffle's
+        // leftovers. `countdownToVoting`/`countdownToPlaying` land on a phase
+        // that reads an *existing* pool, so only this target clears it.
+        ...(to === "countdownToCreating" ? { pool: null, deal: {} } : {}),
       };
     }
 
@@ -1012,6 +1032,7 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "moveCursor": {
       if (room.phase.name !== "creating") return room;
+      if (!room.players.some((p) => p.id === ev.playerId)) return room;
       const quota = quotaOf(room);
       if (!Number.isInteger(ev.slot) || ev.slot < 0 || ev.slot >= quota) return room;
       if (room.cursors[ev.playerId] === ev.slot) return room;

@@ -2248,6 +2248,15 @@ describe("the creating phase", () => {
     expect(room.players[0].ready).toBe(false);
   });
 
+  it("rejects moveCursor from a playerId that is not in the room", () => {
+    // Mirrors the membership guard writeSlot already applies for
+    // commitDraft/clearDraft — a hand-rolled message naming a nonexistent
+    // player must not seat a phantom entry in `room.cursors`.
+    const room = creatingRoom(3, 3);
+    const after = reduce(room, { t: "moveCursor", playerId: "ghost", slot: 1, now: 1 });
+    expect(after).toBe(room);
+  });
+
   it("steps back one phase, not all the way home", () => {
     let room = creatingRoom(3, 3);
     room = reduce(room, { t: "backToLobby", playerId: room.hostId!, now: 1 });
@@ -2259,5 +2268,51 @@ describe("the creating phase", () => {
     let room = seed(3);
     room = reduce(room, { t: "startGame", playerId: room.hostId!, now: 0 });
     expect(room.phase).toEqual({ name: "countdown", endsAt: COUNTDOWN_MS, to: "voting" });
+  });
+});
+
+/**
+ * The pool and the deal exist to keep authorship unreadable, and both are
+ * built from a `roll` seed. Nothing here would catch a `closeCreating` that
+ * silently dropped its roll on the floor — every other test in this file
+ * either passes a fixed roll through `tick` or never varies it — so these
+ * prove entropy actually reaches both close paths: the `tick` deadline, and
+ * `settle`'s ready-up edge, which has no `roll` on its event at all and has
+ * to derive one (see `seedRoll` in `shared/customCategories.ts`).
+ */
+describe("close entropy reaches the pool", () => {
+  /** The id-to-text mapping a shuffle actually controls, order-independent. */
+  const mapOf = (room: Room): Record<string, string> => {
+    const m: Record<string, string> = {};
+    for (const c of room.pool!) m[c.id] = c.text;
+    return m;
+  };
+
+  it("two deadline closes with different tick rolls shuffle the pool differently", () => {
+    const roomA = creatingRoom(4, 3, 1000);
+    const roomB = creatingRoom(4, 3, 1000);
+    const now = 10 ** 9;
+    const closedA = reduce(roomA, { t: "tick", now, roll: 0.1 });
+    const closedB = reduce(roomB, { t: "tick", now, roll: 0.9 });
+    expect(closedA.phase.name).toBe("voting");
+    expect(closedB.phase.name).toBe("voting");
+    // Same players, same (blank) drafts, same quota — the only thing that can
+    // differ is the roll-seeded shuffle.
+    expect(mapOf(closedA)).not.toEqual(mapOf(closedB));
+    expect(closedA.deal).not.toEqual(closedB.deal);
+  });
+
+  it("two ready-up closes at different instants shuffle the pool differently", () => {
+    // `allWritten` drives the room to the moment its last commitDraft closes
+    // `creating` via `settle` — the path with no `roll` on its event at all.
+    // A different base `now` puts that close at a different instant, which is
+    // the only entropy `seedRoll` has to work with (the room code is fixed by
+    // the `seed` helper both calls go through).
+    const roomA = allWritten(4, 3, 1000);
+    const roomB = allWritten(4, 3, 5_000_000);
+    expect(roomA.phase.name).toBe("voting");
+    expect(roomB.phase.name).toBe("voting");
+    expect(mapOf(roomA)).not.toEqual(mapOf(roomB));
+    expect(roomA.deal).not.toEqual(roomB.deal);
   });
 });

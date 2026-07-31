@@ -112,6 +112,23 @@ export function exposureFor(quota: number): number {
   return (HAND_SIZE * VOTE_BUDGET) / quota;
 }
 
+/**
+ * A roll for a close that has no `tick` behind it.
+ *
+ * `settle` runs off ordinary events, none of which carry the `roll` the tick
+ * path supplies — but the pool and the deal must not fall back to a fixed
+ * seed, because both shuffles exist to keep authorship unreadable and a
+ * constant seed makes them computable offline. The room code and the close
+ * timestamp are both already to hand, neither is client-controlled, and
+ * together they differ for every close.
+ *
+ * Pure: both inputs are passed in, so `reduce` stays a pure function.
+ */
+export function seedRoll(code: string, now: number): number {
+  const rng = seededRng(`close:${code}:${now}`);
+  return rng();
+}
+
 /** Fisher-Yates on a copy. The one shuffle helper this module uses. */
 function shuffled<T>(items: readonly T[], rng: Rng): T[] {
   const out = [...items];
