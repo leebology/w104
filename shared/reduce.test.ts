@@ -3,6 +3,7 @@ import { createRoom, currentRound, matchComplete, preRoundPhase } from "./state"
 import type { Room } from "./state";
 import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, TIMESUP_MS, VOTING_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
 import { voteBudget } from "./voting";
+import { CATEGORIES, RANDOM_CATEGORY } from "./categories";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS } from "./teams";
 import { rowKey } from "./reveal";
 import { isSelfStruck } from "./selfstrike";
@@ -732,6 +733,61 @@ describe("entering voting", () => {
   });
 });
 
+describe("leaving the room", () => {
+  test("gives the seat up, unlike a disconnect", () => {
+    // A dropped connection deliberately keeps the seat warm so a locked phone
+    // can reclaim it. This is the deliberate version and takes the seat.
+    let room = seed(2);
+    room = reduce(room, { t: "leaveRoom", playerId: "p0", now: 2000 });
+    expect(room.players.map((p) => p.id)).toEqual(["p1"]);
+  });
+
+  test("it takes their words and their votes with them", () => {
+    let room = seed(2);
+    room = { ...room, entries: { p0: [], p1: [] }, votes: { p0: { song: 1 } } };
+    room = reduce(room, { t: "leaveRoom", playerId: "p0", now: 2000 });
+    expect(room.entries.p0).toBeUndefined();
+    expect(room.votes.p0).toBeUndefined();
+  });
+
+  test("it is not a ban — they can come straight back", () => {
+    let room = seed(2);
+    room = reduce(room, { t: "leaveRoom", playerId: "p0", now: 2000 });
+    expect(room.kicked).toEqual([]);
+    room = reduce(room, {
+      t: "join", playerId: "p0", name: "P0", emoji: "🐙", now: 2100,
+    });
+    expect(room.players.map((p) => p.id)).toEqual(["p1", "p0"]);
+  });
+
+  test("the room re-settles around them", () => {
+    // p0 was the one holding the room up; with them gone the room is ready.
+    let room = seed(3);
+    room = reduce(room, { t: "ready", playerId: "p1", ready: true, now: 2000 });
+    room = reduce(room, { t: "ready", playerId: "p2", ready: true, now: 2100 });
+    expect(room.phase.name).toBe("lobby");
+    room = reduce(room, { t: "leaveRoom", playerId: "p0", now: 2200 });
+    expect(room.phase.name).toBe("countdown");
+  });
+
+  test("leaving during the countdown can drop it below the floor", () => {
+    let room = readyAll(seed(2), 2000);
+    expect(room.phase.name).toBe("countdown");
+    room = reduce(room, { t: "leaveRoom", playerId: "p0", now: 2100 });
+    expect(room.phase).toEqual({ name: "lobby" });
+  });
+
+  test("it is a lobby action — mid-match it is a no-op", () => {
+    const room = seedVoting(2);
+    expect(reduce(room, { t: "leaveRoom", playerId: "p0", now: 3000 })).toBe(room);
+  });
+
+  test("someone who is not in the room leaving is a no-op", () => {
+    const room = seed(2);
+    expect(reduce(room, { t: "leaveRoom", playerId: "nobody", now: 2000 })).toBe(room);
+  });
+});
+
 describe("casting votes", () => {
   test("a vote lands and counts against the budget", () => {
     let room = seedVoting(2);
@@ -767,6 +823,17 @@ describe("casting votes", () => {
     const room = seedVoting(2);
     const after = reduce(room, { t: "castVote", playerId: "p0", category: "haircut", now: 3000 });
     expect(after).toBe(room);
+  });
+
+  test("the random option is votable, and readies like any other vote", () => {
+    // The gate is the *ballot*, not the pool — `random` is not a category and
+    // would be refused by a CATEGORIES check.
+    let room = seedVoting(2, 2); // budget 1
+    room = reduce(room, {
+      t: "castVote", playerId: "p0", category: RANDOM_CATEGORY, now: 3000,
+    });
+    expect(room.votes.p0).toEqual({ [RANDOM_CATEGORY]: 1 });
+    expect(room.players.find((p) => p.id === "p0")!.ready).toBe(true);
   });
 
   test("the host holds no player slot, so their vote is a no-op", () => {
@@ -918,6 +985,17 @@ describe("drawing the round's category", () => {
     const endsAt = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: endsAt, roll: 0.5 });
     expect(room.category).not.toBe("car");
+  });
+
+  test("a room that voted random still gets a real category at the whistle", () => {
+    // The round has to be about something. `random` wins the vote and is spent
+    // on the draw rather than becoming the round's subject.
+    let room = votedRoom(RANDOM_CATEGORY);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0.5 });
+    expect(room.phase.name).toBe("playing");
+    expect(room.category).not.toBe(RANDOM_CATEGORY);
+    expect(CATEGORIES as readonly string[]).toContain(room.category);
   });
 });
 
@@ -1164,13 +1242,39 @@ describe("joinTeam and leaveTeam", () => {
     expect(p1.ready).toBe(false);
   });
 
-  test("switching teams during the countdown does not cancel it", () => {
+  test("switching teams during the countdown restarts it rather than cancelling it", () => {
     let room = inTeams(2);
     room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
     room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
     room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t0", now: 2300 });
-    expect(room.phase.name).toBe("countdown");
+    // Still counting — a switch is not the unready, leaving is — but from the
+    // top, so a move made on the last second is one the room gets to see.
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 2300 + COUNTDOWN_MS, to: "voting",
+    });
     expect(room.players.find((p) => p.id === "p1")!.teamId).toBe("t0");
+  });
+
+  test("a switch after the host's Continue restarts the countdown too", () => {
+    // The Continue path force-readies everyone, so this countdown is the one
+    // `settle` is not free to re-derive — the restart has to come from the
+    // join itself.
+    let room = inTeams(2);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2100 });
+    const placed = room.players.find((p) => p.id === "p0")!.teamId!;
+    const other = room.teams.find((t) => t.id !== placed)!;
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: other.id, now: 2400 });
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 2400 + COUNTDOWN_MS, to: "voting",
+    });
+  });
+
+  test("joining a team outside a countdown leaves the phase alone", () => {
+    // The reset is a countdown-only concern: there is no clock in team select
+    // itself, and settle owns the edge out of it.
+    let room = inTeams(3);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    expect(room.phase).toEqual({ name: "teams" });
   });
 
   test("an unknown team id is a no-op", () => {
@@ -1621,10 +1725,39 @@ describe("debug pause", () => {
     expect(attempt).toBe(room);
   });
 
-  test("only the playing phase can be held", () => {
+  test("the lobby cannot be held — there is no deadline on it", () => {
     const room = seed(2);
     const attempt = reduce(room, {
       t: "debugPause", playerId: "host", paused: true, now: 2000,
+    });
+    expect(attempt).toBe(room);
+  });
+
+  test("the voting window can be held, and resuming spends the bank forward", () => {
+    // The other phase with a deadline a room can still be deciding against.
+    const room = seedVoting(2);
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    const held = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: endsAt - 20_000,
+    });
+    expect(held.paused).toBe(20_000);
+    // A held phase's own deadline is stale by design, so the tick that would
+    // have closed voting has to do nothing at all.
+    expect(reduce(held, { t: "tick", now: endsAt + 60_000, roll: 0 })).toBe(held);
+
+    const resumed = reduce(held, {
+      t: "debugPause", playerId: "host", paused: false, now: endsAt + 3_600_000,
+    });
+    expect(resumed.paused).toBeNull();
+    expect((resumed.phase as { endsAt: number }).endsAt).toBe(endsAt + 3_600_000 + 20_000);
+  });
+
+  test("a countdown cannot be held", () => {
+    // Short, fixed-length, and on its way somewhere: nothing to decide.
+    let room = readyAll(seed(2), 2000);
+    expect(room.phase.name).toBe("countdown");
+    const attempt = reduce(room, {
+      t: "debugPause", playerId: "host", paused: true, now: 2100,
     });
     expect(attempt).toBe(room);
   });
@@ -1664,9 +1797,22 @@ describe("debug skip", () => {
     expect(attempt).toBe(room);
   });
 
-  test("skipping outside a round is a no-op", () => {
+  test("skipping outside a timed phase is a no-op", () => {
     const room = seed(2);
     expect(reduce(room, { t: "debugSkip", playerId: "host", now: 2000 })).toBe(room);
+  });
+
+  test("skipping the vote closes it down the deadline's own path", () => {
+    // Not a transition of its own: the tick that follows is the one the 60s
+    // deadline would have fired, so a skipped vote and an expired vote open
+    // the identical countdown.
+    const room = seedVoting(2);
+    const skipped = reduce(room, { t: "debugSkip", playerId: "host", now: 5_000 });
+    expect((skipped.phase as { endsAt: number }).endsAt).toBe(5_000);
+    const ticked = reduce(skipped, { t: "tick", now: 5_000, roll: 0 });
+    expect(ticked.phase).toEqual({
+      name: "countdown", endsAt: 5_000 + COUNTDOWN_MS, to: "playing",
+    });
   });
 });
 

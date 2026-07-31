@@ -1,4 +1,4 @@
-import { CATEGORIES } from "./categories";
+import { BALLOT, CATEGORIES, RANDOM_CATEGORY } from "./categories";
 import type { MatchSettings, PlayerId, RoundSummary } from "./state";
 
 /**
@@ -55,7 +55,10 @@ export function voteShares(votes: VoteMap): Record<string, number> {
   const exact = entries.map(([category, n]) => ({
     category,
     value: (n * 100) / sum,
-    order: CATEGORIES.indexOf(category as (typeof CATEGORIES)[number]),
+    // The *ballot's* order, not the pool's: the random option is votable and
+    // therefore shareable, and `CATEGORIES.indexOf` would hand it -1 and float
+    // it to the front of every remainder tie.
+    order: BALLOT.indexOf(category as (typeof BALLOT)[number]),
   }));
 
   const out: Record<string, number> = {};
@@ -93,6 +96,12 @@ export function spentCategories(view: { history: readonly RoundSummary[] }): str
  * `roll` is a uniform [0,1) supplied by the caller rather than taken from
  * Math.random() here: this has to stay pure so `reduce` does, and so the
  * distribution can be tested against fixed rolls instead of a stubbed global.
+ *
+ * **A vote for `RANDOM_CATEGORY` competes as an ordinary weight and then spends
+ * its win on a uniform draw.** It is one segment of the same distribution, so
+ * six votes for `random` beat five for `song` exactly as six for `animal`
+ * would — and the room that asked to be surprised gets a uniform draw over
+ * everything unplayed, not just over what somebody voted for.
  */
 export function pickCategory(
   votes: VoteMap,
@@ -106,33 +115,57 @@ export function pickCategory(
   // margin left: round ten draws with nine spent, so `available` is exactly
   // one. A guard, not a case — and the reason a pool smaller than the round
   // cap would be a real bug rather than a shorter game.
-  if (available.length === 0) {
-    return weightedPick(CATEGORIES.map((c) => [c, 1]), roll);
-  }
+  if (available.length === 0) return uniformPick(CATEGORIES, roll);
 
   const totals = tallyVotes(votes);
-  const voted = available.filter((c) => (totals[c] ?? 0) > 0);
-  if (voted.length > 0) {
-    return weightedPick(voted.map((c) => [c, totals[c]]), roll);
-  }
+  const ballot: Array<[string, number]> = available
+    .filter((c) => (totals[c] ?? 0) > 0)
+    .map((c) => [c, totals[c]]);
+  // Never filtered by `spent`: the random option is not a category, so it is
+  // never played and never spent, and it stays on the ballot for every round
+  // of the match.
+  const random = totals[RANDOM_CATEGORY] ?? 0;
+  if (random > 0) ballot.push([RANDOM_CATEGORY, random]);
 
-  // Every voted category is spent: the rest of the match draws uniformly from
-  // what nobody asked for, rather than repeating a category or ending early.
-  return weightedPick(available.map((c) => [c, 1]), roll);
+  // Nobody's vote survives — either nobody voted, or every category anybody
+  // voted for has been played. The rest of the match draws uniformly from what
+  // is left rather than repeating a category or ending early.
+  if (ballot.length === 0) return uniformPick(available, roll);
+
+  const { pick, fraction } = weightedPick(ballot, roll);
+  // `fraction` is where the roll landed *inside* the winning segment, and
+  // conditional on landing there it is itself uniform on [0,1) — so the one
+  // roll the caller supplied pays for both stages of the draw and `reduce`
+  // still needs exactly one source of randomness per tick.
+  return pick === RANDOM_CATEGORY ? uniformPick(available, fraction) : pick;
+}
+
+/** An even chance for every entry. */
+function uniformPick(pool: readonly string[], roll: number): string {
+  return weightedPick(pool.map((c) => [c, 1]), roll).pick;
 }
 
 /**
- * Walks the cumulative distribution. The final `return` already covers a roll
- * of exactly 1 (or a float that lands a hair past the last edge) falling off
- * the end of the scan, so the clamp is belt-and-braces rather than load-
- * bearing — kept because it costs nothing and rules the case out up front.
+ * Walks the cumulative distribution, returning the segment the roll landed in
+ * and how far into that segment it fell.
+ *
+ * The final `return` already covers a roll of exactly 1 (or a float that lands
+ * a hair past the last edge) falling off the end of the scan, so the clamp is
+ * belt-and-braces rather than load-bearing — kept because it costs nothing and
+ * rules the case out up front.
  */
-function weightedPick(weights: Array<[string, number]>, roll: number): string {
+function weightedPick(
+  weights: Array<[string, number]>,
+  roll: number,
+): { pick: string; fraction: number } {
   const total = weights.reduce((sum, [, w]) => sum + w, 0);
   let target = Math.min(Math.max(roll, 0), 0.999999999) * total;
   for (const [category, weight] of weights) {
+    // Tested before the subtraction rather than after, which is the same edge
+    // as the old `target -= weight; if (target < 0)` — it just leaves `target`
+    // holding the position within the winning segment.
+    if (target < weight) return { pick: category, fraction: target / weight };
     target -= weight;
-    if (target < 0) return category;
   }
-  return weights[weights.length - 1][0];
+  return { pick: weights[weights.length - 1][0], fraction: 0 };
 }

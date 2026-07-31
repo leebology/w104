@@ -29,8 +29,21 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
 
   return (
     <main className="screen screen--mobile screen--locked player-lobby">
-      <button type="button" className="back-pill" onClick={onLeave}>
-        Back
+      {/* Gives the seat up rather than just closing the socket. A dropped
+          connection deliberately leaves the player in the room, greyed out, so
+          a locked phone can reclaim its seat and its words — which is the
+          right answer for a phone that died and the wrong one for somebody who
+          meant to leave. The message goes first: `onLeave` closes the socket,
+          and anything sent after it is sent to nothing. */}
+      <button
+        type="button"
+        className="back-pill"
+        onClick={() => {
+          roomStore.send({ type: "leaveRoom" });
+          onLeave();
+        }}
+      >
+        Leave room
       </button>
 
       {/* Same pill the host wears in team select, just labelled for a player

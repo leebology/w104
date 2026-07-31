@@ -324,6 +324,16 @@ export class W104 extends Server<Env> {
       await this.saveKickedSessions(rest);
     }
 
+    // A host connect for a room that already belongs to somebody else. Only a
+    // resumed session reaches this — a create rolls a new code when the room
+    // exists, so the only way here is a device coming back to a stored code
+    // whose room has since been reaped and re-created by another party.
+    // `claimHost` would quietly ignore it and leave that device parked on a
+    // host screen driving nothing; refusing sends it back to Landing instead.
+    if (role === "host" && this.room.hostId !== null && this.room.hostId !== playerId) {
+      return this.reject(conn, "no-such-room", "No game with that code.");
+    }
+
     const existing = this.room.players.find((p) => p.id === playerId);
     const known = this.room.hostId === playerId || existing !== undefined;
     if (!known && this.room.phase.name !== "lobby") {
@@ -507,6 +517,12 @@ export class W104 extends Server<Env> {
       case "cancelStart":
         this.room = reduce(this.room, { t: "cancelStart", playerId, now });
         break;
+      case "leaveRoom":
+        // The socket closes itself right after this; `onClose` then reduces a
+        // `disconnect` for a player who is no longer in the list, which is a
+        // no-op on `players` by construction.
+        this.room = reduce(this.room, { t: "leaveRoom", playerId, now });
+        break;
       case "kick": {
         const before = this.room;
         this.room = reduce(this.room, { t: "kick", playerId, targetId: msg.targetId, now });
@@ -594,7 +610,11 @@ export class W104 extends Server<Env> {
         this.room = reduce(this.room, { t: "leaveTeam", playerId, now });
         break;
       case "balanceTeams":
-        this.room = reduce(this.room, { t: "balanceTeams", playerId, now });
+        // The deal's randomness enters here, like the category draw's, so
+        // `reduce` stays pure and a second press can give a second answer.
+        this.room = reduce(this.room, {
+          t: "balanceTeams", playerId, roll: Math.random(), now,
+        });
         break;
       case "debugPause":
         this.room = reduce(this.room, {

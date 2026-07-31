@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
-import { CATEGORIES } from "../../../shared/categories";
+import { BALLOT, RANDOM_CATEGORY } from "../../../shared/categories";
 import { VOTING_MS } from "../../../shared/reduce";
 import { voteBudget, voteShares, votesSpent } from "../../../shared/voting";
 import { isWaiting } from "../../../shared/bots";
@@ -39,6 +39,9 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
   const remaining = useRemaining(
     closed ? countdown.endsAt : votingEndsAt,
     closed ? countdown.offset : offset,
+    // Held from the debug menu, the voting deadline stops being maintained —
+    // see HostVoting. The countdown that follows it cannot be held.
+    closed ? null : room.paused,
   );
 
   // The numeral is the loudest thing on the screen and it changes on every
@@ -78,15 +81,21 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
       </section>
 
       <ul className={locked ? "player-voting__grid player-voting__grid--locked" : "player-voting__grid"}>
-        {CATEGORIES.map((category) => {
+        {BALLOT.map((category) => {
           const n = mine[category] ?? 0;
+          // Last on the ballot and the full width of the grid: it is on every
+          // ballot every match, it is the one option that is not a subject, and
+          // a half-width tile alone on the final row would read as a category
+          // the list had run out of room for.
+          const random = category === RANDOM_CATEGORY;
           const cls = [
             "vote-tile",
+            random ? "vote-tile--random" : "",
             n > 0 ? "vote-tile--voted" : "",
             locked ? "vote-tile--locked" : "",
           ].filter(Boolean).join(" ");
           return (
-            <li key={category}>
+            <li key={category} className={random ? "player-voting__wide" : undefined}>
               <button
                 type="button"
                 className={cls}
@@ -94,7 +103,15 @@ export function PlayerVoting({ room, playerId, offset, countdown }: Props) {
                 disabled={locked}
                 onClick={() => roomStore.send({ type: "castVote", category })}
               >
-                <span className="vote-tile__name">{category}</span>
+                <span className="vote-tile__name">
+                  {random ? "🎲 random" : category}
+                </span>
+                {/* Says what a vote here actually buys. Without it "random"
+                    reads as an eleventh category rather than as a bet on the
+                    draw. */}
+                {random && (
+                  <span className="vote-tile__note">any category, drawn at the whistle</span>
+                )}
                 {n > 0 && closed && (
                   <span className="vote-tile__chance">
                     <span className="vote-tile__pct">{shares[category] ?? 0}%</span>

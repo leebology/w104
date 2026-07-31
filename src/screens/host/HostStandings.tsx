@@ -93,7 +93,6 @@ export function HostStandings({ room, countdown }: Props) {
         <footer className="host-standings__footer">
           {done ? (
             <>
-              <p className="host-standings__hint">That's the match — ribbons freeze on the final step.</p>
               <button
                 type="button"
                 className="btn"

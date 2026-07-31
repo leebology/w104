@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (378 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (550 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -70,6 +70,12 @@ shared/   pure game logic — no DOM, no Cloudflare runtime, fully unit-tested
 party/    server.ts — thin DO shell: persist, broadcast, schedule alarms
 src/      React client — net/room.ts socket store + screens/{host,player}
 ```
+
+`shared/rng.ts` is the one seeded generator, in a module of its own because its
+two callers sit on opposite sides of the codebase: the reveal, which needs the
+*same* deal on a replay, and `balanceTeams`, which needs a different one on every
+press. `shared/reveal.ts` re-exports it, so its existing import sites are
+unchanged.
 
 The layering is the point: **all game rules live in `shared/`** so they test in
 milliseconds. `party/server.ts` is plumbing only. If you find yourself writing a
@@ -180,6 +186,16 @@ replaced wholesale on each `state` push; every client action is a *request*.
 - **`Room.history` holds aggregates only, never words.** It rides in
   `RoomState`, so an `entries` field on `RoundSummary` would leak every past
   round to every socket — the same boundary `toRoomState` exists to hold.
+- **`random` is on the ballot, never in the pool.** `BALLOT` is
+  `CATEGORIES + RANDOM_CATEGORY`, and only the ballot is what `castVote`
+  accepts, what the two voting grids render, what `voteShares` breaks ties by
+  and what the archive snapshots. `CATEGORIES` stays "the things a round can be
+  about", so the draw's pool, `spentCategories`, `playedCategories` and the
+  round header need no guard against it. If `random` wins the weighted draw it
+  is spent on a uniform draw over what is left — `weightedPick` returns *where
+  in the winning segment* the roll landed, which is itself uniform, so one
+  `roll` still pays for both stages and `reduce` keeps its single source of
+  randomness per tick.
 - **Settings are validated against the active mode's descriptors, never against
   loose constants.** `shared/gamemodes.ts` is the single source of truth for
   which settings a mode exposes and what their bounds are; `setSettings`
@@ -239,6 +255,15 @@ Three distinct ids, easy to confuse:
 
 - `playerId` — UUID in `localStorage`, stable across reloads so a locked phone
   reclaims its seat and its words.
+**Losing the socket and giving up the seat are different things.** A disconnect
+leaves the player in the room, greyed out, so a locked phone reclaims its seat
+and its words — which is right for a phone that died and wrong for somebody who
+meant to leave. `leaveRoom` is the deliberate version: everything a kick does to
+the room, minus the ban, and not host-only since it only ever acts on the
+sender. Lobby and its countdown only — walking out mid-match would leave a
+half-scored round and a hole in the standings, and closing the tab is still
+there for anyone who wants it.
+
 - `session` — fresh per `connect()` call. partysocket reuses the query string
   across its *own* auto-reconnects, so a matching session means "the kicked
   socket is retrying itself" (stay banned) and a new one means "the player came
@@ -261,6 +286,28 @@ comes back empty.
 Known gap, pre-existing: kicking a player who is *already disconnected* records
 no sessions, so their next connect finds an empty array, matches nothing, and
 lifts the ban immediately.
+
+**The room this device is in is persisted too** (`getSession` in
+`src/net/identity.ts`), and `App` seeds its `session` state from it and
+reconnects on mount. That is what survives a *discarded page*: a locked phone
+keeps its socket and partysocket retries on its own, but iOS is free to throw
+the tab away, and a discarded tab comes back as a cold load with no React state
+at all. `RoomStore.connect` also re-dials on `visibilitychange`/`pageshow`/
+`online`, because a suspended tab's retry timer fires late and on a backoff
+computed while nobody was looking.
+
+- **A failed resume is not a failed join.** Nobody typed the code, so
+  `no-such-room` sends the device to Landing with the ended banner rather than
+  an error beside the code boxes — the same trip a host now makes when their own
+  room is reaped out from under them, which used to be a dead-end `ErrorScreen`.
+- **A resumed host connect carries no `intent: "create"`,** or a host who slept
+  through the reap would silently open a second empty room on the same code. The
+  connect gate refuses a `role=host` connect to a room with a different `hostId`
+  for the matching reason: `claimHost` would ignore it and leave that device
+  parked on a host screen driving nothing.
+- Resuming is bounded by a window in `identity.ts`, and that window is only
+  about how long *trying* is worth it. The server is the real gate — an
+  abandoned room is reaped seconds after its last socket closes.
 
 ### Teams
 
@@ -287,6 +334,21 @@ lifts the ban immediately.
   have `settle` drop the room back into team select. The tick is the backstop
   for the one case Continue cannot see — readiness counts only *connected*
   players, so a phone that died in team select arrives at the whistle teamless.
+- **Switching teams mid-countdown puts the full five seconds back**, in
+  `joinTeam` itself. Leaving already stops the count dead (it clears `ready` and
+  `settle` drops the room back into team select), but a switch keeps the flag
+  set, so without this a change of mind on the last second is carried into
+  voting with nobody able to react to it. It cannot be left to `settle`: the
+  countdown out of the host's Continue is force-readied, so `settle` has nothing
+  to re-derive.
+- **Team panels never move on the phone either.** `PlayerTeams` renders the full
+  roster of teams in colour order and joining one changes what a tile *says*,
+  never where it sits — the tile you tapped is still under your thumb. The name
+  editor and the Leave button therefore live in fixed-height slots, or joining
+  would resize the grid between them. Every tile carries its members by name as
+  well as by face, and your own name is inverted into an ink pill: Bungee has one
+  weight, so "bolder" cannot be a `font-weight`, and an accent-filled pill would
+  read differently on each of the ten colours.
 - **`cancelStart` is rejected on the teams countdown.** It clears readiness so
   `settle` cannot re-open the countdown, which would wedge a room landing back
   in `teams` with everyone still on a team and no way to become ready again.
@@ -301,9 +363,21 @@ lifts the ban immediately.
 - **A rename never recolours.** `Team.colorIndex` is written once at creation;
   the colour is what the room navigates by.
 - **Team panels are fixed-width and wrap; they never rescale.** `.team-grid`
-  is `repeat(var(--cols), 182px)`, not `1fr` tracks. Adding a team adds a
+  is `repeat(var(--cols), 228px)`, not `1fr` tracks. Adding a team adds a
   panel — players are aiming at a colour on a TV, and a target that moves when
-  somebody else joins is the one thing this screen cannot do.
+  somebody else joins is the one thing this screen cannot do. **Height is the
+  opposite**: rows are `auto` and a panel grows to hold its whole roster, since
+  a list that scrolls inside a panel on a TV is hiding people who are in the
+  room looking at it. The grid takes the overflow instead, under
+  `align-content: safe center` — plain `center` would put its first row out of
+  reach above the scrollport.
+- **Auto sort deals everybody, at random, every press.** `balanceTeams` takes a
+  `roll` from the caller like the category draw does: it must be able to give a
+  different answer to a second press, and `reduce` must stay pure. It no longer
+  has a stragglers-only branch — the case it is actually pressed for is six
+  people who all piled onto Red, and leaving the ones who chose where they were
+  meant it could not fix that. Bots are dealt like anyone else. Order out is
+  order in; only `teamId` moves.
 - **A team is named by `TeamBadge`, on every screen that shows one.** The
   tilted name tab in the team's accent, overhanging the card's top-left corner
   — team select on the TV and on the phones, the round, and the results. It is
@@ -333,11 +407,18 @@ all three are host-only and enforced on the server.
 
 The Debug section holds the round controls.
 
-- **Its three controls are host-only and `playing`-only, enforced on the
-  server.** `debugPause` and `debugSkip` are rejected in `shared/reduce.ts`;
-  `debugFill` is rejected in `party/server.ts`. The panel also disables the
-  buttons for non-hosts, but **that is a courtesy, not the boundary** — the
-  panel renders in production, so the server assumes the buttons are missing.
+- **Its three controls are host-only, enforced on the server.** `debugPause`
+  and `debugSkip` are rejected in `shared/reduce.ts`; `debugFill` is rejected in
+  `party/server.ts`. The panel also disables the buttons for non-hosts, but
+  **that is a courtesy, not the boundary** — the panel renders in production, so
+  the server assumes the buttons are missing.
+- **Hold and skip cover `playing` *and* `voting` — `isHoldable` is the list.**
+  Those are the two phases running a deadline a room can still be *deciding*
+  against; the countdown and `timesup` are short fixed screens on their way
+  somewhere. Auto-fill is `playing` alone, because it writes words. Every screen
+  showing a holdable deadline must pass `room.paused` as `useRemaining`'s third
+  argument — both voting screens do — or the clock runs to 0:00 under a phase
+  that is merely stopped.
 - **`Room.paused` holds the milliseconds remaining, not the moment of
   pausing.** `phase.endsAt` is absolute and a pause must survive an arbitrary
   wait; resuming is `endsAt = now + paused`. While it is non-null `phase.endsAt`

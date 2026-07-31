@@ -30,6 +30,10 @@ import { MAX_BOTS, isBot } from "../../shared/bots";
  * Debug, Views and Bots all mutate the live room and are host-only, enforced on
  * the server. The other two touch nothing.
  *
+ * **The tab itself is host-only too** — see the gate in `DebugPanel` below. The
+ * server checks are still the boundary; this is just not putting the thing in
+ * a player's hand at a party.
+ *
  * **Deliberately not in the game's visual language.** Every other surface in
  * this app is cream-on-pink with gold for "go"; this one is ink with a teal
  * rule, because the panel sits over a screen a room full of people may be
@@ -121,7 +125,19 @@ export function DebugPanel() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  if (!enabled) return null;
+  /**
+   * Players never see it. Three of the five sections move a live room from
+   * whatever screen it is on, and a phone in somebody's hand at a party is
+   * exactly where a tab labelled "debug menu" gets pressed to find out what it
+   * does. The server already refuses those events from a non-host — this is
+   * the tab not being there to press in the first place.
+   *
+   * A device with no room is still shown it: nobody is a player yet, and the
+   * landing page is where the usage bars are actually read. It disappears the
+   * moment this device joins somebody else's room.
+   */
+  const room = state.room;
+  if (!enabled || (room !== null && room.hostId !== getPlayerId())) return null;
 
   return (
     <>
@@ -187,26 +203,37 @@ export function DebugPanel() {
 /**
  * The controls that touch a live round.
  *
- * Every one of them is **host-only and `playing`-only**, and this component
- * only decides what to *show*: `shared/reduce.ts` rejects the events from a
- * non-host and outside a round, and `party/server.ts` rejects the fill the
- * same way. A greyed-out button is a courtesy, not the boundary — the panel
- * renders in production, so the server has to assume the buttons are missing.
+ * Every one of them is **host-only**, and this component only decides what to
+ * *show*: `shared/reduce.ts` rejects the events from a non-host and from the
+ * wrong phase, and `party/server.ts` rejects the fill the same way. A greyed-out
+ * button is a courtesy, not the boundary — the panel renders in production, so
+ * the server has to assume the buttons are missing.
+ *
+ * The phases differ between them, and the split is not arbitrary: hold and skip
+ * act on a *deadline*, and both phases that run one long enough to be caught
+ * mid-decision have one — the round and the category vote. Auto-fill writes
+ * words, so it is the round alone.
  */
 function DebugControls({ state }: { state: ReturnType<typeof useRoom> }) {
   const room = state.room;
   const isHost = room !== null && room.hostId === getPlayerId();
   const playing = room?.phase.name === "playing";
+  // Kept in step with `isHoldable` in shared/reduce.ts, which is what actually
+  // decides — this only greys the buttons out.
+  const timed = playing || room?.phase.name === "voting";
   const paused = room?.paused ?? null;
   const canAct = isHost && playing;
+  const canTime = isHost && timed;
 
   const reason = !room
     ? "Not in a room."
     : !isHost
       ? "Host device only."
-      : !playing
-        ? "Only while a round is running."
-        : null;
+      : !timed
+        ? "Only while a round or the vote is running."
+        : !playing
+          ? "Auto-fill needs a running round."
+          : null;
 
   return (
     <section className="debug-section">
@@ -216,7 +243,7 @@ function DebugControls({ state }: { state: ReturnType<typeof useRoom> }) {
         <button
           type="button"
           className="debug-btn debug-btn--wide"
-          disabled={!canAct}
+          disabled={!canTime}
           onClick={() =>
             roomStore.send({ type: "debugPause", paused: paused === null })
           }
@@ -226,7 +253,7 @@ function DebugControls({ state }: { state: ReturnType<typeof useRoom> }) {
         <button
           type="button"
           className="debug-btn debug-btn--wide"
-          disabled={!canAct}
+          disabled={!canTime}
           onClick={() => roomStore.send({ type: "debugSkip" })}
         >
           Skip timer
@@ -242,7 +269,7 @@ function DebugControls({ state }: { state: ReturnType<typeof useRoom> }) {
       </div>
       {paused !== null && (
         <p className="debug-section__detail debug-section__detail--live">
-          Round held with {Math.ceil(paused / 1000)}s left.
+          {playing ? "Round" : "Vote"} held with {Math.ceil(paused / 1000)}s left.
         </p>
       )}
     </section>
