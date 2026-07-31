@@ -119,7 +119,7 @@ V        = P * q
 | **3 players** | 3 (9) | 3 (9) | 3 (9) | 4 (12) |
 | **4 players** | 3 (12) | 3 (12) | 3 (12) | 4 (16) |
 | **5 players** | 2 (10) | 2 (10) | 2 (10) | 3 (15) |
-| **8 players** | 1 (8) | 1 (8) | 2 (16) | 2 (16) |
+| **8 players** | 1 (8) | 1 (8) | 1 (8) | 2 (16) |
 | **10 players** | 1 (10) | 1 (10) | 1 (10) | 2 (20) |
 | **20 players** | 1 (20) | 1 (20) | 1 (20) | 1 (20) |
 
@@ -177,8 +177,9 @@ the constant next to either.
 
 Allowed, with the rules bent rather than a fallback to the built-in pool.
 
-- `q = ceil(R / P)`: exact coverage, no excess, no ceiling. A solo host writing a 10-round
-  match writes 10 cards.
+- `q = max(ceil(R / P), ceil(3 / P))`: exact coverage, no excess, no ceiling — with a floor
+  of three cards in the pool, because a hand is three distinct cards and a solo host on a
+  one-round match would otherwise build a pool of one.
 - **Own cards are dealt**, because there is nothing else to deal. See §4.2.
 - Authorship is not hidden at these sizes and cannot be. Accepted — these are test and
   couch-play rooms.
