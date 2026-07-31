@@ -471,6 +471,8 @@ export class W104 extends Server<Env> {
       const scorers = this.fillEveryList(now);
       await this.persist();
       this.pushEntriesFor(scorers);
+      // Deliberately no `broadcastState`: entry counts are not published, and
+      // nothing in `RoomState` changed.
       return;
     }
 
