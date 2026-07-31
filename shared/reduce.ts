@@ -1035,14 +1035,16 @@ function apply(room: Room, ev: RoomEvent): Room {
       // stays on screen through the countdown out of team select, so it has to
       // work there too.
       //
-      // `scoring` is here because the results screen carries the same top-right
-      // back-out every other host screen does. It abandons a round mid-reveal,
+      // `playing` and `scoring` are here because those screens carry the same
+      // top-right back-out every other host screen does. Between them they
+      // abandon a round while it is being written or while it is being read,
       // which is exactly what a host pressing it is asking for, and the D1
       // archive simply never sees that round: `maybeArchiveBank` keys off the
-      // `scoring -> standings` transition, and this is not one.
+      // `scoring -> standings` transition, and neither of these is one.
       if (
         room.phase.name !== "standings" &&
         room.phase.name !== "voting" &&
+        room.phase.name !== "playing" &&
         room.phase.name !== "scoring" &&
         !postVotingCountdown &&
         !inTeamSelect(room)
@@ -1057,12 +1059,19 @@ function apply(room: Room, ev: RoomEvent): Room {
       // The votes go: they belonged to the voting round being abandoned, and
       // a stale tally must not sit under the team screen.
       if ((room.phase.name === "voting" || postVotingCountdown) && teamsEnabled(room.settings)) {
-        return { ...enterTeams(room), votes: {} };
+        return { ...enterTeams(room), votes: {}, paused: null };
       }
       // Settings survive — the host usually wants the same match again — and
       // so does `kicked`, which is durable for the room's lifetime. The votes
       // and the teams do not: both belonged to the match being abandoned, and
       // the next one rebuilds teams from whatever `teamCount` is by then.
+      //
+      // `paused` goes with them, for the reason the view jumper clears it: a
+      // hold belongs to the phase it was taken in, and one carried into a lobby
+      // freezes the room with no visible cause — `tick` returns early while it
+      // is set, so nobody's Ready button could ever open a countdown again. Both
+      // phases a round can be held in, `playing` and `voting`, now have a
+      // back-out on screen while the hold is on.
       return {
         ...room,
         phase: { name: "lobby" },
@@ -1071,6 +1080,7 @@ function apply(room: Room, ev: RoomEvent): Room {
         history: [],
         votes: {},
         teams: [],
+        paused: null,
       };
     }
 

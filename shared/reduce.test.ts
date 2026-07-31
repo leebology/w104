@@ -625,10 +625,30 @@ describe("backToLobby", () => {
     expect(room.entries).toEqual({});
   });
 
+  /** The round screen carries the back-out too, so a live round can be dropped. */
+  test("abandons a round being written", () => {
+    const room = reduce(playing(), { t: "backToLobby", playerId: "host", now: 20_000 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.entries).toEqual({});
+  });
+
+  /**
+   * A hold belongs to the phase it was taken in. Carried into the lobby it
+   * freezes the room outright — `tick` returns early while `paused` is set, so
+   * no countdown could ever open again — and both phases a host can hold now
+   * have a back-out on screen while the hold is on.
+   */
+  test("a held phase does not carry its hold home", () => {
+    let room = reduce(playing(), { t: "debugPause", playerId: "host", paused: true, now: 15_000 });
+    expect(room.paused).not.toBeNull();
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 16_000 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.paused).toBeNull();
+  });
+
   test("still refuses the phases with no way out", () => {
-    for (const before of [playing(), seed(2)]) {
-      expect(reduce(before, { t: "backToLobby", playerId: "host", now: 50_200 })).toBe(before);
-    }
+    const before = seed(2);
+    expect(reduce(before, { t: "backToLobby", playerId: "host", now: 50_200 })).toBe(before);
   });
 });
 

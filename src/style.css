@@ -557,14 +557,24 @@ ul, ol { list-style: none; }
   cursor: pointer;
 }
 
+/* An SVG, not a glyph — see `HostExit`. The viewBox is symmetric and the two
+   strokes run corner to corner inside it, so the cross is centred in the circle
+   by construction rather than by nudging a text baseline around. */
 .host-exit__x {
   width: 22px;
+  height: 22px;
   flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  font-size: 15px;
-  line-height: 1;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.2;
+  stroke-linecap: round;
 }
+
+/* The lobby's Close room: the full button it always was, with no ✕ in front of
+   it. Everything else in this corner backs out of a phase; this ends the room. */
+.host-exit--pinned { padding: 0 18px; }
+.host-exit--pinned .host-exit__label { max-width: none; margin: 0; }
 
 /* `max-width` rather than a width transition, because the label's own width is
    the target and there is no keyword for that which animates in every browser

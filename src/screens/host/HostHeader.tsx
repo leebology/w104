@@ -70,21 +70,47 @@ export function HostHeaderRight({ children }: { children: ReactNode }) {
  * has silently collapsed behind it is a dialog with no subject.
  */
 export function HostExit({
-  label, active, onClick,
+  label, active, pinned, onClick,
 }: {
   label: string;
   active?: boolean;
+  /**
+   * Never collapses, and wears no ✕ at all. For the lobby's Close room, which
+   * is not a back-out from a phase but the room's off switch — the one control
+   * here that ends something nobody in the room can get back into, and the one
+   * that has to be findable by someone who has never seen this screen before.
+   */
+  pinned?: boolean;
   onClick: () => void;
 }) {
+  const classes = ["host-exit"];
+  if (pinned) classes.push("host-exit--pinned");
+  if (active) classes.push("host-exit--active");
+
   return (
     <button
       type="button"
-      className={active ? "host-exit host-exit--active" : "host-exit"}
+      className={classes.join(" ")}
       aria-label={label}
       onClick={onClick}
     >
-      <span className="host-exit__x" aria-hidden="true">✕</span>
-      {/* `aria-hidden` as well, or a reader announces the label twice. */}
+      {/* Drawn rather than typed. `✕` is a glyph in a font with one weight, so
+          it cannot be made heavier, and it carries its own side bearings — it
+          sits high and left of the circle it is centred in by a pixel or two,
+          which is exactly the kind of thing a round border makes obvious. Two
+          strokes on a symmetric viewBox are centred by construction and as
+          heavy as `stroke-width` says. */}
+      {!pinned && (
+        <svg
+          className="host-exit__x"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+          focusable="false"
+        >
+          <path d="M6.5 6.5l11 11M17.5 6.5l-11 11" />
+        </svg>
+      )}
+      {/* `aria-hidden`, or a reader announces the label twice. */}
       <span className="host-exit__label" aria-hidden="true">{label}</span>
     </button>
   );

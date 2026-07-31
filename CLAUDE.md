@@ -123,13 +123,19 @@ replaced wholesale on each `state` push; every client action is a *request*.
   voting, and standings, and is still the one exception (host solo-start
   bypasses `MIN_PLAYERS`), and `reduce` skips `settle` for it. From a lobby with
   teams on it opens team select rather than a countdown.
-- **`backToLobby` is legal from `scoring` as well**, so the results screen can
-  carry the same top-right back-out every other host screen does. It abandons a
-  round mid-reveal, which is what a host pressing it is asking for, and that
-  round never reaches the D1 archive for free: `maybeArchiveBank` keys off the
-  `scoring -> standings` transition and this is not one. It goes all the way
-  home, teams or not — the one-step-back rule belongs to the phases *before*
-  round one, and from a round being scored there is nothing to step back into.
+- **`backToLobby` is legal from `playing` and `scoring` as well**, so those two
+  screens can carry the same top-right back-out every other host screen does.
+  Between them they abandon a round while it is being written and while it is
+  being read, which is what a host pressing it is asking for, and that round
+  never reaches the D1 archive for free: `maybeArchiveBank` keys off the
+  `scoring -> standings` transition and neither of these is one. Both go all the
+  way home, teams or not — the one-step-back rule belongs to the phases *before*
+  round one, and from a round in progress there is nothing to step back into.
+- **`backToLobby` clears `paused`**, for the reason the view jumper does. A hold
+  belongs to the phase it was taken in, and one carried into a lobby freezes the
+  room with no visible cause: `tick` returns early while it is set, so no
+  readiness would ever open a countdown again. Both holdable phases — `playing`
+  and `voting` — now have a back-out on screen while the hold is on.
 - Voting is bookended by a countdown on both sides, so `countdown` carries a
   `to: "voting" | "playing"`. It is the one phase field that is stored rather
   than derived: two distinct countdowns now sit at `history.length === 0`, so
@@ -640,7 +646,14 @@ safe. There is no pointer on a TV, so on the device this screen is usually
 being *watched* on the ✕ is all there is; the words are for the laptop it is
 being *driven* from. `active` holds it open and filled while the dialog it
 opened is up, because a dialog whose opener has collapsed behind it has no
-visible subject.
+visible subject. The ✕ is **drawn, not typed**: `--display` has one weight, so
+a glyph cannot be made heavier, and its side bearings sit it a pixel or two up
+and left of a circle that makes exactly that obvious.
+
+**The lobby's Close room is `pinned` and wears no ✕** — the one exit that never
+collapses. Everything else in that corner backs out of a phase into a room that
+is still there; this ends the room itself, and it is the control a host who has
+never seen this screen needs to find without hovering anything.
 
 **Every back-out that ends a game asks first, as `HostBackToRoom`** — the
 button and its `ConfirmDialog` in one component, because the question is the
