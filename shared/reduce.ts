@@ -1309,8 +1309,14 @@ function addEntry(
 }
 
 /**
- * Kept out of `reduce` because it is the only mutation that touches the
- * server-only entries map, and it is the only one that answers back.
+ * Kept out of `reduce` because it hands its caller a `SubmitResult` —
+ * accepted or not, and why — so `party/server.ts` knows whether to send an
+ * `entryAck`; an ordinary `RoomEvent` only ever gets a new `Room` back.
+ * `flushEntry` below answers back the same way and is kept out for the same
+ * reason. The rules that actually gate an entry — duplicate, `MAX_ENTRIES`,
+ * `MAX_ENTRY_LEN` — live in `addEntry`, not here: a third path onto `entries`
+ * belongs there too, or it is a second copy of these rules free to drift from
+ * the first.
  */
 export function submitEntry(
   room: Room,

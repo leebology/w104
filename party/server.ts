@@ -429,8 +429,8 @@ export class W104 extends Server<Env> {
       // The reject banner only draws while `playing`, and scolding somebody
       // over a word they did not choose to submit is worse than dropping it.
       if (!result.accepted) return;
-      // Same ordering rule as an accepted submit: teammates share one list and
-      // must see the word land. `sendTo`, never `broadcast`.
+      // Teammates share one list and must see the word land — `sendTo`, never
+      // `broadcast`.
       this.sendEntriesToTeam(playerId);
       await this.persist();
       return; // Still no broadcast: entry counts are not published.

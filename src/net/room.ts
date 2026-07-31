@@ -48,9 +48,11 @@ const REJECTIONS: Record<RejectReason, string> = {
   // In a team match the list is shared, so it may well have been a teammate.
   duplicate: "That's already on the list.",
   limit: "That's enough words!",
-  // Not yet reachable from the client: flushEntry has no caller here until
-  // the phone fires it at time's up. Kept so this map stays exhaustive over
-  // RejectReason.
+  // Dead code, permanently — not just not-yet-wired. "too-short" is
+  // flushEntry's alone, and a flush gets no `entryAck` to carry it: this map
+  // is read only in the entryAck rejected branch, so the key can never be
+  // looked up. Kept solely so this stays exhaustive over RejectReason for
+  // tsc; do not wire it up or delete it as unused.
   "too-short": "That's too short.",
 };
 

@@ -314,6 +314,22 @@ describe("flushEntry", () => {
     });
   });
 
+  test("refuses a flush during the countdown", () => {
+    const room = readyAll(seed(2), 2000);
+    expect(room.phase.name).toBe("countdown");
+    expect(flushEntry(room, "p0", "Adele", 2100)).toMatchObject({
+      accepted: false, reason: "not-playing",
+    });
+  });
+
+  test("refuses a flush on the standings screen", () => {
+    const room = reduce(scored(), { t: "showStandings", playerId: "host", now: 50_000 });
+    expect(room.phase.name).toBe("standings");
+    expect(flushEntry(room, "p0", "Adele", 50_100)).toMatchObject({
+      accepted: false, reason: "not-playing",
+    });
+  });
+
   test("refuses four characters and accepts five", () => {
     expect(flushEntry(playing(), "p0", "Adel", 10_000)).toMatchObject({
       accepted: false, reason: "too-short",
@@ -326,7 +342,9 @@ describe("flushEntry", () => {
     // Five characters as typed. normalize() would leave "mr t" — four — so a
     // floor measured after normalizing would wrongly refuse this.
     expect(flushEntry(playing(), "p0", "Mr. T", 10_000).accepted).toBe(true);
-    // Four either way.
+    // Four trimmed; normalize() leaves "jlo" — three. Under the floor either
+    // way, so this case can't distinguish trimmed from normalized the way
+    // "Mr. T" above does — it only proves the tail still refuses.
     expect(flushEntry(playing(), "p0", "J.Lo", 10_000)).toMatchObject({
       accepted: false, reason: "too-short",
     });
