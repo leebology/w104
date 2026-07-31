@@ -5,7 +5,7 @@ import { NO_SELF_MARKS, toggleMark } from "./selfstrike";
 import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, MatchSettings, Player, PlayerId, Room, RoundSummary } from "./state";
-import { CATEGORIES } from "./categories";
+import { BALLOT } from "./categories";
 import { isGameModeId, modeSpec, normalizeSetting } from "./gamemodes";
 import type { NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
@@ -53,6 +53,12 @@ export type RoomEvent =
   | { t: "startGame"; playerId: PlayerId; now: number }
   | { t: "cancelStart"; playerId: PlayerId; now: number }
   | { t: "kick"; playerId: PlayerId; targetId: PlayerId; now: number }
+  /**
+   * A player giving up their seat, from the lobby. Everything a kick does to
+   * the room, minus the ban — they walked out, so they are welcome back — and
+   * it is not host-only, since it only ever acts on the sender.
+   */
+  | { t: "leaveRoom"; playerId: PlayerId; now: number }
   | { t: "disconnect"; playerId: PlayerId; now: number }
   | {
       t: "setSettings";
@@ -70,7 +76,13 @@ export type RoomEvent =
   | { t: "joinTeam"; playerId: PlayerId; teamId: TeamId; now: number }
   | { t: "leaveTeam"; playerId: PlayerId; now: number }
   | { t: "setTeamName"; playerId: PlayerId; teamId: TeamId; name: string; now: number }
-  | { t: "balanceTeams"; playerId: PlayerId; now: number }
+  /**
+   * The host's Auto sort. `roll` is a uniform [0,1) from the caller, the same
+   * arrangement the category draw uses: the deal has to be random — pressing
+   * the button twice must be able to give two answers — while `reduce` stays
+   * pure.
+   */
+  | { t: "balanceTeams"; playerId: PlayerId; roll: number; now: number }
   /**
    * Debug controls, host-only and legal only during `playing`. They exist to
    * make a round inspectable — hold it still, or cut it short — and the host
@@ -344,6 +356,17 @@ function inTeamSelect(room: Room): boolean {
 
 const unready = (players: Player[]): Player[] =>
   players.map((p) => ({ ...p, ready: false }));
+
+/**
+ * The phases the debug menu's hold and skip apply to: the two that run a
+ * deadline the room can still be *deciding* against. Written as a predicate so
+ * both events agree on the list and tsc narrows `endsAt` for them.
+ */
+function isHoldable(
+  phase: Room["phase"],
+): phase is Extract<Room["phase"], { name: "playing" | "voting" }> {
+  return phase.name === "playing" || phase.name === "voting";
+}
 
 /**
  * Stands the teams up as team select would have left them: the teams exist and
@@ -673,6 +696,26 @@ function apply(room: Room, ev: RoomEvent): Room {
       };
     }
 
+    case "leaveRoom": {
+      // Lobby only, countdown included — that is the one screen the button is
+      // on, and the countdown renders it. Walking out mid-match would leave a
+      // half-scored round and a standings table with a hole in it; a player
+      // who wants out of one closes the tab, which is the disconnect path.
+      if (room.phase.name !== "lobby" && room.phase.name !== "countdown") return room;
+      if (!room.players.some((p) => p.id === ev.playerId)) return room;
+      const { [ev.playerId]: _removed, ...entries } = room.entries;
+      const { [ev.playerId]: _removedVotes, ...votes } = room.votes;
+      // No `kicked` entry: the ban is what makes a *kick* stick against the
+      // socket's own reconnect. This player is closing their socket on
+      // purpose, and coming back through Landing has to seat them again.
+      return {
+        ...room,
+        players: room.players.filter((p) => p.id !== ev.playerId),
+        entries,
+        votes,
+      };
+    }
+
     case "disconnect":
       return {
         ...room,
@@ -725,9 +768,10 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "castVote": {
       if (room.phase.name !== "voting") return room;
-      // A hand-rolled socket message is not bound by the UI, so the pool and
-      // the budget are both checked here rather than trusted.
-      if (!(CATEGORIES as readonly string[]).includes(ev.category)) return room;
+      // A hand-rolled socket message is not bound by the UI, so the ballot and
+      // the budget are both checked here rather than trusted. The *ballot*,
+      // not the pool: `random` is votable but is not a category.
+      if (!(BALLOT as readonly string[]).includes(ev.category)) return room;
       if (!room.players.some((p) => p.id === ev.playerId)) return room;
       const budget = voteBudget(room.settings);
       const row = room.votes[ev.playerId] ?? {};
@@ -767,12 +811,19 @@ function apply(room: Room, ev: RoomEvent): Room {
       // `ready` is derived from membership and set only here and in
       // leaveTeam — the `ready` event is rejected in this phase, exactly as
       // castVote and resetVotes own the flag during voting.
-      return {
-        ...room,
-        players: mapPlayer(room.players, ev.playerId, (p) => ({
-          ...p, teamId: ev.teamId, ready: true,
-        })),
-      };
+      const players = mapPlayer(room.players, ev.playerId, (p) => ({
+        ...p, teamId: ev.teamId, ready: true,
+      }));
+      // A *switch* mid-countdown puts the full five seconds back on the clock.
+      // Leaving a team already stops the count dead — it clears `ready` and
+      // `settle` drops the room back into team select — but switching keeps
+      // the flag set, so without this someone changing their mind on the last
+      // second is carried into voting on a team they have just left, with no
+      // time for anyone to react to the move. `inTeamSelect` has already
+      // established that this countdown is the one out of team select.
+      return room.phase.name === "countdown"
+        ? { ...room, players, phase: { ...room.phase, endsAt: ev.now + COUNTDOWN_MS } }
+        : { ...room, players };
     }
 
     case "leaveTeam": {
@@ -810,10 +861,15 @@ function apply(room: Room, ev: RoomEvent): Room {
     case "balanceTeams": {
       if (ev.playerId !== room.hostId) return room;
       if (!inTeamSelect(room)) return room;
-      const players = balanceTeams(room.players, room.teams);
+      const players = balanceTeams(room.players, room.teams, ev.roll);
       if (players === room.players) return room;
       // A player moved onto a team the same way joinTeam would ready them;
       // a player already on a team just changes colour and stays ready.
+      //
+      // Sorting *during the countdown* therefore does not stop it, and should
+      // not: everyone still has a team, which is all `ready` means here, and
+      // anyone unhappy with where they landed can leave — which is the brake,
+      // exactly as it is for a switch.
       return {
         ...room,
         players: players.map((p) => (p.teamId !== null ? { ...p, ready: true } : p)),
@@ -921,17 +977,20 @@ function apply(room: Room, ev: RoomEvent): Room {
     }
 
     /**
-     * Holds the round where it stands, or lets it go again.
+     * Holds the round — or the vote — where it stands, or lets it go again.
      *
      * Pausing banks the time left; resuming spends it forward from `now`, so
-     * an hour spent paused costs the round nothing. Only `playing` can be
-     * held: the countdown, the voting window and `timesup` are all short
-     * fixed-length screens, and pausing one buys nothing worth the extra
-     * states to reason about.
+     * an hour spent paused costs the phase nothing.
+     *
+     * `playing` and `voting`, and nothing else. Those are the two phases with a
+     * deadline long enough that a room can be mid-*decision* when it expires,
+     * which is the thing worth holding. The countdown and `timesup` are short
+     * fixed-length screens on their way somewhere; pausing one buys nothing
+     * worth the extra states to reason about.
      */
     case "debugPause": {
       if (ev.playerId !== room.hostId) return room;
-      if (room.phase.name !== "playing") return room;
+      if (!isHoldable(room.phase)) return room;
       if (ev.paused) {
         // Already held — returning a fresh object here would re-bank a
         // shorter remainder every time the button was pressed.
@@ -947,17 +1006,18 @@ function apply(room: Room, ev: RoomEvent): Room {
     }
 
     /**
-     * Ends the round now by moving its deadline to the present rather than
+     * Ends the phase now by moving its deadline to the present rather than
      * transitioning here. The alarm re-arms on persist, `tick` fires, and the
-     * round ends down the exact path a natural expiry takes — so scoring, the
-     * archive write and the standings hand-off cannot drift from the real one.
+     * phase ends down the exact path a natural expiry takes — so scoring, the
+     * archive write and the standings hand-off cannot drift from the real one,
+     * and a skipped vote closes into the same countdown the deadline opens.
      *
-     * Clears `paused` because a held round has a stale `endsAt`, and skipping
+     * Clears `paused` because a held phase has a stale `endsAt`, and skipping
      * without this would resume it instead of ending it.
      */
     case "debugSkip": {
       if (ev.playerId !== room.hostId) return room;
-      if (room.phase.name !== "playing") return room;
+      if (!isHoldable(room.phase)) return room;
       if (room.paused === null && room.phase.endsAt <= ev.now) return room;
       return { ...room, phase: { ...room.phase, endsAt: ev.now }, paused: null };
     }

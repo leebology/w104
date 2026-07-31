@@ -5,6 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Ok, Name One</title>
     <meta name="theme-color" content="#E62E5C" />
+    <!-- Icons live in public/, which Vite copies verbatim into dist/ — so these
+         paths are absolute and unhashed, and /favicon.ico stays where browsers
+         look for it whether or not this tag is here. -->
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
   </head>
   <body>
     <div id="app"></div>

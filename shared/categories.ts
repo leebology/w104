@@ -31,3 +31,23 @@ export const CATEGORIES = [
   "food",
   "job",
 ] as const;
+
+/**
+ * The "surprise us" option on the ballot, and deliberately **not** a member of
+ * `CATEGORIES`.
+ *
+ * A vote for it is a vote for the draw itself rather than for a subject: if it
+ * wins, `pickCategory` spends its win on a uniform draw over whatever is left.
+ * It is never drawn, never spent and never named on a round — which is exactly
+ * why it is kept out of the pool. Everything that reads `CATEGORIES` as "the
+ * things a round can be about" — the draw's pool, `spentCategories`, the
+ * archive's played set, the round header — stays correct with no extra guard.
+ */
+export const RANDOM_CATEGORY = "random";
+
+/**
+ * What a player may actually vote for: the pool, with the random option last.
+ * The ballot is the render order in both voting grids and the tie-break order
+ * in `voteShares`, the same job `CATEGORIES` does for the draw.
+ */
+export const BALLOT = [...CATEGORIES, RANDOM_CATEGORY] as const;

@@ -630,8 +630,38 @@ ul, ol { list-style: none; }
   max-width: 100%;
   min-height: 0;
   overflow-y: auto;
-  padding: 6px;
+  /* 6px all round is clearance for the pills' offset shadows, handed back to
+     the layout by the negative margin so nothing moves. The extra 20px at the
+     bottom is *scroll slack* and is deliberately not cancelled: it is what
+     lets the last row come clear of the fade band instead of ending under it. */
+  padding: 6px 6px 26px;
   margin: -6px;
+}
+
+/* There are players past the edge. The band fades rather than cutting, so a
+   half-visible pill reads as "keep scrolling" instead of as a rendering fault
+   — and each end wears it only while there is something out there, so a room
+   that fits on screen never wears either. `-webkit-` first for the iOS
+   versions that only have the prefixed property; both are the same gradient.
+
+   40px is a pill and a half of fade, measured against `.roster-row`'s own
+   14px gap. */
+.roster-row--more {
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 40px), transparent 100%);
+}
+
+.roster-row--above {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 40px);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 40px);
+}
+
+/* Scrolled into the middle of a long roster: both ends are cut, so both fade.
+   Spelled out as its own rule because `mask-image` does not compose — the two
+   above would simply override one another. */
+.roster-row--above.roster-row--more {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 40px, #000 calc(100% - 40px), transparent 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 40px, #000 calc(100% - 40px), transparent 100%);
 }
 
 /* ------------------------------------------------------------ player pill */
@@ -692,22 +722,72 @@ ul, ol { list-style: none; }
 
 .player-pill--offline { opacity: 0.45; }
 
-.player-pill__kick {
+/* The pill is a `<button>` when the host can kick with it, so it has to give
+   back everything a button assumes about its own text and box. */
+.player-pill--kickable {
+  position: relative;
   font: inherit;
-  font-size: 15px;
-  line-height: 1;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 2px solid var(--ink);
-  border-radius: 99px;
-  background: transparent;
-  color: var(--ink);
+  text-align: left;
   cursor: pointer;
-  flex: 0 0 auto;
+  transition: transform 120ms ease-out;
 }
 
-.player-pill__kick:hover { background: var(--ink); color: var(--cream); }
+.player-pill--kickable:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
+
+/* Hovered, the pill *becomes* the kick: ink, tilted off true, with the roster
+   row covered over by the words. The tilt is what stops it reading as a colour
+   change — every other dark surface in this app sits square. Keyboard focus
+   gets the same treatment, or the control is invisible to anyone not using a
+   mouse.
+
+   The pill's own fill and rule go to ink as well, and that is not belt-and-
+   braces: the label below covers the *padding* box, so the 3px rule and the
+   hairline where it meets the label stay whatever the pill was — a gold ready
+   pill showed a thin yellow outline around the dark label. Ink on ink leaves
+   nothing to catch the light. */
+.player-pill--kickable:hover,
+.player-pill--kickable:focus-visible {
+  transform: rotate(-3deg) scale(1.03);
+  background: var(--ink);
+  border-color: var(--ink);
+}
+
+/* Sized to its own text and centred, rather than stretched across the pill.
+   A pill is only as wide as the name on it, and "KICK PLAYER" is wider than a
+   two-letter name — pinned to the pill's edges the label would clip, and the
+   one thing this control cannot do is show half a word. It overhangs instead,
+   which on a pill that narrow reads as a tab laid over it. */
+.player-pill__kick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  min-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  border-radius: 99px;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--display);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
+  text-transform: uppercase;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+  pointer-events: none;
+}
+
+.player-pill--kickable:hover .player-pill__kick,
+.player-pill--kickable:focus-visible .player-pill__kick { opacity: 1; }
+
+/* A bare wrapper: the pill it holds is the button, and every pill style now
+   lives on that. It exists only because `.roster-row` is a list. */
+.player-pill-slot { display: flex; min-width: 0; }
 
 @keyframes pulseDot {
   0%, 100% { opacity: 0.25; transform: scale(0.8); }
@@ -781,6 +861,21 @@ ul, ol { list-style: none; }
 }
 
 /* ------------------------------------------------------------ host lobby */
+
+/* Close room sits on the same inset as the drawer tabs in the corners below
+   it — 26px off the top and off the side, so the lobby's two right-hand
+   corners are a matched pair. (The tabs' 5px drop shadow overhangs that line;
+   the pills themselves are what line up.) The header's own padding cannot do
+   it alone: the brand block makes this header several times the button's
+   height, and a vertically centred right slot floats the button most of the
+   way down it. Only that slot is pinned to the top — `align-items` on the
+   header would take the absolutely positioned round marker up with it. */
+.host-lobby .host-header {
+  padding-top: 26px;
+  padding-right: 26px;
+}
+
+.host-lobby .host-header__right { align-self: flex-start; }
 
 /* The wordmark and the join URL as one unit in the header's left slot. */
 .host-lobby__brand {
@@ -982,6 +1077,11 @@ ul, ol { list-style: none; }
 }
 
 .vote-card--zero .vote-card__name { text-align: center; }
+
+/* The same broken outline the phone's tile wears, for the same reason: it is
+   the one card on the wall that is not a subject. It keeps its place in ballot
+   order and competes for width like everything else. */
+.vote-card--random { border-style: dashed; }
 
 /* Two ceilings, and the smaller wins. `--name-size` is the ideal — it scales
    with share of the leader, set inline per card — and `17cqw` is what the
@@ -2086,8 +2186,24 @@ ul, ol { list-style: none; }
    The bottom padding is the strip the entry input occupies, and it has to
    clear the input's whole box — rule, padding and text line — not just the
    text: 3px border + 10px padding + a 22px line, plus room to breathe. Keep it
-   in step with `.entry-overlay input` or words will run into the rule. */
-.playing__list { justify-content: flex-end; gap: 4px; padding-bottom: 42px; }
+   in step with `.entry-overlay input` or words will run into the rule.
+
+   The mask is what makes that strip *stay* clear. Padding only reserves space
+   at the end of the content; scrolled content still paints through it, so
+   scrolling back through a long list dragged old words over the rule and into
+   what was being typed. Cutting at the content box's own bottom edge — two
+   stops at the same position, a hard edge rather than a fade — hides exactly
+   the band the input occupies and nothing else. It cannot be a fade: with
+   `justify-content: flex-end` the newest word's baseline sits right on that
+   edge, so any softening above it would wash out the word the player just
+   typed. */
+.playing__list {
+  justify-content: flex-end;
+  gap: 4px;
+  padding-bottom: 42px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 42px), transparent calc(100% - 42px));
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 42px), transparent calc(100% - 42px));
+}
 
 .playing__list .word { font-size: 17px; }
 
@@ -2470,15 +2586,46 @@ ul, ol { list-style: none; }
 /* A team has no avatar of its own, so its members' stand in — the same trail
    that follows a team name everywhere else. Two lines at most: a team of nine
    must not push the step off the bottom of the screen. */
+/* One row per member, face then name, rather than a run of emoji. A column is
+   narrow, so the name is the part that clips — the face is 1ch and always
+   readable, and a clipped name still identifies somebody in a room where they
+   are sitting. */
 .podium-col__roster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  min-width: 0;
+  /* The plinth is what the board is built around; a ten-strong team must push
+     its own list into a scroll rather than the staircase down the screen. */
+  max-height: 30%;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.podium-col__member {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.podium-col__member-emoji {
   font-size: clamp(13px, 1.5vw, 20px);
   line-height: 1.15;
-  text-align: center;
-  max-width: 100%;
+  flex: 0 0 auto;
+}
+
+.podium-col__member-name {
+  font-family: var(--display);
+  font-size: clamp(9px, 1.05vw, 14px);
+  line-height: 1.2;
+  min-width: 0;
   overflow: hidden;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .podium-col__name {
@@ -3766,6 +3913,31 @@ ul, ol { list-style: none; }
   color: var(--ink-dim);
 }
 
+/* The random option runs the full width of the grid, last. The grid is two
+   fixed columns and the ballot is odd-numbered, so without this the tile that
+   is on every ballot every match sits alone in a half-width slot and reads as
+   a category the list ran out of room for. */
+.player-voting__wide { grid-column: 1 / -1; }
+
+/* Dashed, and only here. Every other tile names a thing the round could be
+   about; this one is a bet on the draw, and the broken outline is what says
+   so at a glance without spending the gold "go forward" colour on it. */
+.vote-tile--random {
+  border-style: dashed;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.vote-tile__note {
+  font-family: var(--body);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--ink-dim);
+}
+
 .vote-tile__badge {
   position: absolute;
   top: -11px;
@@ -4185,13 +4357,18 @@ ul, ol { list-style: none; }
   min-height: 0;
   display: grid;
   grid-template-columns: repeat(var(--cols, 5), 228px);
-  /* Capped rather than `1fr`, which stretched a panel to whatever height the
-     screen had left over — five members' worth of content in a column tall
-     enough for twenty. A cap keeps the panel roughly as tall as it is wide at
-     one row and still lets two rows fit. */
-  grid-auto-rows: minmax(0, 24vh);
+  /* Sized to the roster, not to a slice of the viewport. A capped row (24vh)
+     kept the panels tidy but scrolled the members inside them, which on a TV
+     is a list nobody can scroll — the people it is hiding are in the room
+     looking at it. Panels grow instead, and the *grid* takes the overflow in
+     the one case that can outgrow a screen: a room dressed with bots.
+     `safe center` is what makes that survivable — plain `center` overflows in
+     both directions at once and puts the first row out of reach above the
+     scrollport. */
+  grid-auto-rows: minmax(0, auto);
   justify-content: center;
-  align-content: center;
+  align-content: safe center;
+  overflow-y: auto;
   gap: 56px 12px;
   width: 100%;
   padding: 18px 34px 8px;
@@ -4240,7 +4417,10 @@ ul, ol { list-style: none; }
   border: var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow-btn);
-  padding: 20px 12px 12px;
+  /* The extra 4px on top is clearance under the name tab, which overhangs the
+     corner and tilts — its low edge dips further down than its box does, and
+     the first member's name was reading as attached to it. */
+  padding: 24px 12px 12px;
   font-family: var(--display);
   cursor: pointer;
 }
@@ -4288,10 +4468,10 @@ ul, ol { list-style: none; }
 
 .host-teams__plaque { font-size: 22px; letter-spacing: 0.14em; padding: 8px 28px; }
 
+/* Grows with the roster rather than scrolling inside a fixed panel — see
+   `.team-grid`. Nobody walks up to the TV to scroll a team's member list. */
 .team-panel__members {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -4354,8 +4534,13 @@ ul, ol { list-style: none; }
 
 /* ------------------------------------------------------ player: teams */
 
+/* Less top padding than every other mobile screen. This one is a grid of
+   targets and nothing else, so the room a header would have taken above it
+   goes to the tiles — the difference is roughly one more row visible without
+   scrolling on a small phone. */
 .player-teams {
-  gap: 16px;
+  padding-top: 22px;
+  gap: 14px;
 }
 
 .player-teams__room {
@@ -4368,71 +4553,34 @@ ul, ol { list-style: none; }
 
 .player-teams__plaque { font-size: 16px; letter-spacing: 0.1em; padding: 8px 18px; }
 
-/* Heavier than the tiles below it in every dimension — 4px rule where they
-   have 3, a deeper shadow, and a name tab a size up. The card you are on has
-   to be legible as "the one" before any word on it is read.
-   No `overflow: hidden`: the tab overhangs the corner. */
-.player-teams__mine {
-  position: relative;
+/* The title and the name editor share one slot and take turns in it — the
+   plaque until you are on a team, the tab afterwards. Fixed at the plaque's
+   own height so the swap moves nothing below it: the grid must not shift when
+   you join, which is the whole point of this screen's layout. */
+.player-teams__title-slot {
+  flex: 0 0 44px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  flex: 0 0 auto;
-  /* On top of `.player-teams`' own gap, so this card sits further from the
-     plaque above it than every other pair of siblings on the screen does. */
-  margin-top: 14px;
-  background: var(--cream);
-  color: var(--ink);
-  border: var(--border-heavy);
-  border-radius: var(--radius);
-  box-shadow: 7px 7px 0 var(--ink);
-  padding: 4px 0 16px;
+  align-items: center;
+  justify-content: center;
 }
 
-.player-teams__joined {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  font-family: var(--display);
-  font-size: 11px;
-  line-height: 1;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  background: var(--gold);
-  color: var(--ink-gold);
-  border: var(--border);
-  border-radius: 99px;
-  padding: 4px 12px;
-  transform: rotate(-2.5deg);
-  box-shadow: 3px 3px 0 var(--ink);
-}
-
-/* The same tab every other screen wears, with the name editable in place.
-   `.team-badge` is `position: absolute` — fine for a badge dropped onto a
-   card that already has other content in flow, but this one *is* the title
-   row, so it has to opt back into flow or it floats free of `.player-teams__mine`
-   and the member list below rises to fill the gap it left, landing under it.
-   The negative top margin is what gets the overhang back: `.player-teams__mine`
-   only carries 4px of top padding now, and this pulls the tab up the rest of
-   the way to sit on the card's top border, same as every absolutely-positioned
-   badge does. `overflow: visible` because the caret sits on the box's edge at
-   the end of a long name; the width cap is what keeps it clear of the
-   JOINED! badge pinned to this card's top-right corner. */
+/* The same tilted tab every other screen wears, with the name editable in
+   place — so the thing you rename is visibly the same object as the tab on
+   your tile below and on the TV.
+   `.team-badge` is `position: absolute`, which is right for a badge dropped
+   onto a card that has other content in flow; here the tab *is* the content of
+   its slot, so it opts back into flow. `overflow: visible` because the caret
+   sits on the box's edge at the end of a long name. */
 .player-teams__title {
   position: static;
-  /* `.player-teams__mine` is a column flex container, so its default
-     `align-items: stretch` stretches every child to the column's full width —
-     this is a flex item too, and without an override it filled the whole
-     card regardless of how short the name inside it was. `flex-start` lets it
-     size to its own content (the `size` attribute on the input below), so the
-     tab scales with the name instead of the card. */
-  align-self: flex-start;
+  /* The slot is a flex row, whose default `stretch` would blow the tab out to
+     the full width of the screen regardless of how short the name on it is. */
+  align-self: center;
+  max-width: 100%;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 5px 14px;
-  margin: -18px 0 0 12px;
-  max-width: calc(100% - 116px);
   overflow: visible;
 }
 
@@ -4452,33 +4600,90 @@ ul, ol { list-style: none; }
   padding: 0;
 }
 
-/* The field is shared and last write wins, so a teammate's edit arriving
-   under your thumb has to read as expected rather than as a glitch. */
-.player-teams__shared {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--ink-dim);
-  padding: 0 18px;
-}
-
-/* The top padding clears the name tab above, which is tilted — its low
-   corner dips further down than its box does. */
-.player-teams__members {
+/* Every team's roster, on every tile. Names as well as faces: two columns of
+   bare emoji is not something anyone can read a room off, which is the whole
+   job this screen has. */
+.team-tile__members {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-family: var(--display);
-  font-size: 14px;
-  color: var(--ink-dim);
-  padding: 10px 18px 0;
+  align-items: flex-start;
+  gap: 3px;
+  min-width: 0;
 }
 
-.player-teams__divider { flex: 0 0 auto; margin: 12px 0 6px; }
+.team-tile__member {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  font-size: 13px;
+  line-height: 1.15;
+  color: var(--ink-dim);
+}
 
-.team-tile__count {
-  font-family: var(--body);
-  font-size: 18px;
-  text-align: left;
+.team-tile__avatar { flex: 0 0 auto; font-size: 15px; }
+
+.team-tile__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* You, inverted. Bungee has one weight, so "bolder" cannot be a font-weight —
+   it is full-strength ink behind cream instead, which reads at arm's length
+   and is the same at every accent, unlike a colour-filled pill. This is the
+   mark the screen is actually answering "which team am I on?" with. */
+.team-tile__member--you {
+  background: var(--ink);
+  color: var(--cream);
+  border-radius: 99px;
+  padding: 2px 9px;
+  margin-left: -3px;
+  font-size: 14px;
+}
+
+.team-tile__member--empty { font-style: italic; opacity: 0.6; }
+
+/* The tile you are on. Heavier in ink only — a thicker rule and a deeper
+   shadow — never in the accent: the card's outline stays one weight on all
+   four sides and the colour rides the badge, as it does everywhere else.
+   `box-sizing: border-box` is what keeps the extra pixel of rule from
+   resizing the tile and nudging its neighbours. */
+.team-tile--mine {
+  border: var(--border-heavy);
+  box-shadow: 7px 7px 0 var(--ink);
+  cursor: default;
+}
+
+/* Not a press: your own tile is not a target, so it must not answer a tap
+   with the physics of one. */
+.team-tile--mine:active { transform: none; box-shadow: 7px 7px 0 var(--ink); }
+
+/* The name tab and the JOINED! badge share this tile's top edge, one at each
+   end. Yielding the badge's width is what keeps a twenty-character team name
+   from running under it — the tab clips and travels instead, which is what it
+   does everywhere else it is short of room. */
+.team-tile--mine .team-badge { max-width: calc(100% - 84px); }
+
+/* Inside the tile's own width, not overhanging it: the grid clips its x-axis
+   (it has to, to scroll on y), and there is only the shadows' clearance out
+   there — which the badge's own shadow would then spend twice. */
+.team-tile__joined {
+  position: absolute;
+  top: -10px;
+  right: 6px;
+  font-family: var(--display);
+  font-size: 10px;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  background: var(--gold);
+  color: var(--ink-gold);
+  border: var(--border);
+  border-radius: 99px;
+  padding: 4px 9px;
+  transform: rotate(-2.5deg);
+  box-shadow: 3px 3px 0 var(--ink);
 }
 
 .player-teams__footer {
@@ -4487,6 +4692,14 @@ ul, ol { list-style: none; }
   flex-direction: column;
   align-items: center;
   gap: 14px;
+  padding-top: 10px;
+}
+
+/* Holds the button's height whether or not there is a button in it, so the
+   scrolling grid above does not change size the moment you join a team. */
+.player-teams__leave {
+  width: 100%;
+  min-height: 52px;
 }
 
 /* ------------------------------------------------------------ debug panel */

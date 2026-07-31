@@ -10,6 +10,12 @@ export type ClientMessage =
   | { type: "startGame" }
   | { type: "cancelStart" }
   | { type: "kick"; targetId: PlayerId }
+  /**
+   * Give up your seat. Distinct from simply closing the socket, which leaves
+   * the player in the room greyed out so a locked phone can reclaim its seat —
+   * this is the deliberate version, and it takes the seat with it.
+   */
+  | { type: "leaveRoom" }
   | { type: "submitEntry"; text: string; seq: number }
   | { type: "setSettings"; values: Partial<Record<NumericSettingKey, number>> }
   | { type: "setMode"; mode: string }

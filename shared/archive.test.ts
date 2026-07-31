@@ -8,6 +8,7 @@ import {
   roundRows,
   voteRows,
 } from "./archive";
+import { BALLOT, RANDOM_CATEGORY } from "./categories";
 import { scoreRound } from "./scoring";
 import { placeRound } from "./standings";
 import { rosterOf } from "./teams";
@@ -109,12 +110,23 @@ describe("gameStartRows", () => {
 });
 
 describe("voteRows", () => {
-  test("snapshots the whole pool, including categories nobody voted for", () => {
+  test("snapshots the whole ballot, including options nobody voted for", () => {
     const r = room({ votes: { a: { movie: 2 }, b: { movie: 1, song: 1 } } });
     const { categories } = voteRows(r, "g");
-    expect(categories).toHaveLength(10);
+    expect(categories).toHaveLength(BALLOT.length);
     expect(categories.find((c) => c.category === "movie")!.vote_total).toBe(3);
     expect(categories.find((c) => c.category === "car")!.vote_total).toBe(0);
+  });
+
+  test("the random option gets a row like everything else on the ballot", () => {
+    // Without it the vote counts would not add up to the votes cast: it is
+    // votable, so it is part of the snapshot. It simply never plays.
+    const r = room({ votes: { a: { [RANDOM_CATEGORY]: 2 } } });
+    const { categories, votes } = voteRows(r, "g");
+    expect(categories.find((c) => c.category === RANDOM_CATEGORY)!.vote_total).toBe(2);
+    expect(votes).toEqual([
+      { game_id: "g", player_id: "a", category: RANDOM_CATEGORY, count: 2 },
+    ]);
   });
 
   test("keeps votes as per-player counts, not a set", () => {

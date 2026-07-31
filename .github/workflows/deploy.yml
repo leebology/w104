@@ -13,6 +13,15 @@ name: Deploy Worker
 # change is now tested by merging it to `staging`, which is what that branch is
 # for. Vercel still builds a frontend preview per PR; those point at the
 # staging Worker, which is stable precisely because PRs no longer touch it.
+#
+# Both jobs run typecheck, tests and build before `wrangler deploy`, and that
+# is not the same gate CI is. CI answers a *pull request*; this answers the
+# push, so it also covers a commit that reached a deployed branch without one —
+# a direct push, a merge waved through past a red run, a hotfix at midnight.
+# The check and the deploy are one job on purpose: a separate workflow would
+# report a failure while the deploy raced ahead regardless, which is exactly
+# the arrangement this is here to avoid. Roughly 40 seconds against a deploy
+# that people open on their phones the moment it lands.
 on:
   push:
     branches: [main, staging]
@@ -31,6 +40,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Nothing ships that does not pass. Redundant against CI on the ordinary
+      # path — the merge that produced this push was already checked — and that
+      # is fine: the case it exists for is the push that was not.
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
       - run: npx wrangler deploy
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -51,6 +66,12 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # The same three, for the same reason — and this is the one that bites
+      # most often, since a PR into `staging` can be merged without waiting for
+      # anything unless the branch is protected.
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
       - run: npx wrangler deploy --env staging
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

@@ -77,6 +77,8 @@ export class RoomStore {
   private seq = 0;
   private state: ClientState = EMPTY;
   private playerId = "";
+  /** Tears down the wake listeners for the current socket. See `connect`. */
+  private unwatch: (() => void) | null = null;
 
   subscribe = (fn: () => void): (() => void) => {
     this.listeners.add(fn);
@@ -138,9 +140,44 @@ export class RoomStore {
     socket.addEventListener("message", (event) => {
       if (isCurrent()) this.receive(JSON.parse(event.data as string) as ServerMessage);
     });
+
+    /**
+     * Come back the moment the phone does.
+     *
+     * partysocket retries on its own, but a backgrounded tab is exactly where
+     * that goes wrong: the OS suspends its timers, so the retry that was due
+     * during the two minutes the screen was off fires late — and the backoff it
+     * fires on has meanwhile grown. Every one of these events means "this
+     * device is being used again", and `reconnect()` both resets the retry
+     * counter and goes now rather than at the end of a delay computed while
+     * nobody was looking.
+     *
+     * A no-op when the socket is already open or dialling, which is the common
+     * case: a short screen-off does not close a socket at all.
+     */
+    const wake = () => {
+      if (!isCurrent()) return;
+      if (document.visibilityState !== "visible") return;
+      if (socket.readyState === WebSocket.OPEN) return;
+      if (socket.readyState === WebSocket.CONNECTING) return;
+      socket.reconnect();
+    };
+    document.addEventListener("visibilitychange", wake);
+    // `pageshow` rather than `focus`: it also fires when Safari restores the
+    // page from the back/forward cache, where the socket is dead but no
+    // visibility change is ever dispatched.
+    window.addEventListener("pageshow", wake);
+    window.addEventListener("online", wake);
+    this.unwatch = () => {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("pageshow", wake);
+      window.removeEventListener("online", wake);
+    };
   }
 
   disconnect(): void {
+    this.unwatch?.();
+    this.unwatch = null;
     this.socket?.close();
     this.socket = null;
   }
