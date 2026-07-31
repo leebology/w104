@@ -6,7 +6,6 @@ import type { ClientState } from "../../net/room";
 import { countdownScreen } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
 import { TimesUp } from "../shared/TimesUp";
-import { Writing } from "../shared/Writing";
 import { PlayerLobby } from "./PlayerLobby";
 import { PlayerPlaying } from "./PlayerPlaying";
 import { PlayerScoring } from "./PlayerScoring";
