@@ -397,12 +397,6 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
   // phone's last scroll, not the swap's.
   useEffect(() => {
     const off = roomStore.onColumnScroll((scorer, at) => {
-      console.log("[mirror] HOST listener fired", {
-        scorer, at,
-        knownColumns: [...lists.current.keys()],
-        hasBoxForScorer: lists.current.get(scorer) !== undefined
-          && lists.current.get(scorer) !== null,
-      });
       mirrorTargets.current.set(scorer, at);
       mirrorPump.current();
 
@@ -453,8 +447,6 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
    * spinning on an idle results screen.
    */
   useEffect(() => {
-    console.log("[mirror] HOST apply effect, rankStage =", rankStage,
-      rankStage === 2 ? "(ARMED)" : "(not armed — mirror is inert)");
     if (rankStage !== 2) return;
     let frame = 0;
 
