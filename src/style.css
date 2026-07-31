@@ -1083,13 +1083,17 @@ ul, ol { list-style: none; }
    order and competes for width like everything else. */
 .vote-card--random { border-style: dashed; }
 
-/* Two ceilings, and the smaller wins. `--name-size` is the ideal — it scales
-   with share of the leader, set inline per card — and `17cqw` is what the
-   card can actually afford at the width flex-grow has left it. `anywhere`
-   is the last resort under both. */
+/* Two ceilings and a floor. `--name-size` is the ideal — it scales with share
+   of the leader, set inline per card — `17cqw` is what the card can actually
+   afford at the width flex-grow has left it, and `max(24px, …)` is the hard
+   TV floor: at eight cards per row `17cqw` alone would land near 12.7px on
+   the smallest card. The custom board is what makes this floor load-bearing
+   (the stock ballot never crowds a row past six), but it belongs on the
+   shared rule rather than a custom-only override — the same card, the same
+   promise, everywhere it appears. `anywhere` is the last resort under both. */
 .vote-card__name {
   font-family: var(--display);
-  font-size: min(var(--name-size, 21px), 17cqw);
+  font-size: max(24px, min(var(--name-size, 21px), 17cqw));
   line-height: 1.06;
   overflow-wrap: anywhere;
   hyphens: auto;
@@ -1176,6 +1180,116 @@ ul, ol { list-style: none; }
   .host-voting--closed .get-ready--tv {
     animation: none;
   }
+}
+
+/* ---------------------------------------------------- host voting, custom */
+
+/* The custom board caps at ten cards (`BOARD_CAP`) rather than the ballot's
+   up to eleven, so its five-per-row minimum can afford to be wider — 132px
+   instead of the stock 104px — which is what lets `17cqw` clear the 24px
+   floor above without help at ten cards over two rows of five. Applied to
+   every custom card, open board and closed reveal alike, so the promise is
+   uniform across the whole screen. */
+.vote-card--custom { min-width: 132px; }
+
+/* The closed reveal's runners-up keep the stock `.vote-card--small` sizing
+   (150px basis, 220px cap, 19px name, 20px total) but stand taller — 110px
+   rather than 86px — a number the design brief calls out for this board
+   specifically, not a mistaken re-derivation of the stock one. */
+.vote-card--custom.vote-card--small { min-height: 110px; }
+
+/* No voter trail on this board — hands stay private until the reveal — so
+   the lone total has nothing to sit opposite. `.vote-card__foot`'s own
+   `space-between` would otherwise push a single child to the left. */
+.vote-card__foot--solo { justify-content: flex-end; }
+
+/* "+ N MORE ON THE BOARD": a count, never a list — a list would be a second
+   board. Centred under the grid, above the footer. */
+.host-voting__pack {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding: 0 0 12px;
+}
+
+.host-voting__pack-pill {
+  font-family: var(--display);
+  font-size: 13px;
+  color: var(--ink-dim);
+  background: var(--cream);
+  border: var(--border);
+  border-radius: 99px;
+  padding: 8px 18px;
+}
+
+/* The author chip's slot, stacked above the name rather than beside it — the
+   phone's voting tile puts the chip next to the chance figure instead, but
+   the board pins it "top-left inside the card" per the brief. Grouped with
+   the name in its own flex column so `.vote-card`'s own `space-between`
+   still only has two things to split: this group, and the total below. */
+.vote-card__top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* The count-to-chance crossfade: both figures stacked in the same grid cell
+   so neither has to be measured or absolutely positioned against the other.
+   `justify-items: end` keeps the stack right-aligned, matching the stock
+   total's own position. */
+.vote-card__crossfade {
+  display: grid;
+  justify-items: end;
+}
+
+.vote-card__crossfade > span { grid-area: 1 / 1; }
+
+@keyframes countFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes countFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.vote-card__total--out { animation: countFadeOut 200ms ease-out both; }
+.vote-card__total--in { animation: countFadeIn 200ms ease-out both; }
+
+/* Zero-vote cards at the close: on screen just long enough to leave. This
+   row only ever exists for the ~200ms it takes to empty — see
+   `HostVotingCustom.tsx`'s `zeroGone`. */
+.host-voting__row--leaving {
+  display: flex;
+  gap: 12px;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.vote-card--leaving { animation: cardLeave 200ms ease-in both; }
+
+@keyframes cardLeave {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(6px); }
+}
+
+/* The 260ms reflow onto the podium — slower and a different curve than the
+   live board's own 220ms `flex-grow` transition, because this one is playing
+   once, at a fixed moment, rather than tracking a vote as it lands. */
+.host-voting--closed .vote-card--custom {
+  transition: flex-grow 260ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vote-card--leaving { animation: none; opacity: 0; }
+  .vote-card__total--out,
+  .vote-card__total--in { animation: none; }
+  .vote-card__total--out { opacity: 0; }
+  .vote-card__total--in { opacity: 1; }
+  .host-voting--closed .vote-card--custom { transition: none; }
 }
 
 /* ---------------------------------------------------------- host scoring */
