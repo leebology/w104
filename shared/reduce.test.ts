@@ -1883,8 +1883,10 @@ describe("the results screen", () => {
     const room = scored();
     const phase = room.phase as { name: string; startedAt: number; skipped: boolean };
     // The reveal's zero is the moment the times-up screen ran out, which is
-    // what `scored()` ticks it on.
-    expect(phase.startedAt).toBe(45_000);
+    // what `scored()` ticks it on. Spelled out from the constants rather than
+    // as the absolute it works out to: `playing()` spends two countdowns
+    // getting there, so a literal here silently becomes a test of COUNTDOWN_MS.
+    expect(phase.startedAt).toBe(2000 + COUNTDOWN_MS * 2 + 30_000 + TIMESUP_MS);
     expect(phase.skipped).toBe(false);
   });
 

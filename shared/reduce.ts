@@ -15,7 +15,22 @@ import { MIN_TEAM_COUNT } from "./gamemodes";
 import type { ViewId } from "./views";
 import { isHuman, isWaiting, readyBots, seatBots, setBotCount } from "./bots";
 
-export const COUNTDOWN_MS = 5_000;
+/**
+ * How long the Get Ready card is up.
+ *
+ * **Set by the audio, not by the design.** The countdown plays a lead-in that
+ * hands straight over to the round's music (`src/audio/countdown/`), so the
+ * card has to stay up long enough for that clip to finish — a shorter phase
+ * cuts the music off mid-bar. It was five seconds when nothing was playing over
+ * it. **Replacing the lead clip means changing this number**, which is the one
+ * piece of coupling between a file somebody drags into a folder and the server;
+ * the countdown README says so at the other end.
+ *
+ * Rounded up from the clip rather than matched exactly: the hand-off to the
+ * round's music fires off the clip's own `ended` event, so a little slack here
+ * is inaudible, while too little clips the last note.
+ */
+export const COUNTDOWN_MS = 7_400;
 /** One voting window per match, whatever the round count. */
 export const VOTING_MS = 60_000;
 export const TIMESUP_MS = 3_000;
