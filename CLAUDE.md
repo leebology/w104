@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (550 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (564 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -709,6 +709,29 @@ card ends on. Rules to keep:
 - **FAST FORWARD is room state (`scoring.skipped`), not a local jump.** A skip
   the TV kept to itself would leave the phones crawling through lines the room
   has already been shown.
+- **The scroll mirror is the one thing in the app that deliberately ticks over
+  the wire.** Once the reveal is over, a player's scroll on their own list
+  drives their column on the TV. There is no schedule to derive live human
+  input from, so the traffic is real and the rate is capped instead — 250ms
+  plus a settle send, against a 100,000/day *account-wide* DO ceiling. It rides
+  a host-directed fast path in `party/server.ts`, above the
+  reduce/persist/broadcast tail: a scroll position is not game state, must not
+  survive a refresh, and exactly one socket wants it. **Nothing about it enters
+  `Room` or React state** — `roomStore.onColumnScroll` is a plain listener and
+  `HostScoring` writes `scrollTop` onto the nodes directly, because a 4Hz value
+  in that render tree is ten columns of two hundred rows re-rendering four
+  times a second.
+- **A column's driver is derived per message, never claimed.** `driverOf`
+  (`shared/mirror.ts`) is the first **connected, human** member in roster
+  order. Human is load-bearing: bots are `connected: true`, so a bot seated by
+  `seatBots` would otherwise lead a roster and own a column it can never drive.
+  Deriving rather than storing is what makes a disconnect hand the column over
+  with nothing watching for it.
+- **The two ends of the mirror are gated at different instants, on purpose.**
+  The phone sends from `step >= lastStep`; the TV buffers and applies from
+  `rankStage === 2`. In between it is finishing its own auto-scroll and flying
+  the measured swap. Buffering rather than dropping is what makes the gap
+  invisible.
 - **The phone shows the whole list from the first frame; only the *bad news*
   arrives over time.** It is your own list and you know what is on it. So
   `PlayerScoring` ignores `RowView.revealed` and reads only `struck`/`alsoShown`,
@@ -790,6 +813,9 @@ card ends on. Rules to keep:
   integer schedule, the strike/back-check rule, the measured swap, the podium and
   the guarded footer swap. Read with `design_handoff_host_scoring_reveal/README.md`,
   which is the brief it answers. Implemented.
+- `docs/superpowers/specs/2026-07-30-scroll-mirror-design.md` — the scroll
+  mirror: the fraction unit and why not a row index, `driverOf`, the
+  host-directed fast path and its request budget, the two gates. Implemented.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.
