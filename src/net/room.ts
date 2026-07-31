@@ -216,6 +216,8 @@ export class RoomStore {
         });
         break;
       case "columnScroll":
+        console.log("[mirror] client RECEIVED columnScroll", msg.scorer, msg.at,
+          "— listeners registered:", this.scrollListeners.size);
         // Straight to the listeners — never through `set()`, which would
         // re-render every subscriber four times a second.
         for (const listener of this.scrollListeners) listener(msg.scorer, msg.at);

@@ -123,10 +123,28 @@ export function PlayerScoring({
 
   useEffect(() => {
     const box = listBox.current;
+    console.log("[mirror] PHONE gate", {
+      mirroring,
+      hasScrollBox: box !== null,
+      step,
+      lastStep: schedule.lastStep,
+      reachedEndOfReveal: step >= schedule.lastStep,
+      myScorerId: me?.id,
+      myPlayerId: playerId,
+      driverOfMyColumn: me !== undefined ? driverOf(room, me.id) : "(no scorer)",
+    });
     if (!box || !mirroring) return;
 
     const push = () => {
       const at = scrollFraction(box.scrollTop, box.scrollHeight, box.clientHeight);
+      console.log("[mirror] PHONE push", {
+        at,
+        lastSent: lastSent.current,
+        scrollTop: box.scrollTop,
+        scrollHeight: box.scrollHeight,
+        clientHeight: box.clientHeight,
+        willSend: at !== null && at !== lastSent.current,
+      });
       // Null is a list shorter than its box: no position to mirror, so nothing
       // is sent at all. An unchanged rounded value is the free dedupe the
       // three-decimal quantization buys.

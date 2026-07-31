@@ -446,9 +446,21 @@ export class W104 extends Server<Env> {
      * docs/superpowers/specs/2026-07-30-scroll-mirror-design.md.
      */
     if (msg.type === "scrollTo") {
-      if (this.room.phase.name !== "scoring") return;
+      console.log("[mirror] server RECEIVED scrollTo", {
+        playerId, at: msg.at, phase: this.room.phase.name,
+      });
+      if (this.room.phase.name !== "scoring") {
+        console.log("[mirror] server DROP: phase is", this.room.phase.name);
+        return;
+      }
       const scorer = rosterOf(this.room).find((s) => s.members.includes(playerId));
-      if (!scorer) return;
+      if (!scorer) {
+        console.log("[mirror] server DROP: no scorer owns", playerId);
+        return;
+      }
+      console.log("[mirror] server driver check", {
+        scorer: scorer.id, driver: driverOf(this.room, scorer.id), playerId,
+      });
       // Enforced here and not on the TV: this is the only place that knows the
       // roster and the connection states, and the panel-style "the client
       // wouldn't send it" argument is not a boundary.
@@ -995,13 +1007,24 @@ export class W104 extends Server<Env> {
   private sendToHost(msg: ServerMessage): void {
     if (!this.room) return;
     const hostId = this.room.hostId;
-    if (hostId === null) return;
+    if (hostId === null) {
+      console.log("[mirror] sendToHost: hostId is null");
+      return;
+    }
     for (const conn of this.getConnections<ConnState>()) {
       if (conn.state?.playerId === hostId) {
         this.sendTo(conn, msg);
+        console.log("[mirror] sendToHost: DELIVERED to host");
         return;
       }
     }
+    console.log("[mirror] sendToHost: NO MATCHING HOST CONNECTION", {
+      hostId,
+      connections: [...this.getConnections<ConnState>()].map((c) => ({
+        playerId: c.state?.playerId,
+        role: c.state?.role,
+      })),
+    });
   }
 
   private encode(msg: ServerMessage): string {
