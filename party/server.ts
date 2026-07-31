@@ -1,7 +1,7 @@
 import { Server, routePartykitRequest } from "partyserver";
 import type { Connection, ConnectionContext, WSMessage } from "partyserver";
 import {
-  alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry, MAX_PLAYERS,
+  alarmOutcome, canEndGame, flushEntry, nextAlarmAt, reduce, submitEntry, MAX_PLAYERS,
 } from "../shared/reduce";
 import type { ClientMessage, ErrorCode, ServerMessage } from "../shared/protocol";
 import { createRoom, matchComplete, toRoomState } from "../shared/state";
@@ -418,6 +418,20 @@ export class W104 extends Server<Env> {
         reason: result.reason,
       });
       if (!result.accepted) return;
+      await this.persist();
+      return; // Still no broadcast: entry counts are not published.
+    }
+
+    if (msg.type === "flushEntry") {
+      const result = flushEntry(this.room, playerId, msg.text, now);
+      this.room = result.room;
+      // Silent on refusal — no ack to send it in, and no banner to render it.
+      // The reject banner only draws while `playing`, and scolding somebody
+      // over a word they did not choose to submit is worse than dropping it.
+      if (!result.accepted) return;
+      // Same ordering rule as an accepted submit: teammates share one list and
+      // must see the word land. `sendTo`, never `broadcast`.
+      this.sendEntriesToTeam(playerId);
       await this.persist();
       return; // Still no broadcast: entry counts are not published.
     }
