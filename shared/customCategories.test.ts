@@ -341,6 +341,13 @@ describe("pickCustomCategory", () => {
     ];
     const votes = { p0: { c1: 1 }, p1: { c0: 1 }, p2: { c2: 2 } };
     expect(pickCustomCategory(pool, votes, [], 0.1)).toBe("smells");
+    // 0.4 is the discriminating roll: correctly summed, "smells" is 2 of 4
+    // and the boundary sits at 0.5, so 0.4 still lands on "smells". A buggy
+    // merge that only counts one card's tally (first-wins or max instead of
+    // sum) makes "smells" 1 of 3, pulling the boundary down to ~0.333 — at
+    // which point 0.4 falls on "other" instead. 0.1 and 0.9 sit clear of both
+    // boundaries and cannot tell the two implementations apart.
+    expect(pickCustomCategory(pool, votes, [], 0.4)).toBe("smells");
     expect(pickCustomCategory(pool, votes, [], 0.9)).toBe("other");
   });
 
