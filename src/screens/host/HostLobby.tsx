@@ -86,7 +86,7 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
   }, []);
 
   return (
-    <main className="screen screen--host">
+    <main className="screen screen--host host-lobby">
       {/* The room chip other host screens carry would only repeat the code
           that is already the hero here, so the lobby leads with the wordmark
           instead — the join instruction below is louder than any chip. */}
