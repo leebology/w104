@@ -276,3 +276,76 @@ describe("buildDeal", () => {
     expect(buildDeal([], [], 1, 0.5)).toEqual({});
   });
 });
+
+import { BOARD_CAP, boardCards, customShares, pickCustomCategory } from "./customCategories";
+
+const card = (id: string, text: string, authorId: string | null = "p0") =>
+  ({ id, text, authorId, slot: 0 });
+
+describe("boardCards", () => {
+  it("keeps every card on the board while votes are landing", () => {
+    const pool = [card("c0", "a"), card("c1", "b"), card("c2", "c")];
+    const { shown, packCount } = boardCards(pool, { c1: 2 });
+    expect(shown).toHaveLength(3);
+    expect(packCount).toBe(0);
+    expect(shown[0].id).toBe("c1");
+  });
+
+  it("caps the board at ten and counts the rest", () => {
+    const pool = Array.from({ length: 30 }, (_, i) => card(`c${i}`, `t${i}`));
+    const { shown, packCount } = boardCards(pool, { c5: 4, c9: 2 });
+    expect(shown).toHaveLength(BOARD_CAP);
+    expect(packCount).toBe(20);
+    expect(shown[0].id).toBe("c5");
+    expect(shown[1].id).toBe("c9");
+  });
+
+  it("orders identically for identical votes, by id", () => {
+    const pool = [card("c2", "b"), card("c0", "a"), card("c1", "c")];
+    expect(boardCards(pool, {}).shown.map((c) => c.id)).toEqual(["c0", "c1", "c2"]);
+  });
+});
+
+describe("customShares", () => {
+  it("is computed over voted cards only and sums to 100", () => {
+    const pool = [card("c0", "a"), card("c1", "b"), card("c2", "c")];
+    const shares = customShares(pool, { p0: { c0: 1 }, p1: { c1: 2 } });
+    expect(shares.c2).toBeUndefined();
+    expect(shares.c0 + shares.c1).toBe(100);
+  });
+});
+
+describe("pickCustomCategory", () => {
+  it("draws a voted card before an unvoted one", () => {
+    const pool = [card("c0", "alpha"), card("c1", "beta")];
+    const votes = { p0: { c1: 3 } };
+    for (const roll of [0, 0.25, 0.5, 0.75, 0.999]) {
+      expect(pickCustomCategory(pool, votes, [], roll)).toBe("beta");
+    }
+  });
+
+  it("falls back to the unvoted cards once the voted ones are spent", () => {
+    const pool = [card("c0", "alpha"), card("c1", "beta")];
+    const votes = { p0: { c1: 3 } };
+    expect(pickCustomCategory(pool, votes, ["beta"], 0.5)).toBe("alpha");
+  });
+
+  it("merges identical texts into one entry with the summed weight", () => {
+    // Two people wrote "smells". Two cards and two tallies through voting;
+    // one entry in the draw, weighted 1 + 1 against "other"'s 2 — so the two
+    // outcomes are equally likely rather than "smells" being half as likely.
+    const pool = [
+      card("c0", "smells", "p0"),
+      card("c1", "smells", "p1"),
+      card("c2", "other", "p2"),
+    ];
+    const votes = { p0: { c1: 1 }, p1: { c0: 1 }, p2: { c2: 2 } };
+    expect(pickCustomCategory(pool, votes, [], 0.1)).toBe("smells");
+    expect(pickCustomCategory(pool, votes, [], 0.9)).toBe("other");
+  });
+
+  it("never redraws a category already played", () => {
+    const pool = [card("c0", "alpha"), card("c1", "beta")];
+    expect(pickCustomCategory(pool, {}, ["alpha"], 0.9)).toBe("beta");
+  });
+});

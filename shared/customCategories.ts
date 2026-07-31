@@ -1,6 +1,10 @@
 import type { PlayerId } from "./state";
 import { seededRng } from "./rng";
 import type { Rng } from "./rng";
+import { tallyVotes } from "./voting";
+import type { VoteMap } from "./voting";
+import { voteShares } from "./voting";
+import { weightedPick } from "./voting";
 
 /**
  * A player-written category pool. Every rule lives here so it tests in
@@ -293,4 +297,88 @@ export function buildDeal(
     out[id] = toHands(picks, rng);
   });
   return out;
+}
+
+/**
+ * The most cards the TV board can carry. A measured ceiling, not a taste call:
+ * a name is `max(24px, min(cap, 17cqw))` and 24px is the hard TV floor. At
+ * eight cards per row the smallest card is ~104px wide, `17cqw` lands near
+ * 12.7px, and the `max()` then clamps a 24px name into a box that cannot hold
+ * it. Five per row puts the smallest card at ~146px, where the floor fits.
+ */
+export const BOARD_CAP = 10;
+
+/**
+ * What the board shows, strongest first, and how many cards it could not fit.
+ *
+ * Unvoted cards stay on the board while voting is open — they hold its shape,
+ * so a quiet board reads as quiet rather than as broken. They leave at the
+ * close, which is `customShares`' business, not this one's.
+ *
+ * Ties break by id so the same votes always produce the same board.
+ */
+export function boardCards(
+  pool: readonly PoolCard[],
+  tally: Record<string, number>,
+): { shown: PoolCard[]; packCount: number } {
+  const ranked = [...pool].sort((a, b) => {
+    const diff = (tally[b.id] ?? 0) - (tally[a.id] ?? 0);
+    return diff !== 0 ? diff : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+  });
+  return {
+    shown: ranked.slice(0, BOARD_CAP),
+    packCount: Math.max(0, ranked.length - BOARD_CAP),
+  };
+}
+
+/**
+ * Closing percentages, over voted cards only. Zero-vote cards leave the board
+ * at the close, so including them in the denominator would understate every
+ * share that is left.
+ */
+export function customShares(
+  pool: readonly PoolCard[],
+  votes: VoteMap,
+): Record<string, number> {
+  return voteShares(votes, pool.map((c) => c.id));
+}
+
+/**
+ * The round's category, weighted by vote share over what is left.
+ *
+ * **Identical texts merge here and only here.** Two cards reading "smells" are
+ * two cards on the board with two tallies — merging them earlier would tell
+ * the room that two people matched, which is an authorship leak — and one
+ * entry in the draw carrying the summed weight, so the room's appetite for
+ * "smells" is counted once rather than split in half against itself.
+ *
+ * A zero-vote card is not dead, it is last in line: the draw takes voted cards
+ * first and falls back to a uniform draw over the unvoted ones only when it has
+ * run out. Same shape as `pickCategory` for the built-in pool.
+ */
+export function pickCustomCategory(
+  pool: readonly PoolCard[],
+  votes: VoteMap,
+  spent: readonly string[],
+  roll: number,
+): string {
+  const isSpent = new Set(spent);
+  const tally = tallyVotes(votes);
+
+  const weights = new Map<string, number>();
+  const unvoted: string[] = [];
+  for (const card of pool) {
+    if (isSpent.has(card.text)) continue;
+    const n = tally[card.id] ?? 0;
+    if (n > 0) weights.set(card.text, (weights.get(card.text) ?? 0) + n);
+    else if (!unvoted.includes(card.text)) unvoted.push(card.text);
+  }
+
+  if (weights.size > 0) return weightedPick([...weights.entries()], roll).pick;
+  if (unvoted.length > 0) {
+    return weightedPick(unvoted.map((t) => [t, 1] as [string, number]), roll).pick;
+  }
+  // Every text has been played. Unreachable while the pool covers the round
+  // count, which `quotaFor` guarantees — a guard, not a case.
+  return pool.length > 0 ? pool[0].text : "";
 }
