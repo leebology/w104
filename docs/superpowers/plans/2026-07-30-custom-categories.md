@@ -1396,7 +1396,10 @@ Append to `src/style.css`, next to the `.stepper` rules:
   height: 38px;
   width: 200px;
   background: var(--code-empty);
-  border: var(--border) solid var(--ink);
+  /* `--border` is the whole shorthand (`3px solid var(--ink)`), not a width.
+     Adding `solid var(--ink)` after it makes the declaration invalid and the
+     border vanishes. */
+  border: var(--border);
   border-radius: 10px;
   padding: 4px;
 }
