@@ -2307,6 +2307,32 @@ describe("voting on hands", () => {
     });
     expect(extra).toBe(room);
   });
+
+  it("lets a card dealt twice be backed twice, and no more", () => {
+    // How many hands held the card is the per-card cap. The built-in ballot
+    // genuinely lets a player stack votes on one category; here you cannot
+    // choose to be dealt a card again, so a second vote is luck rather than a
+    // move (spec §4.3) — and a third is a forged message. This is also why
+    // nothing downstream may read the tally as a 0/1 flag.
+    let room = votingRoom(3, 3);
+    const me = room.players[0].id;
+    const all = room.deal[me].flatMap((h) => h.cardIds);
+    const repeated = all.find((id, i) => all.indexOf(id) !== i);
+    if (!repeated) throw new Error("a three-player deal must repeat a card");
+
+    room = reduce(room, { t: "castVote", playerId: me, category: repeated, now: 1 });
+    room = reduce(room, { t: "castVote", playerId: me, category: repeated, now: 2 });
+    expect(room.votes[me][repeated]).toBe(2);
+
+    const third = reduce(room, { t: "castVote", playerId: me, category: repeated, now: 3 });
+    expect(third).toBe(room);
+
+    // The budget itself is untouched by the refusal — the other cards are
+    // still spendable, so a capped card costs the player nothing.
+    const other = all.find((id) => id !== repeated)!;
+    expect(reduce(room, { t: "castVote", playerId: me, category: other, now: 4 }))
+      .not.toBe(room);
+  });
 });
 
 /**

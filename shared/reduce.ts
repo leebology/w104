@@ -953,13 +953,22 @@ function apply(room: Room, ev: RoomEvent): Room {
       if (room.phase.name !== "voting") return room;
       if (!room.players.some((p) => p.id === ev.playerId)) return room;
 
+      const row = room.votes[ev.playerId] ?? {};
+
       if (customEnabled(room.settings)) {
-        // The hand is the ballot. A hand-rolled socket message is not bound by
-        // the UI, so what a player was actually dealt is checked here rather
-        // than trusted — otherwise anyone could vote for a card they were
-        // never shown, which is exactly what equal exposure exists to prevent.
+        // The hand is the ballot, and *how many hands held this card* is the
+        // per-card cap. A hand-rolled socket message is not bound by the UI, so
+        // both are checked here rather than trusted: without the first anyone
+        // could vote for a card they were never shown, and without the second
+        // they could put their whole budget on one card dealt once. The
+        // built-in ballot genuinely lets a player stack votes on a category;
+        // here you cannot choose to be dealt a card again, so backing it twice
+        // is luck rather than a move — see the spec's §4.3. Nothing downstream
+        // may treat this tally as a 0/1 flag: a card dealt twice is two votes.
         const hands = room.deal[ev.playerId] ?? [];
-        if (!hands.some((h) => h.cardIds.includes(ev.category))) return room;
+        const dealt = hands.filter((h) => h.cardIds.includes(ev.category)).length;
+        if (dealt === 0) return room;
+        if ((row[ev.category] ?? 0) >= dealt) return room;
       } else if (!(BALLOT as readonly string[]).includes(ev.category)) {
         return room;
       }
@@ -967,7 +976,6 @@ function apply(room: Room, ev: RoomEvent): Room {
       const budget = customEnabled(room.settings)
         ? voteBudgetFor()
         : voteBudget(room.settings);
-      const row = room.votes[ev.playerId] ?? {};
       const spent = votesSpent(row);
       if (spent >= budget) return room;
       return {
