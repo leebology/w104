@@ -589,18 +589,31 @@ Entries render optimistically and reconcile on `entryAck` (a 30s round cannot
 wait on a round trip); `seq` is present only while an entry is unacked.
 
 **Every countdown in the game is one card** (`src/components/GetReady.tsx`), on
-the TV and on the phones. The lobby's count into the vote, the one after voting
-closes and the one between rounds are the same moment, so they are the same
+the TV and on the phones, with no exceptions left — team select was the last
+screen wearing the old `.get-ready` plaque, which made the count a room reads
+from furthest away the one drawn smallest, and that class is gone. The lobby's
+count into the vote, the one after voting closes, the one out of team select and
+the one between rounds are the same moment, so they are the same
 object: the gold plaque, the teal tab overhanging its top-left corner naming
 where it leads, and — on the host screens that can stop it — a Stop button. No
 caption: the Ready button that opened the count is still under the player's thumb
-and still says Not ready, and a five-second card is not read. It is **posed
-over** the screen it interrupts
+and still says Not ready, and a five-second card is not read. It is normally
+**posed over** the screen it interrupts
 rather than replacing it, and whatever it is posed over wears `countdown-dim`.
 Which parts dim is stated per screen and is not incidental: the phones keep their
 Ready button lit through the count, because un-readying is the room's brake on
-it. Team select is the one countdown still on the old plaque — it is not
-cancellable at all (see `cancelStart`), so it has no note to carry.
+it, and team select dims its panels on both devices but not the Leave button or
+the host's Auto sort, which stay legal through the count.
+
+**The closed category vote is the one screen the card is laid out on rather than
+posed over** (`.host-voting__countdown`), and it is the exception that states the
+rule. Everywhere else the card interrupts furniture the room has already read.
+There it would cover the only thing on screen worth reading — the winning
+categories, or the "no one voted" line outright — and that screen exists for
+five seconds precisely so the room can read it. So the two share the height and
+nothing dims. The phone's copy of that screen stays posed: it is a locked
+never-scrolling screen with a personal recap on it, and there is no height to
+share.
 
 **Every host screen's back-out lives top-right, as `HostExit`** — a cream
 outline on the field, deliberately not a `.btn`. Gold with a hard shadow means
@@ -775,7 +788,13 @@ card ends on. Rules to keep:
   Nothing rides inside the swatch: a team's list is shared, so *which member*
   typed the duplicate is not the question a struck word asks. The TV and the
   phone must draw the same trail or two people are looking at one word and
-  counting different rivals.
+  counting different rivals — which is why **the trail has a size floor and does
+  not scale with the word.** `--word-size` is 15px on the TV and 19px on the
+  phone, so trailing it by 4px put the faces at 11px on the screen read from
+  furthest away. It is identity, not prose. The swatch is `1em` of the trail for
+  the same reason, and the trail's line box is 1.3 rather than 1: emoji draw well
+  outside the em box, and a clip box exists to cut the strip off when it is too
+  long, never to shave the tops off the faces.
 - **The host can strike any list; a player can strike only their own.** Same
   `selfStrike` event, with the host naming a scorer (`scorerId`) — honoured for
   the host alone, ignored from anyone else. The host is reading the round out to

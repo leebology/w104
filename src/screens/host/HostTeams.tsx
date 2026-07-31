@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import { useRemaining } from "../../net/clock";
+import { GetReady } from "../../components/GetReady";
 import { RoomChip } from "../../components/RoomChip";
 import { TeamBadge } from "../../components/TeamBadge";
 import { pulseInterval } from "../../components/Roster";
@@ -28,6 +29,10 @@ type Props = {
 export function HostTeams({ room, countdown }: Props) {
   const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   const unassigned = room.players.filter((p) => p.teamId === null);
+  // What steps back behind the card: the picking is over, so the panels and the
+  // stragglers dim. The footer does not — Auto sort stays legal through the
+  // count, and it is the only lever the TV has left while it runs.
+  const dim = countdown ? " countdown-dim" : "";
 
   return (
     <main className="screen screen--host host-teams">
@@ -43,13 +48,13 @@ export function HostTeams({ room, countdown }: Props) {
         }
       />
 
-      <p className="plaque host-teams__plaque">Pick a team</p>
+      <p className={`plaque host-teams__plaque${dim}`}>Pick a team</p>
 
       {/* Fixed-width panels, five to a row. Adding a team adds a panel rather
           than shrinking the others, so the card a player is aiming at does
           not move under them as the room fills up. */}
       <div
-        className="team-grid"
+        className={`team-grid${dim}`}
         style={{ "--cols": Math.min(room.teams.length, 5) } as CSSProperties}
       >
         {room.teams.map((team) => (
@@ -76,7 +81,7 @@ export function HostTeams({ room, countdown }: Props) {
       </div>
 
       {unassigned.length > 0 && (
-        <div className="team-unassigned">
+        <div className={`team-unassigned${dim}`}>
           <span className="team-unassigned__label">STILL PICKING</span>
           <ul className="team-unassigned__list">
             {unassigned.map((p) => (
@@ -106,22 +111,30 @@ export function HostTeams({ room, countdown }: Props) {
         >
           Auto sort
         </button>
-        {countdown ? (
-          <>
-            <p className="get-ready get-ready--tv">Get ready… {remaining}</p>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => roomStore.send({ type: "startGame" })}
-            >
-              Continue
-            </button>
-          </>
+        {/* The forward action goes while the count runs — it has already been
+            pressed, and the card below says so louder than a disabled button
+            could. */}
+        {!countdown && (
+          <button
+            type="button"
+            className="btn"
+            onClick={() => roomStore.send({ type: "startGame" })}
+          >
+            Continue
+          </button>
         )}
       </div>
+
+      {/* The same card every other countdown in the game wears, posed over the
+          dimmed panels. It used to be the old gold plaque tucked in the footer,
+          which made the one countdown a room reads from furthest away the one
+          drawn smallest. No Stop button: this count is not cancellable at all
+          (see `cancelStart`), and leaving a team on a phone is the brake. */}
+      {countdown && (
+        <div className="countdown-pose">
+          <GetReady remaining={remaining} label="CATEGORY VOTE" />
+        </div>
+      )}
     </main>
   );
 }

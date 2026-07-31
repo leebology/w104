@@ -292,8 +292,9 @@ ul, ol { list-style: none; }
 /* One gold band per screen, carrying the single loudest thing on it. The
    slant is what separates it from a button — `.btn` is gold too, and a
    heading that looked tappable would be the one mistake this design can
-   make. `.get-ready` and `.banner` are the two other members of the family;
-   this is the quiet one, for a screen's title. */
+   make. `.banner` is the other member of the family; this is the quiet one,
+   for a screen's title. (`.get-ready` was a third until every countdown moved
+   to `GetReady`'s card.) */
 .plaque {
   align-self: center;
   background: var(--gold);
@@ -986,23 +987,10 @@ ul, ol { list-style: none; }
   text-align: center;
 }
 
-/* A countdown is a state change, not a notification — it takes the slant and
-   the gold so it reads from across the room. */
-.get-ready {
-  background: var(--gold);
-  color: var(--ink-gold);
-  border: var(--border-heavy);
-  border-radius: 10px;
-  padding: 12px 26px;
-  transform: rotate(-2.5deg);
-  box-shadow: var(--shadow-btn);
-  font-family: var(--display);
-  font-size: 24px;
-  line-height: 1.06;
-  text-align: center;
-}
-
-.get-ready--small { font-size: 17px; padding: 10px 20px; }
+/* The old countdown plaque and its two sizes lived here. Every countdown in the
+   game is `GetReady` now — team select was the last screen still wearing the
+   plaque, on the TV and on the phone both, which made the count a room reads
+   from furthest away the one drawn smallest. See the `countdown` section. */
 
 /* ----------------------------------------------------------- host voting */
 
@@ -1056,6 +1044,26 @@ ul, ol { list-style: none; }
   color: var(--cream);
   text-align: center;
 }
+
+/* The one countdown in the game that is laid out rather than posed. Every
+   other screen the card interrupts is furniture the room has already read —
+   the lobby, the standings — so it sits over the middle of it and the screen
+   dims behind. Here the screen *is* the answer to the thing the room just
+   voted on, and it is up for five seconds only: a card over the middle of it
+   covered the winning categories, and covered the "no one voted" line
+   completely. So the two share the height instead.
+
+   The band sizes to the card and the reveal above takes what is left, which
+   is why the closed screen's top row may shrink below its 206px — the card is
+   a fixed object and the cards are the ones that can afford to give. */
+.host-voting__countdown {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding: 4px 30px 26px;
+}
+
+.host-voting--closed .host-voting__row--top { flex: 0 1 206px; }
 
 /* Width is the odds: flex-grow carries the vote count, so a vote visibly
    grows its card with no measurement and no JS layout pass. */
@@ -1160,11 +1168,6 @@ ul, ol { list-style: none; }
 }
 
 .host-voting__footer .timer-track { flex: 1; height: 28px; }
-
-/* The countdown plaque, scaled for a TV. A separate class rather than an
-   override, so the phone-sized one keeps its numbers. Only team select still
-   wears it; every other countdown in the game is `GetReady` now. */
-.get-ready--tv { font-size: 40px; padding: 14px 36px; }
 
 /* HostVoting and HostVotingClosed render different DOM subtrees, so React
    remounts rather than transitioning between them — without this the reveal
@@ -1709,14 +1712,27 @@ ul, ol { list-style: none; }
 /* The clip box carries the pop and the run inside carries the travel — one
    transform each, so the two never fight. A clipped emoji is a missing
    attribution, so this scrolls rather than truncating. */
+/* The trail does not scale with the word, and that is the difference between
+   the two screens rather than an oversight in one of them. It is a strip of
+   faces and team swatches — identity, not prose — and identity has a floor
+   below which it stops being readable at all, which the TV's 15px column
+   pushed it under: at `--word-size - 4` the host's trail came out at 11px, a
+   third smaller than the phone's, on the screen being read from furthest
+   away. So the phone's size is the size, and a larger word may lead a trail
+   that does not grow with it.
+
+   `line-height` is the other half: emoji draw well outside the em box, so a
+   line box of exactly 1em under `overflow: hidden` shaves the tops and the
+   tails off every face in the trail. The clip box is here to cut the strip
+   off horizontally when it is too long to fit, never to trim the glyphs. */
 .word-row__also {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 40%;
   display: block;
   overflow: hidden;
-  font-size: calc(var(--word-size, 16px) - 4px);
-  line-height: 1;
+  font-size: max(15px, calc(var(--word-size, 16px) - 4px));
+  line-height: 1.3;
   color: var(--struck);
 }
 
@@ -1846,10 +1862,13 @@ ul, ol { list-style: none; }
 
    `--accent` is set per element by whoever renders it, exactly as `TeamBadge`
    does, so the swatch is correct wherever it is dropped. */
+/* Sized in `em`, so it tracks the trail it sits in rather than the word beside
+   it — a swatch stands where a face would, and the faces stopped following
+   `--word-size` when the trail got its floor above. */
 .word-row__team {
   display: inline-block;
-  width: calc(var(--word-size, 16px) - 3px);
-  height: calc(var(--word-size, 16px) - 3px);
+  width: 1em;
+  height: 1em;
   margin-right: 4px;
   border-radius: 4px;
   border: 1px solid var(--ink);
@@ -4601,11 +4620,6 @@ ul, ol { list-style: none; }
   font-size: 14px;
   text-align: center;
 }
-
-/* The room's only brake lives on the phones, so the TV has to say so — a
-   screen with a running countdown and no visible way to stop it reads as
-   broken otherwise. */
-.host-teams__footer .get-ready--tv + .host-teams__hint { margin-top: 2px; }
 
 .host-teams__plaque { font-size: 22px; letter-spacing: 0.14em; padding: 8px 28px; }
 

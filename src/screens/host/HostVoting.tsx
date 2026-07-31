@@ -271,7 +271,11 @@ function HostVotingClosed({
         }
       />
 
-      <div className="host-voting__result countdown-dim">
+      {/* Not dimmed, and not posed under a card. This is the one screen whose
+          countdown does not interrupt anything: the result *is* what the room
+          is reading, and the five seconds exist to let them read it. The card
+          takes its own band below instead — see `.host-voting__countdown`. */}
+      <div className="host-voting__result">
         {survivors.length === 0 ? (
           // The deadline force-closes voting regardless of readiness, so this
           // is reachable with nobody having voted at all. Say nothing about
@@ -313,15 +317,18 @@ function HostVotingClosed({
         )}
       </div>
 
-      {/* The same countdown card the lobby and the standings pose, over the
-          same dimmed screen. Nothing on it names the drawn category: it has not
-          been drawn yet — that happens at the whistle.
+      {/* The same countdown card the lobby and the standings pose — but in a
+          band of its own rather than over the screen. Centred over the reveal
+          it covered the winning categories, and covered the "no one voted" line
+          outright, which is the one thing on this screen a room has to read.
+          Nothing on it names the drawn category: it has not been drawn yet —
+          that happens at the whistle.
 
           No Stop button: `cancelStart` from here lands back in `voting`, which
           is a hair's breadth from where "Back to teams" goes and reads as the
           same escape to anyone watching. One way out per screen, in the corner
           every other host screen keeps it in. */}
-      <div className="countdown-pose">
+      <div className="host-voting__countdown">
         <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
       </div>
     </main>
