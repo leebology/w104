@@ -689,9 +689,15 @@ mapping from phase to music, and the scene ids *are* the folder names under
   no restart at either seam.
 - **The countdown clip is a lead-in, not a sting, and the round-one countdown is
   the one that does not get it** — the track it would lead into is already
-  playing by then. **Its hand-off fires on the clip's own `ended` event**, never
-  on the phase change: the phase turns over on a server alarm, which is near
-  enough for a screen and nowhere near enough for a bar of music.
+  playing by then. **Its hand-off is scheduled off the clip's own duration**,
+  never off the phase change: the phase turns over on a server alarm, which is
+  near enough for a screen and nowhere near enough for a bar of music.
+- **The join fires `HANDOFF_LEAD_MS` early, on purpose.** Starting a second
+  `HTMLAudioElement` costs an audio callback or two even fully buffered, so a
+  join aimed at the last sample lands after it — and a hole in a piece of music
+  reads as a stutter where a few ms of overlap is inaudible. The bias spends the
+  latency on the side nobody hears. `ended` remains the backstop for a clip
+  whose metadata has not loaded.
 - **`COUNTDOWN_MS` is therefore set by the audio**, and must not be shorter than
   the clip in `src/audio/countdown/`. It is the one place a file somebody
   dragged into a folder couples to the server; `LEAD_CLIP_MS` in
@@ -717,8 +723,15 @@ mapping from phase to music, and the scene ids *are* the folder names under
   Safari plays no Ogg at all, so an ogg-only folder would be silence there.
 - **It is host-only, and `useMusic` being called from `HostView` alone is the
   whole of that rule.** A phone never mounts that component, so there is no
-  per-device check to get wrong. The call sits above the `viewNonce` remount, so
-  the debug menu's refresh restarts the animations and not the music.
+  per-device check to get wrong.
+- **A view jump is a teleport, not a transition, and gets none of the continuity
+  rules.** `useMusic` passes `viewNonce` — bumped by `debugJump` and by nothing
+  else — and a change to it cuts everything and starts the target scene clean.
+  Without that, jumping from a round to the standings leaves the *round's* music
+  under them, because an empty `midgame_standings/` correctly says "keep what
+  you have" and the jumper never went through the reveal that made that true.
+  It is a dependency of the effect as well as an argument, so jumping to the
+  screen already showing — the panel's refresh — restarts the music too.
 - **The cancel is told apart by where it lands, not by a flag.** A countdown
   that runs its course moves the room on to the round's music; one somebody
   un-readies out of arrives back at the very scene it interrupted, and that one

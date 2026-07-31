@@ -115,8 +115,15 @@ describe("loops", () => {
 });
 
 describe("levelOf", () => {
+  /**
+   * Deliberately does not pin the value. The trim is a knob somebody turns by
+   * ear against a TV, and a test asserting the exact number would make every
+   * turn of it a test edit — which is the same as making it hard to turn.
+   * What is worth holding is that the results track is trimmed at all and that
+   * nothing else is.
+   */
   test("the results track is trimmed; everything else plays as mastered", () => {
-    expect(levelOf("round_results")).toBe(0.8);
+    expect(levelOf("round_results")).toBeLessThan(1);
     for (const scene of ALL.filter((s) => s !== "round_results")) {
       expect(levelOf(scene)).toBe(1);
     }
