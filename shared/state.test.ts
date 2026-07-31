@@ -14,7 +14,9 @@ function fullRoom(): Room {
     }],
     phase: { name: "playing", endsAt: 31_000 },
     category: "Bands",
-    settings: { mode: DEFAULT_MODE, roundCount: 3, durationSec: 45, teamCount: 0 },
+    settings: {
+      mode: DEFAULT_MODE, roundCount: 3, durationSec: 45, teamCount: 0, categorySource: "stock",
+    },
     history: [],
     lastActivityAt: 2000,
     entries: { p0: [{ text: "Adele", at: 1500, by: "p0" }] },
@@ -69,7 +71,9 @@ describe("toRoomState", () => {
       players: room.players,
       phase: { name: "playing", endsAt: 31_000 },
       category: "Bands",
-      settings: { mode: DEFAULT_MODE, roundCount: 3, durationSec: 45, teamCount: 0 },
+      settings: {
+        mode: DEFAULT_MODE, roundCount: 3, durationSec: 45, teamCount: 0, categorySource: "stock",
+      },
       history: [],
       votes: {},
       teams: [],
@@ -100,14 +104,19 @@ describe("createRoom", () => {
 
   test("starts on the default settings with no rounds played", () => {
     const room = createRoom("PLUM", 1000);
-    expect(room.settings).toEqual({ mode: DEFAULT_MODE, roundCount: 1, durationSec: 30, teamCount: 0 });
+    expect(room.settings).toEqual({
+      mode: DEFAULT_MODE, roundCount: 1, durationSec: 30, teamCount: 0, categorySource: "stock",
+    });
     expect(room.history).toEqual([]);
   });
 });
 
 describe("derived match helpers", () => {
   const view = (rounds: number, played: number) => ({
-    settings: { mode: DEFAULT_MODE, roundCount: rounds, durationSec: 30, teamCount: 0 },
+    settings: {
+      mode: DEFAULT_MODE, roundCount: rounds, durationSec: 30, teamCount: 0,
+      categorySource: "stock" as const,
+    },
     history: Array.from({ length: played }, () => ({ category: "woman", places: {} })),
   });
 

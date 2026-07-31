@@ -3757,6 +3757,45 @@ ul, ol { list-style: none; }
   border-radius: 4px;
 }
 
+/* A Stepper's control row, holding two words instead of a number. The 38px
+   height is what keeps the four drawer cards stacking as one rhythm. */
+.setting-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  height: 38px;
+  width: 200px;
+  background: var(--code-empty);
+  border: var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.setting-choice__opt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  font-family: "Bungee", sans-serif;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+
+/* A fill, not a border: a bordered segment inside a bordered track draws a
+   double rule, and at drawer distance a fill reads where a tick does not. */
+.setting-choice__opt--on {
+  background: var(--gold);
+  color: var(--ink-gold);
+}
+
+.stepper--disabled .setting-choice__opt {
+  cursor: default;
+}
+
 .stepper__value--display {
   cursor: pointer;
   display: inline-flex;

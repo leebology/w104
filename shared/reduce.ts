@@ -6,8 +6,10 @@ import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, MatchSettings, Player, PlayerId, Room, RoundSummary } from "./state";
 import { BALLOT } from "./categories";
-import { isGameModeId, modeSpec, normalizeSetting } from "./gamemodes";
-import type { NumericSettingKey } from "./gamemodes";
+import {
+  isGameModeId, isNumericSpec, modeSpec, normalizeChoice, normalizeSetting,
+} from "./gamemodes";
+import type { CategorySource, ChoiceSettingKey, NumericSettingKey } from "./gamemodes";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, balanceTeams, makeTeams, rosterOf, teamsEnabled } from "./teams";
 import type { TeamId } from "./teams";
@@ -65,6 +67,7 @@ export type RoomEvent =
       playerId: PlayerId;
       /** Only keys the *active mode* exposes are honoured. */
       values: Partial<Record<NumericSettingKey, number>>;
+      choices: Partial<Record<ChoiceSettingKey, string>>;
       now: number;
     }
   | { t: "setMode"; playerId: PlayerId; mode: string; now: number }
@@ -162,11 +165,19 @@ function openCountdown(room: Room, now: number, to: "voting" | "playing"): Room 
 function applySettings(
   settings: MatchSettings,
   values: Partial<Record<NumericSettingKey, number>>,
+  choices: Partial<Record<ChoiceSettingKey, string>>,
 ): MatchSettings {
   let next = settings;
   for (const spec of modeSpec(settings.mode).settings) {
-    const value = normalizeSetting(spec, values[spec.key], settings[spec.key]);
-    if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    if (isNumericSpec(spec)) {
+      const value = normalizeSetting(spec, values[spec.key], settings[spec.key]);
+      if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    } else {
+      const value = normalizeChoice(spec, choices[spec.key], settings[spec.key]);
+      if (value !== next[spec.key]) {
+        next = { ...next, [spec.key]: value as CategorySource };
+      }
+    }
   }
   return next;
 }
@@ -179,8 +190,10 @@ function applySettings(
 function clampToMode(settings: MatchSettings): MatchSettings {
   let next = settings;
   for (const spec of modeSpec(settings.mode).settings) {
-    const value = normalizeSetting(spec, settings[spec.key], settings[spec.key]);
-    if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    if (isNumericSpec(spec)) {
+      const value = normalizeSetting(spec, settings[spec.key], settings[spec.key]);
+      if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    }
   }
   return next;
 }
@@ -734,7 +747,7 @@ function apply(room: Room, ev: RoomEvent): Room {
       // Locked once the match starts: changing the round count mid-match
       // would move the finish line under the players.
       if (room.phase.name !== "lobby") return room;
-      const settings = applySettings(room.settings, ev.values);
+      const settings = applySettings(room.settings, ev.values, ev.choices);
       return settings === room.settings ? room : { ...room, settings };
     }
 

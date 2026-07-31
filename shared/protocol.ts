@@ -1,6 +1,6 @@
 import type { Entry, PlayerId, RoomState } from "./state";
 import type { RejectReason } from "./reduce";
-import type { NumericSettingKey } from "./gamemodes";
+import type { ChoiceSettingKey, NumericSettingKey } from "./gamemodes";
 import type { TeamId } from "./teams";
 import type { ViewId } from "./views";
 
@@ -17,7 +17,11 @@ export type ClientMessage =
    */
   | { type: "leaveRoom" }
   | { type: "submitEntry"; text: string; seq: number }
-  | { type: "setSettings"; values: Partial<Record<NumericSettingKey, number>> }
+  | {
+      type: "setSettings";
+      values: Partial<Record<NumericSettingKey, number>>;
+      choices?: Partial<Record<ChoiceSettingKey, string>>;
+    }
   | { type: "setMode"; mode: string }
   | { type: "setConfiguring"; open: boolean }
   | { type: "showStandings" }

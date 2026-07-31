@@ -1,7 +1,7 @@
 import type { Results } from "./scoring";
 import { DEFAULT_CATEGORY } from "./categories";
 import { DEFAULT_MODE, defaultSettings } from "./gamemodes";
-import type { GameModeId } from "./gamemodes";
+import type { CategorySource, GameModeId } from "./gamemodes";
 import type { SelfMarks } from "./selfstrike";
 import type { VoteMap } from "./voting";
 import type { ScorerId, Team, TeamId } from "./teams";
@@ -33,6 +33,11 @@ export type MatchSettings = {
    * share word lists for the match. See shared/teams.ts.
    */
   teamCount: number;
+  /**
+   * Where this match's categories come from. `"stock"` is the built-in ten;
+   * `"custom"` inserts the writing phase. See shared/customCategories.ts.
+   */
+  categorySource: CategorySource;
 };
 
 /** One player's outcome in one round. */

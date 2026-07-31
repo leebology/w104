@@ -412,7 +412,7 @@ function scored(roundCount = 3): Room {
 describe("setSettings", () => {
   test("the host sets rounds and duration", () => {
     const room = reduce(seed(2), {
-      t: "setSettings", playerId: "host", values: { roundCount: 3, durationSec: 90 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 3, durationSec: 90 }, choices: {}, now: 2000,
     });
     expect(room.settings).toMatchObject({ roundCount: 3, durationSec: 90 });
   });
@@ -420,7 +420,7 @@ describe("setSettings", () => {
   test("a player cannot set settings", () => {
     const before = seed(2);
     const after = reduce(before, {
-      t: "setSettings", playerId: "p0", values: { roundCount: 5, durationSec: 60 }, now: 2000,
+      t: "setSettings", playerId: "p0", values: { roundCount: 5, durationSec: 60 }, choices: {}, now: 2000,
     });
     expect(after).toBe(before);
   });
@@ -428,20 +428,20 @@ describe("setSettings", () => {
   test("settings cannot change once the match is under way", () => {
     const before = playing();
     const after = reduce(before, {
-      t: "setSettings", playerId: "host", values: { roundCount: 5, durationSec: 60 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 5, durationSec: 60 }, choices: {}, now: 2000,
     });
     expect(after).toBe(before);
   });
 
   test("out-of-range values are clamped", () => {
     const room = reduce(seed(2), {
-      t: "setSettings", playerId: "host", values: { roundCount: 99, durationSec: 99_999 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 99, durationSec: 99_999 }, choices: {}, now: 2000,
     });
     expect(room.settings).toMatchObject({
       roundCount: MAX_ROUND_COUNT, durationSec: MAX_DURATION_SEC,
     });
     const low = reduce(seed(2), {
-      t: "setSettings", playerId: "host", values: { roundCount: 0, durationSec: 1 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 0, durationSec: 1 }, choices: {}, now: 2000,
     });
     expect(low.settings).toMatchObject({ roundCount: 1, durationSec: MIN_DURATION_SEC });
   });
@@ -450,7 +450,7 @@ describe("setSettings", () => {
     const room = reduce(seed(2), {
       t: "setSettings",
       playerId: "host",
-      values: { roundCount: 2.6, durationSec: Number.NaN },
+      values: { roundCount: 2.6, durationSec: Number.NaN }, choices: {},
       now: 2000,
     });
     expect(room.settings).toMatchObject({ roundCount: 3, durationSec: 30 });
@@ -459,17 +459,17 @@ describe("setSettings", () => {
   test("setting the values they already hold is a no-op", () => {
     const before = seed(2);
     const after = reduce(before, {
-      t: "setSettings", playerId: "host", values: { roundCount: 1, durationSec: 30 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 1, durationSec: 30 }, choices: {}, now: 2000,
     });
     expect(after).toBe(before);
   });
 
   test("an omitted field leaves that setting alone", () => {
     let room = reduce(seed(2), {
-      t: "setSettings", playerId: "host", values: { roundCount: 4, durationSec: 60 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 4, durationSec: 60 }, choices: {}, now: 2000,
     });
     room = reduce(room, {
-      t: "setSettings", playerId: "host", values: { durationSec: 45 }, now: 2100,
+      t: "setSettings", playerId: "host", values: { durationSec: 45 }, choices: {}, now: 2100,
     });
     expect(room.settings).toMatchObject({ roundCount: 4, durationSec: 45 });
   });
@@ -479,7 +479,7 @@ describe("teamCount over the wire", () => {
   test("the host can turn teams on", () => {
     let room = seed(2);
     room = reduce(room, {
-      t: "setSettings", playerId: "host", values: { teamCount: 4 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { teamCount: 4 }, choices: {}, now: 2000,
     });
     expect(room.settings.teamCount).toBe(4);
   });
@@ -487,7 +487,7 @@ describe("teamCount over the wire", () => {
   test("a hand-rolled one-team value lands as off", () => {
     let room = seed(2);
     room = reduce(room, {
-      t: "setSettings", playerId: "host", values: { teamCount: 1 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { teamCount: 1 }, choices: {}, now: 2000,
     });
     expect(room.settings.teamCount).toBe(0);
   });
@@ -495,7 +495,7 @@ describe("teamCount over the wire", () => {
   test("setting it to what it already is returns the identical object", () => {
     const room = seed(2);
     const next = reduce(room, {
-      t: "setSettings", playerId: "host", values: { teamCount: 0 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { teamCount: 0 }, choices: {}, now: 2000,
     });
     expect(next).toBe(room);
   });
@@ -622,7 +622,7 @@ describe("long rounds", () => {
   test("the entry cap still holds at the ten-minute duration", () => {
     let room = seed(2);
     room = reduce(room, {
-      t: "setSettings", playerId: "host", values: { durationSec: MAX_DURATION_SEC }, now: 1000,
+      t: "setSettings", playerId: "host", values: { durationSec: MAX_DURATION_SEC }, choices: {}, now: 1000,
     });
     room = readyAll(room, 1000);
     const votingStart = (room.phase as { endsAt: number }).endsAt;
@@ -682,7 +682,7 @@ describe("long rounds", () => {
 /** A room that has reached the voting phase with `n` players. */
 function seedVoting(n: number, roundCount = 5, now = 1000): Room {
   let room = seed(n, now);
-  room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount }, now });
+  room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount }, choices: {}, now });
   room = reduce(room, { t: "startGame", playerId: "host", now });
   return reduce(room, { t: "tick", now: now + COUNTDOWN_MS, roll: 0 });
 }
@@ -1002,14 +1002,14 @@ describe("drawing the round's category", () => {
 describe("settings", () => {
   test("the host sets a value the active mode exposes", () => {
     let room = seed(2);
-    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 5 }, now: 2000 });
+    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 5 }, choices: {}, now: 2000 });
     expect(room.settings.roundCount).toBe(5);
   });
 
   test("a value out of the descriptor's range is clamped", () => {
     let room = seed(2);
     room = reduce(room, {
-      t: "setSettings", playerId: "host", values: { durationSec: 99_999 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { durationSec: 99_999 }, choices: {}, now: 2000,
     });
     expect(room.settings.durationSec).toBe(MAX_DURATION_SEC);
   });
@@ -1017,7 +1017,7 @@ describe("settings", () => {
   test("a non-finite value leaves the setting alone", () => {
     const before = seed(2);
     const room = reduce(before, {
-      t: "setSettings", playerId: "host", values: { durationSec: Number.NaN }, now: 2000,
+      t: "setSettings", playerId: "host", values: { durationSec: Number.NaN }, choices: {}, now: 2000,
     });
     expect(room.settings.durationSec).toBe(before.settings.durationSec);
   });
@@ -1025,7 +1025,7 @@ describe("settings", () => {
   test("a player cannot change settings", () => {
     const before = seed(2);
     const room = reduce(before, {
-      t: "setSettings", playerId: "p0", values: { roundCount: 9 }, now: 2000,
+      t: "setSettings", playerId: "p0", values: { roundCount: 9 }, choices: {}, now: 2000,
     });
     expect(room).toBe(before);
   });
@@ -1035,7 +1035,7 @@ describe("settings", () => {
     room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
     expect(room.phase.name).toBe("voting");
     const before = room;
-    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 9 }, now: 9000 });
+    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 9 }, choices: {}, now: 9000 });
     expect(room).toBe(before);
   });
 
@@ -1044,7 +1044,7 @@ describe("settings", () => {
     const room = reduce(before, {
       t: "setSettings",
       playerId: "host",
-      values: { roundCount: before.settings.roundCount },
+      values: { roundCount: before.settings.roundCount }, choices: {},
       now: 2000,
     });
     expect(room).toBe(before);
@@ -1151,7 +1151,7 @@ describe("the drawer hold", () => {
 function seedTeams(n: number, teamCount = 2, now = 1000): Room {
   const room = seed(n, now);
   return reduce(room, {
-    t: "setSettings", playerId: "host", values: { teamCount }, now,
+    t: "setSettings", playerId: "host", values: { teamCount }, choices: {}, now,
   });
 }
 
@@ -1535,7 +1535,7 @@ describe("backToLobby from the round-1 post-voting countdown", () => {
     // transition this test needs, so this walks the same edges with the
     // round count raised first, while still in the lobby.
     let room = seedTeams(2, 2);
-    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 2 }, now: 1000 });
+    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 2 }, choices: {}, now: 1000 });
     room = readyAll(room, 2000);
     room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
     room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t0", now: 2200 });

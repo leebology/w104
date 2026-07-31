@@ -225,6 +225,9 @@ export class W104 extends Server<Env> {
           durationSec: stored?.durationSec ?? legacyDuration ?? DEFAULT_DURATION_SEC,
           // Rooms stored before teamCount existed have no such field at all.
           teamCount: stored?.teamCount ?? base.teamCount,
+          // Rooms stored before this setting existed have no such field at
+          // all, and anything but the literal "custom" defaults safe to stock.
+          categorySource: stored?.categorySource === "custom" ? "custom" : "stock",
         };
       })(),
       // A room persisted mid-countdown before `to` existed has a countdown
@@ -558,9 +561,10 @@ export class W104 extends Server<Env> {
         this.room = reduce(this.room, {
           t: "setSettings",
           playerId,
-          // A hand-rolled message can omit `values` entirely; the rules layer
-          // expects an object to iterate.
+          // A hand-rolled message can omit `values`/`choices` entirely; the
+          // rules layer expects objects to iterate.
           values: msg.values ?? {},
+          choices: msg.choices ?? {},
           now,
         });
         break;
