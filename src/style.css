@@ -1287,6 +1287,18 @@ ul, ol { list-style: none; }
   transition: flex-grow 260ms ease-out;
 }
 
+/* The transition's board wipe-in (§1c row 4): every pool card, sunken and
+   unvoted, translating up 8px as it fades in — staggered per card by
+   `HostVotingCustom`'s own `animation-delay`. Reduced motion (below) drops
+   this to nothing rather than a shortened version — the board is meant to
+   simply already be there. */
+.vote-card--wipe { animation: voteBoardWipeIn 180ms ease-out both; }
+
+@keyframes voteBoardWipeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vote-card--leaving { animation: none; opacity: 0; }
   .vote-card__total--out,
@@ -1294,6 +1306,7 @@ ul, ol { list-style: none; }
   .vote-card__total--out { opacity: 0; }
   .vote-card__total--in { opacity: 1; }
   .host-voting--closed .vote-card--custom { transition: none; }
+  .vote-card--wipe { animation: none; }
 }
 
 /* ---------------------------------------------------------- host scoring */
@@ -4857,6 +4870,17 @@ ul, ol { list-style: none; }
     stampReveal 180ms linear forwards;
 }
 
+/* The transition's leave overlay (§1c) renders a *cached* snapshot of
+   already-landed slots — the bounce-in above has already played, on the
+   real `HostCreating` screen this overlay is standing in for, so replaying
+   it here would restamp a card that is about to fly away. This holds the
+   stamp at `cardLandA`/`cardLandB`'s own 100% frame with no animation at
+   all. See `CreatingSlot`'s `frozen` prop. */
+.slot-state__stamp--static {
+  opacity: 1;
+  transform: rotate(-8deg);
+}
+
 /* Mini pill inside a wall cell: 3px ink, radius 99px, positioned bottom-left. */
 .mini-pill {
   position: absolute;
@@ -4935,6 +4959,150 @@ ul, ol { list-style: none; }
 @keyframes stampReveal {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+/* ---- the transition (§1c): host leave overlay ---- */
+
+/* Every pill and every slot that never finished, fading and dropping as it
+   goes (§1c row 1: "the people leave first"). One keyframe for both the host
+   and the phone — a non-done `.slot-state`/`.player-pill`/`.mini-pill` and a
+   phone's writing card/pager/button are visually different objects, but the
+   motion is identical apart from distance (the host's pills drop 12px, the
+   phone's card 28px — `--leave-y`, set inline per caller, defaults to the
+   host's 12px). This fires exactly once per element (a match writes
+   categories once), so there is no retrigger to guard against with an A/B
+   pair the way `cardLandA/B` needs one. */
+.creating-leave__fade {
+  animation: creatingLeaveFade 240ms ease-in both;
+}
+
+@keyframes creatingLeaveFade {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(var(--leave-y, 12px)); }
+}
+
+/* A done slot's FLIP into the centre deck, then (for the six that stay
+   visible) the deck's own shrink-away — one keyframe spanning both, because
+   both share one element and one `animation-delay`; splitting them into two
+   `animation`s would need the delay list and the name list kept in lockstep
+   by hand. `--flip-dx`/`--flip-dy`/`--flip-rot` are set per element from a
+   *measured* delta (`CreatingLeaveBoard`), never calculated — the same
+   precedent the scoring reveal's frame-3 swap sets. Percentages are the
+   table's own offsets against this keyframe's 960ms span (80ms -> 1040ms):
+   56% is 620ms (arrived), 83% is 880ms (shrink begins). Each keyframe
+   selector carries its own easing, which is what lets one `@keyframes` block
+   still play the FLIP's overshoot and the shrink's ease-in as two different
+   curves. */
+.creating-leave__flip {
+  animation: creatingCardToDeck 960ms both;
+}
+
+@keyframes creatingCardToDeck {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.34, 1.28, 0.64, 1);
+  }
+  56% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot)) scale(1);
+    opacity: 1;
+    animation-timing-function: linear;
+  }
+  83% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot)) scale(1);
+    opacity: 1;
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot)) scale(0.6);
+    opacity: 0;
+  }
+}
+
+/* Slots past the top six (§1c: "fade out during their own travel") — the
+   same FLIP, but fully faded by the moment it would have landed rather than
+   joining the visible deck and shrinking away with it. */
+.creating-leave__flip--fade {
+  animation-name: creatingCardFade;
+}
+
+@keyframes creatingCardFade {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.34, 1.28, 0.64, 1);
+  }
+  56% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot));
+    opacity: 0;
+  }
+  100% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot));
+    opacity: 0;
+  }
+}
+
+/* The header count and the prompt line crossfading into their voting-screen
+   selves at 880ms (§1c). Grid-stacked, the same technique
+   `.vote-card__crossfade` already uses for count -> chance: both children
+   share one cell, so the fade is the only thing moving. `--prompt` blockifies
+   it for the plaque/prompt pairing, which — unlike the header count — are
+   full-width block elements, not an inline run in a header row. */
+.creating-crossfade {
+  display: inline-grid;
+}
+
+.creating-crossfade--prompt {
+  display: grid;
+}
+
+/* The phone counter crossfade (§1c: "the counter stays"). Unlike the header
+   count and the prompt, this one sits inside a flex row of its own
+   (`.player-voting__head`) and has to keep filling it, or the card visibly
+   narrows the moment this wrapper — now the row's only child — stops
+   matching its content width. */
+.creating-crossfade--counter {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.creating-crossfade__out,
+.creating-crossfade__in {
+  grid-area: 1 / 1;
+}
+
+/* Each side of the counter crossfade reproduces `.player-voting__head`'s own
+   row layout, since wrapping the numeral and its label pair in the grid cell
+   above takes them out of that flex row. */
+.creating-crossfade--counter .creating-crossfade__out,
+.creating-crossfade--counter .creating-crossfade__in {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.creating-crossfade__out { animation: creatingCrossfadeOut 180ms ease-out both; }
+.creating-crossfade__in { animation: creatingCrossfadeIn 180ms ease-out both; }
+
+@keyframes creatingCrossfadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes creatingCrossfadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .creating-leave__fade,
+  .creating-leave__flip,
+  .creating-crossfade__out,
+  .creating-crossfade__in {
+    animation: none;
+  }
 }
 
 /* ------------------------------------------------------ player: teams */

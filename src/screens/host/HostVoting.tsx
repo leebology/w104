@@ -19,6 +19,11 @@ type Props = {
   offset: number;
   /** Present once voting has closed and the round countdown is running. */
   countdown?: { endsAt: number; offset: number };
+  /** The last `creating`-phase `RoomState` this client saw — `null` for a
+      stock match (there is no writing phase to have seen) and for a custom
+      match this client joined after it closed. Only the custom fork's open
+      board does anything with it; see `HostVotingCustom`'s transition. */
+  creatingSnapshot?: RoomState | null;
 };
 
 /** Who voted for this category, and how many times each. */
@@ -139,11 +144,18 @@ export function balancedRows<T>(
   return rowB.length > 0 ? [rowA, rowB] : [rowA];
 }
 
-export function HostVoting({ room, offset, countdown }: Props) {
+export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props) {
   // A different pool, a different fork — everything past this point (both
   // rows, the closed reveal) is the stock ballot's only.
   if (customEnabled(room.settings) && room.pool) {
-    return <HostVotingCustom room={room} offset={offset} countdown={countdown} />;
+    return (
+      <HostVotingCustom
+        room={room}
+        offset={offset}
+        countdown={countdown}
+        creatingSnapshot={creatingSnapshot ?? null}
+      />
+    );
   }
 
   const totals = tallyVotes(room.votes);

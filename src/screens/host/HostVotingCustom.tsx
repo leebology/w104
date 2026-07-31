@@ -10,6 +10,8 @@ import type { RoomState } from "../../../shared/state";
 import { VOTING_MS } from "../../../shared/reduce";
 import { RoomChip } from "../../components/RoomChip";
 import { roomStore } from "../../net/room";
+import { TIMING, useCreatingTransition } from "../../transition";
+import { CreatingLeaveBoard } from "./HostCreating";
 import { HostHeader, HostHeaderRight, VotingCount } from "./HostHeader";
 import { VotingExit, balancedRows } from "./HostVoting";
 
@@ -20,6 +22,10 @@ type Props = {
   offset: number;
   /** Present once voting has closed and the round countdown is running. */
   countdown?: { endsAt: number; offset: number };
+  /** The last `creating`-phase `RoomState` this client saw — `null` if it
+      joined after the writing phase closed. Drives the transition's leave
+      overlay only; the closed reveal (`countdown` present) never reads it. */
+  creatingSnapshot: RoomState | null;
 };
 
 /**
@@ -39,7 +45,7 @@ function nameSize(votes: number, max: number): string {
   return `${Math.round(26 + 40 * (votes / max))}px`;
 }
 
-export function HostVotingCustom({ room, offset, countdown }: Props) {
+export function HostVotingCustom({ room, offset, countdown, creatingSnapshot }: Props) {
   const pool = room.pool ?? [];
   const totals = tallyVotes(room.votes);
   const remaining = useRemaining(
@@ -51,6 +57,39 @@ export function HostVotingCustom({ room, offset, countdown }: Props) {
   const cast = Object.values(totals).reduce((a, b) => a + b, 0);
   // Matches `everyoneReady` in shared/reduce.ts, same as the stock screen.
   const ready = room.players.filter((p) => p.connected && isWaiting(p)).length;
+
+  // The transition (§1c): 1120ms, driven off `voting`'s own `endsAt` rather
+  // than a phase of its own — `closeCreating` opens `voting` directly, with
+  // no countdown between it and `creating` (see its comment in
+  // shared/reduce.ts). `VOTING_MS` is fixed, so `endsAt - VOTING_MS`
+  // reconstructs the instant voting opened, the one thing both this screen
+  // and `PlayerVotingCustom` derive it from. Called unconditionally — rules
+  // of hooks — even though its result only matters on the open board below;
+  // the closed reveal (`countdown` present) never reads it.
+  const votingOpenedAt = room.phase.name === "voting" ? room.phase.endsAt - VOTING_MS : 0;
+  const transition = useCreatingTransition(votingOpenedAt, creatingSnapshot !== null);
+
+  // The timer bar never leaves (§1c): frozen at 0:00 / empty through the
+  // leave beat, then re-filling once real voting time is showing on the
+  // clock. Gated on having a snapshot at all — a client with nothing to
+  // leave from never saw a 0:00 to hold on, so it just shows the real
+  // countdown from the first frame, same as the wipe-in below. `refilled`
+  // only ever flips false -> true, once.
+  const [refilled, setRefilled] = useState(
+    !creatingSnapshot || transition.reduced || transition.elapsedAtMount >= TIMING.timerRefillStart,
+  );
+  useEffect(() => {
+    if (refilled) return;
+    const id = setTimeout(
+      () => setRefilled(true),
+      TIMING.timerRefillStart - transition.elapsedAtMount,
+    );
+    return () => clearTimeout(id);
+    // `refilled`'s initial value and `transition.elapsedAtMount` are both
+    // fixed at mount — see their own definitions — so there is exactly one
+    // timer to arm here, ever.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (countdown) {
     return (
@@ -75,6 +114,30 @@ export function HostVotingCustom({ room, offset, countdown }: Props) {
     (c) => rankOf.get(c.id) ?? 0,
   );
 
+  // Whether the header count and the prompt line have anything to crossfade
+  // *from*. Reduced motion cuts straight to the settled frame — no old copy
+  // ever shows.
+  const crossfading = creatingSnapshot !== null && !transition.reduced;
+  const oldReady = creatingSnapshot
+    ? creatingSnapshot.players.filter((p) => p.connected && p.ready).length
+    : 0;
+  const crossfadeDelay = transition.delay(TIMING.crossfadeAt);
+
+  // The board's own wipe-in (§1c row 4): every card fades up from
+  // `translateY(8px)`, staggered by board position — row-major, matching
+  // reading order. A closure counter, not a ref: `rows` is rebuilt from the
+  // live `pool`/`totals` on every render, but the delay is computed from
+  // `elapsedAtMount`, which is fixed — so a card that has already finished
+  // wiping in by the time a later vote reorders the board keeps the same
+  // settled, no-op animation state rather than replaying.
+  let wipeIndex = -1;
+  const wipeStyle = (): CSSProperties | undefined => {
+    if (transition.reduced) return undefined;
+    wipeIndex += 1;
+    const i = wipeIndex;
+    return { animationDelay: transition.delay(TIMING.boardWipeStart + i * TIMING.boardWipeStagger) };
+  };
+
   return (
     <main className="screen screen--host host-voting host-voting--custom">
       {/* No round marker: voting only ever happens before round one. */}
@@ -82,50 +145,83 @@ export function HostVotingCustom({ room, offset, countdown }: Props) {
         left={<RoomChip code={room.code} />}
         right={
           <HostHeaderRight>
-            <VotingCount n={room.players.length} ready={ready} />
+            {crossfading ? (
+              <span className="creating-crossfade">
+                <span className="creating-crossfade__out" style={{ animationDelay: crossfadeDelay }}>
+                  <span className="host-header__count">
+                    {creatingSnapshot!.players.length}{" "}
+                    {creatingSnapshot!.players.length === 1 ? "PLAYER" : "PLAYERS"} · {oldReady} READY
+                  </span>
+                </span>
+                <span className="creating-crossfade__in" style={{ animationDelay: crossfadeDelay }}>
+                  <VotingCount n={room.players.length} ready={ready} />
+                </span>
+              </span>
+            ) : (
+              <VotingCount n={room.players.length} ready={ready} />
+            )}
             <VotingExit room={room} />
           </HostHeaderRight>
         }
       />
 
-      <p className="host-voting__prompt">
-        PICK ONE FROM EACH HAND — {budget} {budget === 1 ? "VOTE" : "VOTES"} EACH
-      </p>
+      {crossfading ? (
+        <span className="creating-crossfade creating-crossfade--prompt">
+          <span className="creating-crossfade__out" style={{ animationDelay: crossfadeDelay }}>
+            <p className="plaque host-creating__plaque">WRITE YOUR CATEGORIES</p>
+          </span>
+          <span className="creating-crossfade__in" style={{ animationDelay: crossfadeDelay }}>
+            <p className="host-voting__prompt">
+              PICK ONE FROM EACH HAND — {budget} {budget === 1 ? "VOTE" : "VOTES"} EACH
+            </p>
+          </span>
+        </span>
+      ) : (
+        <p className="host-voting__prompt">
+          PICK ONE FROM EACH HAND — {budget} {budget === 1 ? "VOTE" : "VOTES"} EACH
+        </p>
+      )}
 
-      <div className="host-voting__grid">
-        {rows.map((row, i) => (
-          <div className="host-voting__row" key={i}>
-            {row.map((card) => {
-              const votes = totals[card.id] ?? 0;
-              return (
-                <div
-                  key={card.id}
-                  className={
-                    (votes > 0 ? "vote-card" : "vote-card vote-card--zero") +
-                    " vote-card--custom"
-                  }
-                  // Card width IS the odds, exactly as the stock board — no
-                  // measurement, no JS layout pass. No voter avatars here:
-                  // hands stay private until the reveal.
-                  style={{
-                    flexGrow: votes + 1,
-                    "--name-size": nameSize(votes, maxVotes),
-                  } as CSSProperties}
-                >
-                  <span className="vote-card__name">{card.text}</span>
-                  {votes > 0 && (
-                    <span className="vote-card__foot vote-card__foot--solo">
-                      <span className="vote-card__total">{votes}</span>
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </div>
+      {transition.showLeaving && creatingSnapshot ? (
+        <CreatingLeaveBoard room={creatingSnapshot} delay={transition.delay} />
+      ) : (
+        <div className="host-voting__grid">
+          {rows.map((row, i) => (
+            <div className="host-voting__row" key={i}>
+              {row.map((card) => {
+                const votes = totals[card.id] ?? 0;
+                return (
+                  <div
+                    key={card.id}
+                    className={
+                      (votes > 0 ? "vote-card" : "vote-card vote-card--zero") +
+                      " vote-card--custom" +
+                      (transition.reduced ? "" : " vote-card--wipe")
+                    }
+                    // Card width IS the odds, exactly as the stock board — no
+                    // measurement, no JS layout pass. No voter avatars here:
+                    // hands stay private until the reveal.
+                    style={{
+                      flexGrow: votes + 1,
+                      "--name-size": nameSize(votes, maxVotes),
+                      ...wipeStyle(),
+                    } as CSSProperties}
+                  >
+                    <span className="vote-card__name">{card.text}</span>
+                    {votes > 0 && (
+                      <span className="vote-card__foot vote-card__foot--solo">
+                        <span className="vote-card__total">{votes}</span>
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
 
-      {packCount > 0 && (
+      {packCount > 0 && !transition.showLeaving && (
         // A count, never a list — a list would be a second board.
         <div className="host-voting__pack">
           <span className="host-voting__pack-pill">+ {packCount} MORE ON THE BOARD</span>
@@ -133,11 +229,15 @@ export function HostVotingCustom({ room, offset, countdown }: Props) {
       )}
 
       <div className="host-voting__footer">
-        <span className="host-voting__clock">{formatClock(remaining)}</span>
+        <span className="host-voting__clock">{refilled ? formatClock(remaining) : "0:00"}</span>
         <span className="timer-track">
           <span
             className="timer-track__fill"
-            style={{ width: `${Math.min(100, (remaining / (VOTING_MS / 1000)) * 100)}%` }}
+            style={{
+              width: refilled
+                ? `${Math.min(100, (remaining / (VOTING_MS / 1000)) * 100)}%`
+                : "0%",
+            }}
           />
         </span>
         <button

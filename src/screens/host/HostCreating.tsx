@@ -1,7 +1,8 @@
-import { useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
 import { quotaFor } from "../../../shared/customCategories";
+import type { SlotState } from "../../../shared/customCategories";
 import { teamsEnabled } from "../../../shared/teams";
 import { isWaiting } from "../../../shared/bots";
 import type { Player, RoomState } from "../../../shared/state";
@@ -10,6 +11,7 @@ import { RoomChip } from "../../components/RoomChip";
 import { PlayerPill } from "../../components/Roster";
 import { roomStore } from "../../net/room";
 import { parity } from "../../reveal";
+import { TIMING } from "../../transition";
 import { HostExit, HostHeader, HostHeaderRight } from "./HostHeader";
 
 type Props = {
@@ -20,13 +22,14 @@ type Props = {
 };
 
 /**
- * The host's view of the writing phase. Progress only, never content —
- * the creation TV shows `slotStates`, never draft text. Three signals per slot:
- * the paper says *reached*, the shadow says *lifted*, the stamp-vs-dots says
- * *finished or in flight*.
+ * The layout decision every render of the creation board (live or a cached
+ * leave-overlay snapshot, see `CreatingLeaveBoard`) needs: columns vs. the
+ * wall, and — only for the wall — how many columns and whether its cells are
+ * cramped enough to drop the mini pill's name. Pulled out of the component
+ * body so both callers compute it identically from the same `RoomState`
+ * shape rather than keeping two copies of the same arithmetic in sync.
  */
-export function HostCreating({ room, offset }: Props) {
-  const remaining = useRemaining(room.phase.name === "creating" ? room.phase.endsAt : 0, offset, room.paused);
+export function creatingLayout(room: RoomState) {
   const quota = quotaFor(room.players.length, room.settings.roundCount);
   const slotCount = room.players.length * quota;
 
@@ -51,6 +54,19 @@ export function HostCreating({ room, offset }: Props) {
   const wallAvailableHeight = 720 - 84 - 70 - 106 - 48;
   const wallCellHeight = (wallAvailableHeight - (wallRows - 1) * 12) / wallRows;
   const smallWallCells = wallCellHeight < 64;
+
+  return { quota, slotCount, useWall, wallCols, smallWallCells };
+}
+
+/**
+ * The host's view of the writing phase. Progress only, never content —
+ * the creation TV shows `slotStates`, never draft text. Three signals per slot:
+ * the paper says *reached*, the shadow says *lifted*, the stamp-vs-dots says
+ * *finished or in flight*.
+ */
+export function HostCreating({ room, offset }: Props) {
+  const remaining = useRemaining(room.phase.name === "creating" ? room.phase.endsAt : 0, offset, room.paused);
+  const { slotCount, useWall, wallCols, smallWallCells } = creatingLayout(room);
 
   // Count how many slots are done (for the plaque subtitle on Layout B)
   let written = 0;
@@ -165,19 +181,37 @@ export function HostCreating({ room, offset }: Props) {
 /**
  * A single slot rendered on the TV. Three states: empty (no shadow, dimmed),
  * writing (teal dots), done (gold stamp). Never shows the text.
+ *
+ * Exported for `CreatingLeaveBoard`, the transition's leave overlay — it
+ * renders the same three states from a cached snapshot rather than the live
+ * room.
  */
-function CreatingSlot({
+export function CreatingSlot({
   state,
   land,
+  frozen,
 }: {
-  state: "empty" | "writing" | "done";
+  state: SlotState;
   /** Which of the `cardLandA`/`cardLandB` pair to play — see `landClassFor`. */
   land?: "a" | "b";
+  /** The leave overlay's done slots: already landed before this component
+      ever mounted (they are a cached snapshot, not a live arrival), so the
+      bounce-in `cardLandA`/`cardLandB` must not replay. `--static` skips it
+      and holds the stamp at its resting frame instead. */
+  frozen?: boolean;
 }) {
   if (state === "done") {
     return (
       <div className="slot-state slot-state--done">
-        <span className={`slot-state__stamp slot-state__stamp--${land ?? "a"}`}>DONE</span>
+        <span
+          className={
+            frozen
+              ? "slot-state__stamp slot-state__stamp--static"
+              : `slot-state__stamp slot-state__stamp--${land ?? "a"}`
+          }
+        >
+          DONE
+        </span>
       </div>
     );
   }
@@ -205,7 +239,7 @@ function CreatingSlot({
  * `everyoneReady` use, so a debug bot reads as done here too. Only appears in
  * Layout B (the wall).
  */
-function MiniPill({ player, avatarOnly }: { player: Player; avatarOnly: boolean }) {
+export function MiniPill({ player, avatarOnly }: { player: Player; avatarOnly: boolean }) {
   const classes = ["mini-pill"];
   const done = isWaiting(player);
   classes.push(done ? "mini-pill--ready" : "mini-pill--waiting");
@@ -215,6 +249,173 @@ function MiniPill({ player, avatarOnly }: { player: Player; avatarOnly: boolean 
     <div className={classes.join(" ")}>
       <span className="mini-pill__avatar">{player.emoji}</span>
       {!avatarOnly && <span className="mini-pill__name">{player.name || "…"}</span>}
+    </div>
+  );
+}
+
+/**
+ * The first four rotations off §1c's own table; past them nothing in the
+ * brief is numeric, so the pattern is extended algorithmically rather than
+ * guessed per card: alternate sign, and halve the amplitude every second
+ * card at the same ~0.6 ratio the given four already step down by (4.5/7 ≈
+ * 0.64, 2.5/4.5 ≈ 0.56, 1.5/2.5 = 0.6) — a card stack that keeps fanning out
+ * rather than snapping flat. Named for what it is; not claimed to be the
+ * design's own numbers past index 3.
+ */
+function deckRotation(i: number): number {
+  const given = [-7, 4.5, -2.5, 1.5];
+  if (i < given.length) return given[i];
+  const pair = Math.floor(i / 2);
+  const sign = i % 2 === 0 ? -1 : 1;
+  return sign * 7 * Math.pow(0.6, pair);
+}
+
+/**
+ * The transition's leave overlay (§1c, host rows 1-2): the room's pills fade
+ * first, then every finished slot FLIPs into a deck at stage centre. Renders
+ * from a *cached* `creating`-phase snapshot — the real `HostCreating` has
+ * already unmounted by the time this exists (`closeCreating` moves straight
+ * to `voting`, no countdown in between), so nothing here reads off the live
+ * room. See `HostView`'s `lastCreatingRoom` ref for where the snapshot comes
+ * from, and `docs/design/2026-07-30-custom-categories-brief.md` §1c for the
+ * table this follows.
+ *
+ * The plaque and header are not this component's business — they crossfade
+ * into the voting screen's own prompt/count on the same clock, but from
+ * `HostVotingCustom`, which owns both the outgoing and incoming copy.
+ *
+ * The FLIP is measured, not calculated — the scoring reveal's frame-3 swap is
+ * this repo's precedent for exactly that: `getBoundingClientRect` is read
+ * once, at mount, for every done slot and for the stage itself, and the
+ * delta becomes a CSS custom property the keyframe reads. That is what lets
+ * the same markup serve a three-player room and a 24-player wall without
+ * duplicating either's geometry here.
+ */
+export function CreatingLeaveBoard({
+  room,
+  delay,
+}: {
+  /** A cached `creating`-phase snapshot — see `HostView.lastCreatingRoom`. */
+  room: RoomState;
+  delay: (targetMs: number) => string;
+}) {
+  const { useWall, wallCols, smallWallCells } = creatingLayout(room);
+
+  const stageRef = useRef<HTMLDivElement>(null);
+  const doneEls = useRef<(HTMLDivElement | null)[]>([]);
+  const [flips, setFlips] = useState<Array<{ dx: number; dy: number } | null>>([]);
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    if (!stage) return;
+    const stageRect = stage.getBoundingClientRect();
+    const cx = stageRect.left + stageRect.width / 2;
+    const cy = stageRect.top + stageRect.height / 2;
+    setFlips(
+      doneEls.current.map((el) => {
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { dx: cx - (r.left + r.width / 2), dy: cy - (r.top + r.height / 2) };
+      }),
+    );
+    // Measured once: `room` is a frozen snapshot that never re-renders with
+    // new data, so there is nothing to re-measure on a later pass.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Assigns every *done* slot a ref slot and a FLIP delay, in DOM order —
+  // the same order the room's columns/wall already render them, so the
+  // stagger reads left-to-right, top-to-bottom the way the room watched them
+  // land. A plain closure variable, not a ref: this component's `room` prop
+  // is frozen, so there is exactly one render pass that matters and nothing
+  // to preserve across re-renders.
+  let doneIndex = -1;
+  function doneSlot(key: string) {
+    doneIndex += 1;
+    const i = doneIndex;
+    const flip = flips[i];
+    // Slots past the top six fade out during their own travel rather than
+    // joining the visible deck (§1c) — `creating-leave__flip--fade` swaps in
+    // the fading keyframe for them.
+    const fading = i >= 6;
+    const style: CSSProperties = flip
+      ? ({
+          "--flip-dx": `${flip.dx}px`,
+          "--flip-dy": `${flip.dy}px`,
+          "--flip-rot": `${deckRotation(i)}deg`,
+          animationDelay: delay(TIMING.flipStart + i * TIMING.flipStagger),
+        } as CSSProperties)
+      : // No measurement yet (the very first paint, before the layout effect
+        // runs) — hidden rather than flashing at its pre-FLIP position.
+        { visibility: "hidden" };
+    return (
+      <div
+        key={key}
+        className={fading ? "creating-leave__flip creating-leave__flip--fade" : "creating-leave__flip"}
+        style={style}
+        ref={(el) => {
+          doneEls.current[i] = el;
+        }}
+      >
+        <CreatingSlot state="done" frozen />
+      </div>
+    );
+  }
+
+  // The people leave first (§1c row 1): every pill, and every slot that
+  // never finished, fades on the same beat as its author's pill — a column
+  // or a wall cell leaves together, staggered by *player*, not by slot.
+  const leaveStyle = (playerIndex: number): CSSProperties => ({
+    animationDelay: delay(TIMING.pillLeaveStart + playerIndex * TIMING.pillLeaveStagger),
+  });
+
+  return (
+    <div className="host-stage" ref={stageRef}>
+      {useWall ? (
+        <div className="host-creating__wall" style={{ "--wall-cols": wallCols } as CSSProperties}>
+          {room.players.map((player, playerIndex) => {
+            const states = room.slotStates[player.id] ?? [];
+            return states.map((state, slotIdx) => (
+              <div key={`${player.id}-${slotIdx}`} className="host-creating__cell">
+                {state === "done" ? (
+                  doneSlot(`${player.id}-${slotIdx}`)
+                ) : (
+                  <div className="creating-leave__fade" style={leaveStyle(playerIndex)}>
+                    <CreatingSlot state={state} />
+                  </div>
+                )}
+                <div className="creating-leave__fade" style={leaveStyle(playerIndex)}>
+                  <MiniPill player={player} avatarOnly={smallWallCells} />
+                </div>
+              </div>
+            ));
+          })}
+        </div>
+      ) : (
+        <div className="host-creating__columns">
+          {room.players.map((player, playerIndex) => {
+            const states = room.slotStates[player.id] ?? [];
+            return (
+              <div key={player.id} className="host-creating__column">
+                <div className="creating-leave__fade" style={leaveStyle(playerIndex)}>
+                  <PlayerPill player={player} variant="creating" />
+                </div>
+                <div className="host-creating__slots">
+                  {states.map((state, slotIdx) =>
+                    state === "done" ? (
+                      doneSlot(`${player.id}-${slotIdx}`)
+                    ) : (
+                      <div key={slotIdx} className="creating-leave__fade" style={leaveStyle(playerIndex)}>
+                        <CreatingSlot state={state} />
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

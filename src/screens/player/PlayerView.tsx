@@ -114,6 +114,7 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
           playerId={getPlayerId()}
           hands={state.hands}
           offset={state.clockOffset}
+          drafts={state.drafts}
         />
       );
     case "countdown": {

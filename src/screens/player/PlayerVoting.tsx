@@ -19,14 +19,19 @@ type Props = {
   offset: number;
   /** Present once voting has closed and the round countdown is running. */
   countdown?: { endsAt: number; offset: number };
+  /** This player's own committed categories — only the custom fork's
+      transition reads it (see `PlayerVotingCustom`). Optional because the
+      stock ballot never receives it — `PlayerView` only threads `drafts`
+      through where it already threads `hands`. */
+  drafts?: string[];
 };
 
-export function PlayerVoting({ room, playerId, hands, offset, countdown }: Props) {
+export function PlayerVoting({ room, playerId, hands, offset, countdown, drafts }: Props) {
   if (customEnabled(room.settings) && room.pool) {
     return (
       <PlayerVotingCustom
         room={room} playerId={playerId} hands={hands}
-        offset={offset} countdown={countdown}
+        offset={offset} countdown={countdown} drafts={drafts ?? []}
       />
     );
   }
