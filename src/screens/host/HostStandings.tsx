@@ -1,6 +1,7 @@
 import { useRemaining } from "../../net/clock";
 import { computeStandings } from "../../../shared/standings";
 import { currentRound, matchComplete } from "../../../shared/state";
+import { GetReady } from "../../components/GetReady";
 import { Podium } from "../../components/Podium";
 import { RoomChip } from "../../components/RoomChip";
 import { StandingsList } from "../../components/StandingsList";
@@ -22,12 +23,6 @@ export function HostStandings({ room, countdown }: Props) {
   // On the final screen the round marker would otherwise read one past the
   // last round played, because `currentRound` names the round about to start.
   const played = done ? room.settings.roundCount : currentRound(room) - 1;
-
-  // Readiness counts the connected, because that is what `everyoneReady`
-  // gates the countdown on — a denominator that includes someone who cannot
-  // possibly ready up is a counter that never finishes.
-  const here = room.players.filter((p) => p.connected);
-  const ready = here.filter((p) => p.ready).length;
 
   return (
     <main className={done ? "screen screen--host host-standings host-standings--final" : "screen screen--host host-standings"}>
@@ -103,12 +98,14 @@ export function HostStandings({ room, countdown }: Props) {
             </>
           ) : (
             <>
+              {/* No tally. Readiness is marked on the rows themselves now — a
+                  count says how many are left, and what a host actually wants
+                  off this screen is *which* ones. The scoring direction is
+                  stated once, by the list's own explainer, so this says the
+                  other thing a host needs: they do not have to press anything. */}
               <div className="host-standings__count">
-                <span>
-                  {ready} OF {here.length} READY
-                </span>
                 <p className="host-standings__hint">
-                  Step height is your place — ribbons go to the top three.
+                  Everyone ready starts the next round on its own.
                 </p>
               </div>
               <button
@@ -123,26 +120,15 @@ export function HostStandings({ room, countdown }: Props) {
         </footer>
       </div>
 
+      {/* Names the round but never the category: it is drawn at the whistle, so
+          there is nothing here to name yet — see reduce.ts. */}
       {countdown && (
         <div className="host-standings__countdown">
-          <div className="get-ready-card">
-            <span className="get-ready-card__label">GET READY</span>
-            <span className="get-ready-card__count">{remaining}</span>
-          </div>
-          {/* Names the round but never the category: it is drawn at the
-              whistle, so there is nothing here to name yet — see reduce.ts. */}
-          <div className="get-ready-note">
-            <span className="get-ready-note__round">ROUND {currentRound(room)}</span>
-            <i className="get-ready-note__dot" />
-            <span>Un-ready to stop it</span>
-            <button
-              type="button"
-              className="btn btn--secondary btn--small"
-              onClick={() => roomStore.send({ type: "cancelStart" })}
-            >
-              Stop
-            </button>
-          </div>
+          <GetReady
+            remaining={remaining}
+            label={`ROUND ${currentRound(room)}`}
+            onStop={() => roomStore.send({ type: "cancelStart" })}
+          />
         </div>
       )}
     </main>

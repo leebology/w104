@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { TeamBadge } from "../../components/TeamBadge";
-import { WordList } from "../../components/WordList";
+import { WordList, scorerMark } from "../../components/WordList";
 import type { RowReveal } from "../../components/WordList";
 import { useMarquee } from "../../marquee";
 import {
@@ -63,8 +63,9 @@ export function PlayerScoring({
         playerOrder: "shortest",
         lineOrder: "entry",
         rng: seededRng(`${room.code}:${currentRound(room)}:reveal`),
+        lineMs: room.revealLineMs,
       }),
-    [results, room.code, room.history.length],
+    [results, room.code, room.history.length, room.revealLineMs],
   );
   const { step } = useRevealStep(schedule, startedAt, skipped, reduced);
 
@@ -73,12 +74,11 @@ export function PlayerScoring({
   // word that may now fit.
   const list = useMarquee<HTMLDivElement>([me?.entries, step, marks]);
   const emojiOf = (id: string) => room.players.find((p) => p.id === id)?.emoji ?? "";
-  // A team has no emoji of its own, so it identifies itself by name in the
-  // "somebody else had this too" trail.
+  // Exactly the trail the TV draws — a face, or the team's swatch. The two must
+  // agree: the room is looking at both copies of the same word.
   const labelFor = (id: string) => {
     const s = results.scorers.find((x) => x.id === id);
-    if (!s) return "?";
-    return s.colorIndex === null ? s.emoji : ` ${s.name}`;
+    return s ? scorerMark(s) : "?";
   };
   const ready = room.players.find((p) => p.id === playerId)?.ready ?? false;
 

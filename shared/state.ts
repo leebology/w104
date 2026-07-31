@@ -1,4 +1,5 @@
 import type { Results } from "./scoring";
+import { REVEAL_TIMING } from "./revealtiming";
 import { DEFAULT_CATEGORY } from "./categories";
 import { DEFAULT_MODE, defaultSettings } from "./gamemodes";
 import type { GameModeId } from "./gamemodes";
@@ -227,6 +228,20 @@ export type Room = {
    * read as a React key.
    */
   viewNonce: number;
+  /**
+   * Debug only. Milliseconds per line of the scoring reveal — the debug menu's
+   * speed slider, defaulting to `REVEAL_TIMING.LINE_INTERVAL`.
+   *
+   * **Room state rather than a local preference, and that is the whole point.**
+   * Every phone builds the same reveal schedule the TV does and strikes each
+   * word on the same beat (see shared/reveal.ts); a cadence the TV kept to
+   * itself would put the room on two different reveals at once. Same reasoning
+   * that puts FAST FORWARD and `viewNonce` in room state.
+   *
+   * Read through `clampLineMs`, never raw: it rides the wire and it is the
+   * denominator of every step in the schedule.
+   */
+  revealLineMs: number;
 };
 
 /** Broadcast to every connection. Safe for all eyes. */
@@ -255,6 +270,7 @@ export function createRoom(code: string, now: number): Room {
     configuring: false,
     paused: null,
     viewNonce: 0,
+    revealLineMs: REVEAL_TIMING.LINE_INTERVAL,
   };
 }
 

@@ -3,6 +3,7 @@ import { computeStandings } from "../../../shared/standings";
 import type { Standing } from "../../../shared/standings";
 import { currentRound, matchComplete } from "../../../shared/state";
 import { ordinal } from "../../ordinal";
+import { GetReady } from "../../components/GetReady";
 import { roomStore } from "../../net/room";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import { rosterOf } from "../../../shared/teams";
@@ -18,8 +19,11 @@ type Props = {
  * Your round-by-round card: one box per round of the match, filled in with the
  * place you took and the category it was, empty and dashed for the rounds
  * still to come. It is the same information the podium's badge strip carries,
- * given the room the phone has and the TV does not — and it is where the golf
- * sum stops being a bare number, because the boxes visibly add up to it.
+ * given the room the phone has and the TV does not.
+ *
+ * These are *places*, not points — what a place was worth depends on how many
+ * scorers the round had, and a strip of payouts would not say what you actually
+ * did in any of them. The total beside your name is the points.
  */
 function RoundBoxes({ badges, room }: { badges: number[]; room: RoomState }) {
   const remaining = Math.max(0, room.settings.roundCount - room.history.length);
@@ -55,10 +59,16 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
   const here = room.players.filter((p) => p.connected);
   const readyCount = here.filter((p) => p.ready).length;
   const tiedWith = (s: Standing) => standings.filter((o) => o.place === s.place).length > 1;
-  const emojiOf = (s: Standing) =>
-    s.colorIndex === null
-      ? s.emoji
-      : s.members.map((id) => room.players.find((p) => p.id === id)?.emoji ?? "").join("");
+  /**
+   * A player's face, or nothing at all for a team.
+   *
+   * A team is its name here and only its name. The row of member emoji that
+   * used to stand in for one said how many people were on it, never which team
+   * it was — and on a phone-width row it pushed the name it was supposed to be
+   * identifying into an ellipsis. The TV's board is where a roster is worth the
+   * space; this list is for finding your own line.
+   */
+  const emojiOf = (s: Standing) => (s.colorIndex === null ? s.emoji : null);
 
   if (done) {
     return (
@@ -75,13 +85,13 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
                 : `YOU FINISHED ${ordinal(me.place)}`}
             </span>
             <div className="win-card__who">
-              <span className="win-card__avatar">{emojiOf(me)}</span>
+              {emojiOf(me) && <span className="win-card__avatar">{emojiOf(me)}</span>}
               <span className="win-card__name">{me.name}</span>
             </div>
             <div className="win-card__score">
               <span className="win-card__points">{me.points}</span>
               <span className="win-card__unit">
-                {me.place === 1 ? "POINTS · LOWEST IN THE ROOM" : "POINTS"}
+                {me.place === 1 ? "POINTS · MOST IN THE ROOM" : "POINTS"}
               </span>
             </div>
             <RoundBoxes badges={me.badges} room={room} />
@@ -97,7 +107,7 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
               data-first={s.place === 1 ? "" : undefined}
             >
               <span className="final-table__place">{ordinal(s.place)}</span>
-              <span className="final-table__avatar">{emojiOf(s)}</span>
+              {emojiOf(s) && <span className="final-table__avatar">{emojiOf(s)}</span>}
               <span className="final-table__name">
                 {s.name}
                 {s.members.includes(playerId) && <em> (you)</em>}
@@ -128,7 +138,7 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
         <div className="player-standings__head">
           <h1>Standings</h1>
           <p>
-            AFTER ROUND {room.history.length} OF {room.settings.roundCount} · LOWEST TOTAL WINS
+            AFTER ROUND {room.history.length} OF {room.settings.roundCount} · HIGHEST TOTAL WINS
           </p>
         </div>
 
@@ -154,7 +164,9 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
               >
                 <div className="standings-table__row">
                   <span className="standings-table__place">{ordinal(s.place)}</span>
-                  <span className="standings-table__avatar">{emojiOf(s)}</span>
+                  {emojiOf(s) && (
+                    <span className="standings-table__avatar">{emojiOf(s)}</span>
+                  )}
                   <span className="standings-table__name">
                     {s.name}
                     {isMe && <em> (you)</em>}
@@ -171,6 +183,11 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
                       }
                     />
                   )}
+                  {/* What the round just played paid this row, immediately left
+                      of the running total it went into. */}
+                  {s.last !== null && (
+                    <span className="standings-table__delta">+{s.last}pts</span>
+                  )}
                   <span className="standings-table__points">{s.points}</span>
                 </div>
                 {isMe && <RoundBoxes badges={s.badges} room={room} />}
@@ -183,20 +200,12 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
         </ol>
       </div>
 
-      {/* The same card the TV poses over its board, at the size the phone
-          gives it. It names the round but never the category — that is drawn
-          at the whistle, so there is nothing to name yet. */}
+      {/* Literally the same card the TV poses over its board, at the size the
+          phone gives it. It names the round but never the category — that is
+          drawn at the whistle, so there is nothing to name yet. */}
       {countdown && (
         <div className="player-standings__countdown">
-          <div className="get-ready-card">
-            <span className="get-ready-card__label">GET READY</span>
-            <span className="get-ready-card__count">{remaining}</span>
-          </div>
-          <div className="get-ready-note">
-            <span className="get-ready-note__round">ROUND {currentRound(room)}</span>
-            <i className="get-ready-note__dot" />
-            <span>Not ready stops it</span>
-          </div>
+          <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
         </div>
       )}
 

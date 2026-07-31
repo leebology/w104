@@ -4,8 +4,10 @@ import { BALLOT, RANDOM_CATEGORY } from "../../../shared/categories";
 import { tallyVotes, voteBudget, voteShares } from "../../../shared/voting";
 import { teamsEnabled } from "../../../shared/teams";
 import { isWaiting } from "../../../shared/bots";
+import { currentRound } from "../../../shared/state";
 import type { Player, RoomState } from "../../../shared/state";
 import { VOTING_MS } from "../../../shared/reduce";
+import { GetReady } from "../../components/GetReady";
 import { RoomChip } from "../../components/RoomChip";
 import { roomStore } from "../../net/room";
 import { HostExit, HostHeader, HostHeaderRight, VotingCount } from "./HostHeader";
@@ -269,7 +271,7 @@ function HostVotingClosed({
         }
       />
 
-      <div className="host-voting__result">
+      <div className="host-voting__result countdown-dim">
         {survivors.length === 0 ? (
           // The deadline force-closes voting regardless of readiness, so this
           // is reachable with nobody having voted at all. Say nothing about
@@ -311,15 +313,16 @@ function HostVotingClosed({
         )}
       </div>
 
-      {/* Nothing here names the drawn category. It has not been drawn yet — the
-          draw happens at the whistle.
+      {/* The same countdown card the lobby and the standings pose, over the
+          same dimmed screen. Nothing on it names the drawn category: it has not
+          been drawn yet — that happens at the whistle.
 
           No Stop button: `cancelStart` from here lands back in `voting`, which
           is a hair's breadth from where "Back to teams" goes and reads as the
           same escape to anyone watching. One way out per screen, in the corner
           every other host screen keeps it in. */}
-      <div className="host-voting__closed-footer">
-        <p className="get-ready get-ready--tv">Get ready… {remaining}</p>
+      <div className="countdown-pose">
+        <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
       </div>
     </main>
   );

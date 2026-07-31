@@ -67,15 +67,12 @@ export default function App() {
   /**
    * Why this device is back at the front door.
    *
-   * `kicked` and `host-left` are set once and never cleared by app code — a
-   * real page refresh remounts this component and resets them, and that is
-   * deliberate: they are about something that was *done to* this player, and
-   * the notice is meant to survive navigating back through Landing and even
-   * rejoining.
-   *
-   * `expired` is the exception, cleared by `newSession` below. It is not about
-   * this player at all — it says a room is no longer there — and once they are
-   * in a different room it has nothing left to say.
+   * All three say something about the room this device has just *left* — it
+   * removed you, the host closed it, it was not there any more — so all three
+   * are cleared by `newSession` below. A notice about the last room has nothing
+   * to say once you are in the next one, and "The host ended the game" sitting
+   * over a lobby that is plainly running reads as a fault. A page refresh
+   * clears them too, by remounting this component.
    */
   const [endedNotice, setEndedNotice] =
     useState<"kicked" | "host-left" | "expired" | null>(null);
@@ -83,7 +80,7 @@ export default function App() {
   /** Bookkeeping every deliberate create or join does. */
   const newSession = (next: Session) => {
     resuming.current = false;
-    setEndedNotice((notice) => (notice === "expired" ? null : notice));
+    setEndedNotice(null);
     setSession(next);
     saveSession(next);
   };

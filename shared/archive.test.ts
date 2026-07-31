@@ -283,7 +283,7 @@ describe("roundRows", () => {
 });
 
 describe("gameResultRows", () => {
-  test("projects golf standings, ties sharing a place", () => {
+  test("projects the match standings, ties sharing a place", () => {
     const r = room({
       players: [player("a"), player("b"), player("c")],
       history: [
@@ -298,7 +298,8 @@ describe("gameResultRows", () => {
       ],
     });
     const rows = gameResultRows(r, "g");
-    expect(rows.find((x) => x.scorer_id === "a")).toMatchObject({ place: 1, total_score: 1 });
+    // Three scorers, so 1st pays 3; b and c share 2nd and take 2 each.
+    expect(rows.find((x) => x.scorer_id === "a")).toMatchObject({ place: 1, total_score: 3 });
     expect(rows.find((x) => x.scorer_id === "b")!.place).toBe(2);
     expect(rows.find((x) => x.scorer_id === "c")!.place).toBe(2);
   });
