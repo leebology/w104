@@ -13,6 +13,7 @@ import { PlayerScoring } from "./PlayerScoring";
 import { PlayerStandings } from "./PlayerStandings";
 import { PlayerTeams } from "./PlayerTeams";
 import { PlayerVoting } from "./PlayerVoting";
+import { PlayerCreating } from "./PlayerCreating";
 
 export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
@@ -166,6 +167,13 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
     case "teams":
       return <PlayerTeams room={room} playerId={getPlayerId()} />;
     case "creating":
-      return <Writing />;
+      return (
+        <PlayerCreating
+          room={room}
+          playerId={getPlayerId()}
+          drafts={state.drafts}
+          offset={state.clockOffset}
+        />
+      );
   }
 }

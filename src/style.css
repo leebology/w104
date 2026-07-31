@@ -5274,3 +5274,238 @@ ul, ol { list-style: none; }
 
 /* The plaque already separates it; a rule as well is two dividers for one job. */
 .debug-section--usage { border-top: 0; padding-top: 16px; }
+
+/* ------------------------------------------------------- player creating */
+
+.player-creating {
+  padding: 44px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.player-creating__meta {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+  text-align: center;
+}
+
+.player-creating__card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.player-creating__label {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.player-creating__input {
+  font: inherit;
+  font-family: var(--display);
+  font-size: 30px;
+  line-height: 1.06;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  padding: 0;
+  caret-color: var(--teal);
+  caret-width: 4px;
+}
+
+.player-creating__input::placeholder {
+  color: var(--ink-dim);
+}
+
+.player-creating__counter {
+  text-align: right;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+.slot-strip {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.slot-strip__chip {
+  width: 56px;
+  height: 44px;
+  flex: 0 0 auto;
+  font: inherit;
+  font-family: var(--display);
+  font-size: 16px;
+  line-height: 1.06;
+  border: var(--border);
+  border-radius: 12px;
+  background: var(--code-empty);
+  color: var(--ink-dim);
+  cursor: pointer;
+  text-align: center;
+  padding: 0;
+  transition: background 160ms ease-out, color 160ms ease-out, box-shadow 160ms ease-out;
+}
+
+.slot-strip__chip--current {
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.slot-strip__chip--done {
+  background: var(--gold);
+  color: var(--ink-gold);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.player-creating__commit {
+  min-height: 61px;
+}
+
+.player-creating__ready-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.player-creating__ready-card {
+  flex: 1;
+  position: relative;
+  font: inherit;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 16px 44px 16px 16px;
+  box-shadow: var(--shadow-card);
+  cursor: pointer;
+  font-family: var(--display);
+  font-size: 26px;
+  line-height: 1.06;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.player-creating__ready-card:active {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.player-creating__pen {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--ink-dim);
+  stroke-width: 2.6px;
+  pointer-events: none;
+}
+
+.player-creating__ready-hint {
+  font-size: 13px;
+  color: var(--cream-dim);
+  text-align: center;
+}
+
+/* ---- compact keyboard view ---- */
+
+.vv-compact .player-creating {
+  padding: 14px 20px 0;
+}
+
+.vv-compact .player-creating__meta {
+  display: none;
+}
+
+.vv-compact .player-voting__head {
+  flex: 0 0 44px;
+  padding: 8px 12px;
+}
+
+.vv-compact .player-voting__count {
+  font-size: 26px;
+}
+
+.vv-compact .player-voting__head-text {
+  min-height: 26px;
+  gap: 2px;
+}
+
+.vv-compact .player-voting__head-title {
+  font-size: 11px;
+}
+
+.vv-compact .player-creating__card {
+  min-height: 132px;
+}
+
+.vv-compact .player-creating__input {
+  font-size: 26px;
+  caret-width: 28px;
+}
+
+.vv-compact .slot-strip__chip {
+  height: 44px;
+}
+
+.vv-compact .player-creating__commit {
+  min-height: 52px;
+}
+
+.vv-compact .player-voting__bar {
+  height: 34px;
+  padding: 0 12px;
+}
+
+.vv-compact .player-voting__bar .timer-bar__num {
+  display: none;
+}
+
+.vv-compact .player-voting__bar .timer-track {
+  height: 14px;
+}
+
+/* ---- motion ---- */
+
+@keyframes slotAdvanceA {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  99% {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  100% {
+    display: none;
+  }
+}
+
+@keyframes slotAdvanceB {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  99% {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  100% {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-creating { }
+  .slot-strip__chip { transition: none; }
+}
