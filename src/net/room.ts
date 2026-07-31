@@ -48,6 +48,10 @@ const REJECTIONS: Record<RejectReason, string> = {
   // In a team match the list is shared, so it may well have been a teammate.
   duplicate: "That's already on the list.",
   limit: "That's enough words!",
+  // Not yet reachable from the client: flushEntry has no caller here until
+  // the phone fires it at time's up. Kept so this map stays exhaustive over
+  // RejectReason.
+  "too-short": "That's too short.",
 };
 
 const EMPTY: ClientState = {
