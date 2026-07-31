@@ -15,8 +15,11 @@ export function pulseInterval(id: string): string {
 
 type PillProps = {
   player: Player;
-  /** `playing` shows the activity dot; `lobby` shows readiness. */
-  variant: "playing" | "lobby";
+  /** `playing` shows the activity dot; `lobby` shows readiness; `creating`
+      shows readiness too, but also spells out the not-ready state as
+      "··· WRITING" — the writing phase's author columns, unlike the lobby,
+      have something to say about a waiting player besides "not yet". */
+  variant: "playing" | "lobby" | "creating";
   onKick?: (id: string) => void;
 };
 
@@ -31,11 +34,12 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
   // (`everyoneReady` never waits on one). A pill that sat flat forever while
   // the room started anyway would misreport the only thing this pill says.
   const ready = isWaiting(player);
-  if (variant === "lobby") {
+  const showsReadiness = variant === "lobby" || variant === "creating";
+  if (showsReadiness) {
     classes.push(ready ? "player-pill--ready" : "player-pill--waiting");
   }
   if (!player.connected) classes.push("player-pill--offline");
-  const bobbing = variant === "lobby" && !ready;
+  const bobbing = showsReadiness && !ready;
 
   const body = (
     <>
@@ -55,6 +59,8 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
           style={{ "--pulse": pulseInterval(player.id) } as CSSProperties}
           aria-hidden="true"
         />
+      ) : variant === "creating" ? (
+        <span className="player-pill__mark">{ready ? "✓ READY" : "··· WRITING"}</span>
       ) : (
         ready && <span className="player-pill__mark">✓ READY</span>
       )}

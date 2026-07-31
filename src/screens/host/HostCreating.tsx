@@ -1,12 +1,15 @@
+import { useRef } from "react";
 import type { CSSProperties } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
 import { quotaFor } from "../../../shared/customCategories";
 import { teamsEnabled } from "../../../shared/teams";
-import type { RoomState } from "../../../shared/state";
+import { isWaiting } from "../../../shared/bots";
+import type { Player, RoomState } from "../../../shared/state";
 import { WRITE_MS } from "../../../shared/customCategories";
 import { RoomChip } from "../../components/RoomChip";
 import { PlayerPill } from "../../components/Roster";
 import { roomStore } from "../../net/room";
+import { parity } from "../../reveal";
 import { HostExit, HostHeader, HostHeaderRight } from "./HostHeader";
 
 type Props = {
@@ -33,6 +36,22 @@ export function HostCreating({ room, offset }: Props) {
   // of four 96px slots does not fit a 720p stage.
   const useWall = room.players.length > 12 || slotCount > 15 || quota >= 4;
 
+  // Wall columns escalate with slot count (§1b): 6 up to 24 slots, 7 to 35, 8
+  // to 48. The plan's flat `repeat(6, 1fr)` was superseded by the brief.
+  const wallCols = slotCount <= 24 ? 6 : slotCount <= 35 ? 7 : 8;
+
+  // Whether the wall's cells are cramped enough that the mini pill should drop
+  // to the avatar alone (§1b: "Below ~64px of cell height…"). Arithmetic
+  // against the design's reference 1280×720 stage, not a live measurement —
+  // the same footing `useWall` and `quotaFor` already stand on. The chrome
+  // budget is the header (~84px), the plaque + counter band (~70px) and the
+  // timer bar (106px); the wall's own 24px top/bottom padding and 12px row
+  // gaps come off what is left.
+  const wallRows = Math.ceil(slotCount / wallCols);
+  const wallAvailableHeight = 720 - 84 - 70 - 106 - 48;
+  const wallCellHeight = (wallAvailableHeight - (wallRows - 1) * 12) / wallRows;
+  const smallWallCells = wallCellHeight < 64;
+
   // Count how many slots are done (for the plaque subtitle on Layout B)
   let written = 0;
   for (const playerId of room.players.map((p) => p.id)) {
@@ -41,6 +60,25 @@ export function HostCreating({ room, offset }: Props) {
   }
 
   const ready = room.players.filter((p) => p.connected && p.ready).length;
+
+  // The cardLandA/cardLandB alternation, frozen the moment a slot is first
+  // seen as "done" and never recomputed after — an already-stamped slot must
+  // not replay just because a later slot finishes elsewhere. Mirrors the
+  // reveal's `parity(ordinal)`: what has to vary is an ordinal that increments
+  // on each occurrence, never a fixed per-slot index, or the class string
+  // never changes and the animation never restarts. Keyed by player id + slot
+  // index, which is stable for a slot's whole life in this phase.
+  const landOrdinals = useRef(new Map<string, number>());
+  const nextLandOrdinal = useRef(0);
+  function landClassFor(slotKey: string, state: "empty" | "writing" | "done"): "a" | "b" | undefined {
+    if (state !== "done") return undefined;
+    let ordinal = landOrdinals.current.get(slotKey);
+    if (ordinal === undefined) {
+      ordinal = nextLandOrdinal.current++;
+      landOrdinals.current.set(slotKey, ordinal);
+    }
+    return parity(ordinal);
+  }
 
   return (
     <main className="screen screen--host host-creating">
@@ -70,13 +108,13 @@ export function HostCreating({ room, offset }: Props) {
         </div>
 
         {useWall ? (
-          <div className="host-creating__wall">
-            {room.players.map((player, playerIdx) => {
+          <div className="host-creating__wall" style={{ "--wall-cols": wallCols } as CSSProperties}>
+            {room.players.map((player) => {
               const states = room.slotStates[player.id] ?? [];
               return states.map((state, slotIdx) => (
                 <div key={`${player.id}-${slotIdx}`} className="host-creating__cell">
-                  <CreatingSlot state={state} index={playerIdx * quota + slotIdx} />
-                  <MiniPill player={player} state={state} />
+                  <CreatingSlot state={state} land={landClassFor(`${player.id}:${slotIdx}`, state)} />
+                  <MiniPill player={player} avatarOnly={smallWallCells} />
                 </div>
               ));
             })}
@@ -87,10 +125,14 @@ export function HostCreating({ room, offset }: Props) {
               const states = room.slotStates[player.id] ?? [];
               return (
                 <div key={player.id} className="host-creating__column">
-                  <PlayerPill player={player} variant="lobby" />
+                  <PlayerPill player={player} variant="creating" />
                   <div className="host-creating__slots">
                     {states.map((state, slotIdx) => (
-                      <CreatingSlot key={slotIdx} state={state} index={slotIdx} />
+                      <CreatingSlot
+                        key={slotIdx}
+                        state={state}
+                        land={landClassFor(`${player.id}:${slotIdx}`, state)}
+                      />
                     ))}
                   </div>
                 </div>
@@ -100,7 +142,7 @@ export function HostCreating({ room, offset }: Props) {
         )}
       </div>
 
-      <div className="timer-bar" style={{ height: "106px" }}>
+      <div className="timer-bar host-creating__timer">
         <span className="timer-bar__num">{formatClock(remaining)}</span>
         <span className="timer-track">
           <span
@@ -124,17 +166,18 @@ export function HostCreating({ room, offset }: Props) {
  * A single slot rendered on the TV. Three states: empty (no shadow, dimmed),
  * writing (teal dots), done (gold stamp). Never shows the text.
  */
-function CreatingSlot({ state, index }: { state: "empty" | "writing" | "done"; index?: number }) {
+function CreatingSlot({
+  state,
+  land,
+}: {
+  state: "empty" | "writing" | "done";
+  /** Which of the `cardLandA`/`cardLandB` pair to play — see `landClassFor`. */
+  land?: "a" | "b";
+}) {
   if (state === "done") {
-    // Alternate between A and B based on index to restart the animation on
-    // consecutive stamps. Use modulo to bounce between 0 and 1.
-    const landIdx = (index ?? 0) % 2;
     return (
-      <div
-        className="slot-state slot-state--done"
-        style={{ "--card-land-idx": landIdx } as CSSProperties}
-      >
-        <span className="slot-state__stamp">DONE</span>
+      <div className="slot-state slot-state--done">
+        <span className={`slot-state__stamp slot-state__stamp--${land ?? "a"}`}>DONE</span>
       </div>
     );
   }
@@ -154,22 +197,24 @@ function CreatingSlot({ state, index }: { state: "empty" | "writing" | "done"; i
 }
 
 /**
- * A mini player pill pinned inside a wall cell. Takes the pill's own ready/waiting
- * fills. Only appears in Layout B (the wall).
+ * A mini player pill pinned inside a wall cell. Takes the pill's own two
+ * states — gold when the *author* has finished every one of their slots,
+ * `--code-empty` while any remain — not the state of the one cell it sits in,
+ * or an author with one of three slots done would read as gold on that cell
+ * and grey on the rest. `isWaiting` is the same predicate `PlayerPill` and
+ * `everyoneReady` use, so a debug bot reads as done here too. Only appears in
+ * Layout B (the wall).
  */
-function MiniPill({ player, state }: { player: { id: string; emoji: string; name: string; ready: boolean; connected: boolean }; state: "empty" | "writing" | "done" }) {
+function MiniPill({ player, avatarOnly }: { player: Player; avatarOnly: boolean }) {
   const classes = ["mini-pill"];
-  if (state === "done") {
-    classes.push("mini-pill--ready");
-  } else {
-    classes.push("mini-pill--waiting");
-  }
+  const done = isWaiting(player);
+  classes.push(done ? "mini-pill--ready" : "mini-pill--waiting");
   if (!player.connected) classes.push("mini-pill--offline");
 
   return (
     <div className={classes.join(" ")}>
       <span className="mini-pill__avatar">{player.emoji}</span>
-      <span className="mini-pill__name">{player.name || "…"}</span>
+      {!avatarOnly && <span className="mini-pill__name">{player.name || "…"}</span>}
     </div>
   );
 }
