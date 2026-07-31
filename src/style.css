@@ -5299,6 +5299,19 @@ ul, ol { list-style: none; }
   gap: 12px;
 }
 
+/* The card frame above never moves; this wrapper is what commit-driven
+   advance animates, so the border/shadow/padding stay put. */
+.player-creating__card-inner {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.player-creating__card-inner--a { animation: slotAdvanceA 220ms cubic-bezier(0.34, 1.28, 0.64, 1); }
+.player-creating__card-inner--b { animation: slotAdvanceB 220ms cubic-bezier(0.34, 1.28, 0.64, 1); }
+
 .player-creating__label {
   font-family: var(--display);
   font-size: 11px;
@@ -5316,12 +5329,9 @@ ul, ol { list-style: none; }
   background: transparent;
   border: none;
   padding: 0;
+  /* Spec calls for a 4px x 34px teal caret; `caret-width`/`caret-height`
+     are not real CSS properties, so only the caret's colour is settable. */
   caret-color: var(--teal);
-  caret-width: 4px;
-}
-
-.player-creating__input::placeholder {
-  color: var(--ink-dim);
 }
 
 .player-creating__counter {
@@ -5385,7 +5395,9 @@ ul, ol { list-style: none; }
   border: var(--border);
   border-radius: var(--radius);
   padding: 16px 44px 16px 16px;
-  box-shadow: var(--shadow-card);
+  /* The brief's ready-card shadow is 5px 5px 0, not --shadow-card's 6px —
+     --shadow-btn already holds that exact value. */
+  box-shadow: var(--shadow-btn);
   cursor: pointer;
   font-family: var(--display);
   font-size: 26px;
@@ -5407,6 +5419,9 @@ ul, ol { list-style: none; }
   height: 18px;
   flex: 0 0 auto;
   color: var(--ink-dim);
+  /* Stroked, not filled, so stroke-width is what draws it. */
+  fill: none;
+  stroke: currentColor;
   stroke-width: 2.6px;
   pointer-events: none;
 }
@@ -5451,7 +5466,6 @@ ul, ol { list-style: none; }
 
 .vv-compact .player-creating__input {
   font-size: 26px;
-  caret-width: 28px;
 }
 
 .vv-compact .slot-strip__chip {
@@ -5477,17 +5491,30 @@ ul, ol { list-style: none; }
 
 /* ---- motion ---- */
 
+/* Two identical copies — see CLAUDE.md's "the one that will definitely bite
+   you". NEXT, NEXT, DONE fires this on the same card frame three times in a
+   row; an unchanged class name would not restart the animation, so the
+   component alternates between these two. One continuous 220ms motion on the
+   single content node: the outgoing card fades out to the left, then the
+   incoming card (already the new content, by the time this plays) fades in
+   from the right — the "the card frame does not move, only its contents"
+   the brief asks for, since only this inner wrapper animates. */
 @keyframes slotAdvanceA {
   0% {
     opacity: 1;
     transform: translateX(0);
   }
-  99% {
+  40% {
     opacity: 0;
     transform: translateX(-24px);
   }
+  60% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
   100% {
-    display: none;
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
@@ -5496,16 +5523,24 @@ ul, ol { list-style: none; }
     opacity: 1;
     transform: translateX(0);
   }
-  99% {
+  40% {
     opacity: 0;
     transform: translateX(-24px);
   }
+  60% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
   100% {
-    display: none;
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .player-creating { }
+  .player-creating__card-inner--a,
+  .player-creating__card-inner--b {
+    animation: none;
+  }
   .slot-strip__chip { transition: none; }
 }

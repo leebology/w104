@@ -21,12 +21,31 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Count committed cards (non-empty after trim)
+  // Count committed cards (non-empty after trim) — feeds the "N to write"
+  // total only. Per-slot state (pips, pager chips) reads `drafts[i]` itself,
+  // since the pager lets a player jump to any slot out of order.
   const committed = drafts.filter((d) => d.trim() !== "").length;
-  const ready = committed === quota;
+  // The Durable Object is the sole authority: `writeSlot` in shared/reduce.ts
+  // sets `ready` once every slot is committed, so the client reads it back
+  // rather than re-deriving it from `drafts`.
+  const ready = me?.ready === true;
 
   const endsAt = room.phase.name === "creating" ? room.phase.endsAt : 0;
   const remaining = useRemaining(endsAt, offset, room.paused);
+
+  // Alternates on every commit-driven advance so the slide animation
+  // restarts — reapplying an identical class in the same tick does not
+  // retrigger a CSS animation.
+  const [advanceParity, setAdvanceParity] = useState<"a" | "b" | null>(null);
+
+  // handleChipTap debounces its moveCursor send by ~150ms so mashing the
+  // pager sends one message, not one per tap.
+  const moveCursorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (moveCursorTimer.current) clearTimeout(moveCursorTimer.current);
+    };
+  }, []);
 
   const handleCommit = () => {
     const trimmed = text.trim();
@@ -44,6 +63,7 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
       const next = cursor + 1;
       setCursor(next);
       roomStore.send({ type: "moveCursor", slot: next });
+      setAdvanceParity((prev) => (prev === "a" ? "b" : "a"));
     } else {
       // Last slot committed — server will mark ready
       setText("");
@@ -64,7 +84,10 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
     // Load the slot's text
     setText(drafts[slot] ?? "");
     // Debounced ~150ms move
-    roomStore.send({ type: "moveCursor", slot });
+    if (moveCursorTimer.current) clearTimeout(moveCursorTimer.current);
+    moveCursorTimer.current = setTimeout(() => {
+      roomStore.send({ type: "moveCursor", slot });
+    }, 150);
   };
 
   const handleRewriteCard = (slot: number) => {
@@ -94,7 +117,7 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
                 {Array.from({ length: quota }, (_, i) => (
                   <span
                     key={i}
-                    className={i < committed ? "pip pip--spent" : "pip"}
+                    className={(drafts[i] ?? "").trim() !== "" ? "pip pip--spent" : "pip"}
                   />
                 ))}
               </span>
@@ -102,31 +125,42 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
           </section>
 
           <section className="card player-creating__card">
-            <div className="player-creating__label">
-              CARD {cursor + 1} OF {quota}
-            </div>
-            {/* Not inside a <form>: a bare input avoids Safari's AutoFill bar
-                above the keyboard. */}
-            <input
-              ref={inputRef}
-              type="text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key !== "Enter") return;
-                e.preventDefault();
-                handleCommit();
-              }}
-              maxLength={MAX_CATEGORY_LEN}
-              autoComplete="off"
-              autoCorrect="off"
-              autoCapitalize="off"
-              spellCheck={false}
-              className="player-creating__input"
-              autoFocus={cursor === 0}
-            />
-            <div className="player-creating__counter">
-              {text.length} / {MAX_CATEGORY_LEN}
+            {/* The card frame (border, shadow, padding) never moves — only
+                its contents do, on a commit-driven advance. */}
+            <div
+              className={[
+                "player-creating__card-inner",
+                advanceParity ? `player-creating__card-inner--${advanceParity}` : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <div className="player-creating__label">
+                CARD {cursor + 1} OF {quota}
+              </div>
+              {/* Not inside a <form>: a bare input avoids Safari's AutoFill bar
+                  above the keyboard. */}
+              <input
+                ref={inputRef}
+                type="text"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter") return;
+                  e.preventDefault();
+                  handleCommit();
+                }}
+                maxLength={MAX_CATEGORY_LEN}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                className="player-creating__input"
+                autoFocus={cursor === 0}
+              />
+              <div className="player-creating__counter">
+                {text.length} / {MAX_CATEGORY_LEN}
+              </div>
             </div>
           </section>
 
@@ -139,7 +173,7 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
                   className={[
                     "slot-strip__chip",
                     i === cursor ? "slot-strip__chip--current" : "",
-                    i < committed ? "slot-strip__chip--done" : "",
+                    (drafts[i] ?? "").trim() !== "" ? "slot-strip__chip--done" : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
@@ -202,12 +236,13 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
                   className="player-creating__pen"
                   viewBox="0 0 24 24"
                   xmlns="http://www.w3.org/2000/svg"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 >
-                  <path
-                    d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z"
-                    fill="currentColor"
-                  />
-                  <path d="M20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="currentColor" />
+                  <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25z" />
+                  <path d="M20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
                 </svg>
               </button>
             ))}
