@@ -356,3 +356,23 @@ describe("pickCustomCategory", () => {
     expect(pickCustomCategory(pool, {}, ["alpha"], 0.9)).toBe("beta");
   });
 });
+
+import { slotStatesFor } from "./customCategories";
+
+describe("slotStatesFor", () => {
+  it("reads done from the text and writing from the cursor", () => {
+    expect(slotStatesFor(["a", "", ""], 1, 3)).toEqual(["done", "writing", "empty"]);
+  });
+
+  it("does not call a slot writing once it is committed", () => {
+    expect(slotStatesFor(["a", "b"], 0, 2)).toEqual(["done", "done"]);
+  });
+
+  it("treats whitespace as blank", () => {
+    expect(slotStatesFor(["   "], 0, 1)).toEqual(["writing"]);
+  });
+
+  it("pads a short or missing draft array to the quota", () => {
+    expect(slotStatesFor(undefined, 0, 2)).toEqual(["writing", "empty"]);
+  });
+});

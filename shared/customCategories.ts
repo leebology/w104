@@ -300,6 +300,28 @@ export function buildDeal(
 }
 
 /**
+ * What each of one player's slots is showing on the TV.
+ *
+ * **"Writing" means the phone's cursor is on that slot**, not that keys are
+ * moving. Driving it from anything finer would leave a lying animation on a
+ * slot somebody half-wrote and then skipped past.
+ *
+ * Derived rather than stored, so there is no second copy of the truth to
+ * drift, and — the point of the whole arrangement — the drafts themselves
+ * never have to leave the server for the TV to be right.
+ */
+export function slotStatesFor(
+  draft: readonly string[] | undefined,
+  cursor: number,
+  quota: number,
+): SlotState[] {
+  return Array.from({ length: quota }, (_, i) => {
+    if ((draft?.[i] ?? "").trim() !== "") return "done";
+    return i === cursor ? "writing" : "empty";
+  });
+}
+
+/**
  * The most cards the TV board can carry. A measured ceiling, not a taste call:
  * a name is `max(24px, min(cap, 17cqw))` and 24px is the hard TV floor. At
  * eight cards per row the smallest card is ~104px wide, `17cqw` lands near

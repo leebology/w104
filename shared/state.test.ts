@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { DEFAULT_MODE } from "./gamemodes";
 import { countdownScreen, createRoom, currentRound, matchComplete, preRoundPhase, toRoomState } from "./state";
 import type { Room } from "./state";
@@ -33,9 +33,15 @@ describe("toRoomState", () => {
   test("publishes exactly the public keys", () => {
     const state = toRoomState(fullRoom(), 9000);
     expect(Object.keys(state).sort()).toEqual([
+      // Withheld until `authorsRevealed` flips — see `toRoomState`'s pool
+      // mapping — but the flag itself is not a secret.
+      "authorsRevealed",
       "category",
       "code",
       "configuring",
+      // Public — it drives the writing state on the TV and says nothing
+      // about the text; the text itself (`drafts`) stays server-only.
+      "cursors",
       "history",
       "hostId",
       // Public on purpose: every screen showing the round timer has to know it
@@ -45,8 +51,14 @@ describe("toRoomState", () => {
       "paused",
       "phase",
       "players",
+      // Public with authorship nulled until `authorsRevealed` — see
+      // `toRoomState`'s `publicPool` mapping.
+      "pool",
       "serverTime",
       "settings",
+      // Derived from `drafts`/`cursors` at the boundary — see the "creating
+      // phase's privacy boundary" tests below.
+      "slotStates",
       "teams",
       // Public on purpose too, and for the same shape of reason: a debug view
       // refresh has to remount the screen on every phone, not only on the TV.
@@ -60,6 +72,8 @@ describe("toRoomState", () => {
     expect(state).not.toHaveProperty("entries");
     expect(state).not.toHaveProperty("lastActivityAt");
     expect(state).not.toHaveProperty("kicked");
+    expect(state).not.toHaveProperty("drafts");
+    expect(state).not.toHaveProperty("deal");
   });
 
   test("preserves the public fields and stamps the server clock", () => {
@@ -80,6 +94,10 @@ describe("toRoomState", () => {
       configuring: false,
       paused: null,
       viewNonce: 0,
+      cursors: {},
+      pool: null,
+      authorsRevealed: false,
+      slotStates: {},
       serverTime: 9000,
     });
   });
@@ -149,5 +167,34 @@ describe("derived match helpers", () => {
       phase: { name: "countdown", endsAt: 2000, to: "playing" },
       history: [{ category: "song", places: {} }],
     })).toBe("standings");
+  });
+});
+
+describe("the creating phase's privacy boundary", () => {
+  it("strips drafts and the deal, and derives slot states in their place", () => {
+    const room = createRoom("JADE", 0);
+    room.players = [
+      { id: "p0", name: "A", emoji: "🐝", ready: false, connected: true, teamId: null },
+      { id: "p1", name: "B", emoji: "🦊", ready: false, connected: true, teamId: null },
+    ];
+    room.settings = { ...room.settings, categorySource: "custom" };
+    room.phase = { name: "creating", endsAt: 1000 };
+    room.drafts = { p0: ["smells", ""], p1: ["", ""] };
+    room.cursors = { p0: 1, p1: 0 };
+    room.deal = { p0: [{ cardIds: ["c1", "c2", "c3"] }] };
+
+    const state = toRoomState(room, 0);
+    expect("drafts" in state).toBe(false);
+    expect("deal" in state).toBe(false);
+    // Nothing anywhere in the payload may contain what somebody typed.
+    expect(JSON.stringify(state)).not.toContain("smells");
+    expect(state.slotStates.p0).toEqual(["done", "writing"]);
+    expect(state.slotStates.p1).toEqual(["writing", "empty"]);
+  });
+
+  it("carries no slot states outside the creating phase", () => {
+    const room = createRoom("JADE", 0);
+    room.drafts = { p0: ["secret"] };
+    expect(toRoomState(room, 0).slotStates).toEqual({});
   });
 });

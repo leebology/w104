@@ -200,6 +200,11 @@ export class W104 extends Server<Env> {
       // Debug-only, so an absent one is harmless — but `undefined + 1` is NaN,
       // and a NaN React key would stop remounting the view on every later jump.
       viewNonce: rest.viewNonce ?? 0,
+      drafts: rest.drafts ?? {},
+      cursors: rest.cursors ?? {},
+      pool: rest.pool ?? null,
+      deal: rest.deal ?? {},
+      authorsRevealed: rest.authorsRevealed ?? false,
       teams: rest.teams ?? [],
       // Two backfills in one pass. `teamId` gives players stored before teams
       // existed a null slot, and `by` gives their words an author — redundant

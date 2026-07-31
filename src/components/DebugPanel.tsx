@@ -12,7 +12,7 @@ import { debugEnabled, fetchUsage } from "../net/usage";
 import type { UsageResult } from "../net/usage";
 import { getPlayerId } from "../net/identity";
 import { roomStore, useRoom } from "../net/room";
-import { VIEWS, currentView } from "../../shared/views";
+import { VIEWS, currentView, isViewId } from "../../shared/views";
 import { MAX_BOTS, isBot } from "../../shared/bots";
 
 /**
@@ -293,7 +293,11 @@ function DebugControls({ state }: { state: ReturnType<typeof useRoom> }) {
 function ViewJumper({ state }: { state: ReturnType<typeof useRoom> }) {
   const room = state.room;
   const isHost = room !== null && room.hostId === getPlayerId();
-  const here = room ? currentView(room) : null;
+  const rawHere = room ? currentView(room) : null;
+  // `currentView` can answer `"creating"`, which has no catalog entry or jump
+  // target yet — narrowed here so "restart this view" has nothing to send to
+  // while the room sits on a phase the panel cannot yet name.
+  const here = rawHere !== null && isViewId(rawHere) ? rawHere : null;
 
   return (
     <section className="debug-section">

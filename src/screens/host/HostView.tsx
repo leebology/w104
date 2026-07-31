@@ -5,6 +5,7 @@ import type { ClientState } from "../../net/room";
 import { countdownScreen } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
 import { TimesUp } from "../shared/TimesUp";
+import { Writing } from "../shared/Writing";
 import { HostLobby } from "./HostLobby";
 import { HostPlaying } from "./HostPlaying";
 import { HostScoring } from "./HostScoring";
@@ -79,5 +80,7 @@ function screenFor(room: RoomState, state: ClientState, leave: () => void): Reac
       return <HostStandings room={room} />;
     case "teams":
       return <HostTeams room={room} />;
+    case "creating":
+      return <Writing />;
   }
 }

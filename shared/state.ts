@@ -1,5 +1,7 @@
 import type { Results } from "./scoring";
 import { DEFAULT_CATEGORY } from "./categories";
+import { publicPool, quotaFor, slotStatesFor } from "./customCategories";
+import type { Hand, PoolCard, SlotState } from "./customCategories";
 import { DEFAULT_MODE, defaultSettings } from "./gamemodes";
 import type { CategorySource, GameModeId } from "./gamemodes";
 import type { SelfMarks } from "./selfstrike";
@@ -96,6 +98,11 @@ export type Phase =
    * joining a team, or the host forces it. Only reachable when teams are on.
    */
   | { name: "teams" }
+  /**
+   * Players writing this match's categories. One window per match, and only
+   * reachable when `categorySource` is `"custom"`.
+   */
+  | { name: "creating"; endsAt: number }
   /** The room picking this match's categories. One 60-second window per match. */
   | { name: "voting"; endsAt: number }
   /**
@@ -104,7 +111,7 @@ export type Phase =
    * voting and the one before round one — so there is nothing left to derive
    * it from.
    */
-  | { name: "countdown"; endsAt: number; to: "voting" | "playing" }
+  | { name: "countdown"; endsAt: number; to: "creating" | "voting" | "playing" }
   | { name: "playing"; endsAt: number }
   | { name: "timesup"; endsAt: number }
   /**
@@ -232,14 +239,53 @@ export type Room = {
    * read as a React key.
    */
   viewNonce: number;
+  /**
+   * What each player has committed, per slot. `""` is uncommitted.
+   *
+   * **Server-only, and the reason `toRoomState` derives `slotStates`.** The
+   * creation TV shows progress, never content: printing the drafts would let
+   * the room read and judge before the vote and spoil the reveal this feature
+   * exists for. A top-level field rather than a member of the phase, because
+   * `toRoomState` strips whole fields and a nested one would ride out.
+   */
+  drafts: Record<PlayerId, string[]>;
+  /**
+   * Which slot each phone is sitting on. Public — it is the only thing that
+   * drives the writing state on the TV, and it says nothing about the text.
+   */
+  cursors: Record<PlayerId, number>;
+  /**
+   * This match's written categories, built at the close of `creating` and
+   * never before. `null` outside a custom match.
+   *
+   * Rides in `RoomState`, with `authorId` nulled until `authorsRevealed`.
+   */
+  pool: PoolCard[] | null;
+  /**
+   * Who sees which cards. **Server-only:** a leaked hand plus a public tally
+   * lets the room deduce who voted for what. Each player gets their own hands
+   * down their own socket, the way `entries` reaches a team.
+   */
+  deal: Record<PlayerId, Hand[]>;
+  /**
+   * Whether the pool's authorship has been handed to the clients. Flipped when
+   * voting closes and nowhere else — it is the reveal.
+   */
+  authorsRevealed: boolean;
 };
 
 /** Broadcast to every connection. Safe for all eyes. */
 export type RoomState = Omit<
   Room,
-  "entries" | "lastActivityAt" | "kicked" | "hostGoneAt"
+  "entries" | "lastActivityAt" | "kicked" | "hostGoneAt" | "drafts" | "deal"
 > & {
   serverTime: number;
+  /**
+   * Derived from `drafts` and `cursors` at the boundary, so the TV can render
+   * three states per slot without the text ever crossing it. Empty outside the
+   * `creating` phase.
+   */
+  slotStates: Record<PlayerId, SlotState[]>;
 };
 
 export function createRoom(code: string, now: number): Room {
@@ -260,6 +306,11 @@ export function createRoom(code: string, now: number): Room {
     configuring: false,
     paused: null,
     viewNonce: 0,
+    drafts: {},
+    cursors: {},
+    pool: null,
+    deal: {},
+    authorsRevealed: false,
   };
 }
 
@@ -270,9 +321,29 @@ export function toRoomState(room: Room, now: number): RoomState {
     lastActivityAt: _lastActivityAt,
     kicked: _kicked,
     hostGoneAt: _hostGoneAt,
+    drafts,
+    deal: _deal,
     ...rest
   } = room;
-  return { ...rest, serverTime: now };
+
+  const slotStates: Record<PlayerId, SlotState[]> = {};
+  if (room.phase.name === "creating") {
+    const quota = quotaFor(room.players.length, room.settings.roundCount);
+    for (const player of room.players) {
+      slotStates[player.id] = slotStatesFor(
+        drafts[player.id],
+        room.cursors[player.id] ?? 0,
+        quota,
+      );
+    }
+  }
+
+  return {
+    ...rest,
+    pool: room.pool ? publicPool(room.pool, room.authorsRevealed) : null,
+    slotStates,
+    serverTime: now,
+  };
 }
 
 /**
@@ -306,11 +377,14 @@ export function preRoundPhase(view: MatchView): "lobby" | "standings" {
  */
 export function countdownScreen(
   view: MatchView & { phase: Phase },
-): "lobby" | "voting" | "standings" | "teams" {
+): "lobby" | "voting" | "standings" | "teams" | "creating" {
   if (view.phase.name === "countdown" && view.phase.to === "voting") {
     // With teams on there is no lobby→voting countdown at all — the lobby
     // hands off to `teams` first — so a `to: "voting"` countdown can only
     // have come out of team select. Derived, so nothing extra is stored.
+    return teamsEnabled(view.settings) ? "teams" : "lobby";
+  }
+  if (view.phase.name === "countdown" && view.phase.to === "creating") {
     return teamsEnabled(view.settings) ? "teams" : "lobby";
   }
   return view.history.length === 0 ? "voting" : "standings";
