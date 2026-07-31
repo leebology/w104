@@ -1,6 +1,6 @@
 import { scoreRound, normalize } from "./scoring";
 import type { Results } from "./scoring";
-import { rowKey, withSelfStrikes } from "./reveal";
+import { clampLineMs, rowKey, withSelfStrikes } from "./reveal";
 import { NO_SELF_MARKS, toggleMark } from "./selfstrike";
 import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
@@ -22,12 +22,27 @@ import {
 } from "./customCategories";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, balanceTeams, makeTeams, rosterOf, teamsEnabled } from "./teams";
-import type { TeamId } from "./teams";
+import type { ScorerId, TeamId } from "./teams";
 import { MIN_TEAM_COUNT } from "./gamemodes";
 import type { ViewId } from "./views";
-import { isHuman, isWaiting, seatBots, setBotCount } from "./bots";
+import { isHuman, isWaiting, readyBots, seatBots, setBotCount } from "./bots";
 
-export const COUNTDOWN_MS = 5_000;
+/**
+ * How long the Get Ready card is up.
+ *
+ * **Set by the audio, not by the design.** The countdown plays a lead-in that
+ * hands straight over to the round's music (`src/audio/countdown/`), so the
+ * card has to stay up long enough for that clip to finish — a shorter phase
+ * cuts the music off mid-bar. It was five seconds when nothing was playing over
+ * it. **Replacing the lead clip means changing this number**, which is the one
+ * piece of coupling between a file somebody drags into a folder and the server;
+ * the countdown README says so at the other end.
+ *
+ * Rounded up from the clip rather than matched exactly: the hand-off to the
+ * round's music fires off the clip's own `ended` event, so a little slack here
+ * is inaudible, while too little clips the last note.
+ */
+export const COUNTDOWN_MS = 7_400;
 /** One voting window per match, whatever the round count. */
 export const VOTING_MS = 60_000;
 export const TIMESUP_MS = 3_000;
@@ -130,6 +145,14 @@ export type RoomEvent =
    */
   | { t: "debugBots"; playerId: PlayerId; count: number; now: number }
   /**
+   * Host-only, legal from every phase: set how many milliseconds the scoring
+   * reveal spends per line. Room state rather than a local preference because
+   * the phones run the same reveal — see `Room.revealLineMs`. Legal from every
+   * phase so the slider can be set before the results screen it changes, and
+   * dragged while one is running.
+   */
+  | { t: "debugRevealSpeed"; playerId: PlayerId; lineMs: number; now: number }
+  /**
    * Host-only, `scoring` only: land every outstanding strike at once. In state
    * rather than as a client-side control because the phones are watching the
    * same reveal — a skip only the TV knew about would leave them crawling
@@ -137,12 +160,25 @@ export type RoomEvent =
    */
   | { t: "fastForward"; playerId: PlayerId; now: number }
   /**
-   * Self-validation, `scoring` only: the scorer strikes one of their own words
-   * out by hand, or takes it back. `index` addresses their own row in
-   * `phase.results`; anything else — somebody else's list, an index past the
-   * end, a word the round already struck — is ignored. See shared/selfstrike.ts.
+   * Validation, `scoring` only: a word is struck out by hand, or taken back.
+   *
+   * A player addresses their own scorer's row and may address no other, which
+   * is what the name is about. **The host may address any scorer's**, by naming
+   * one in `scorerId` — they are running the room off the TV, and a wrong answer
+   * everyone in the room can see is exactly the case the whole mechanic exists
+   * for. `scorerId` is honoured for the host alone; from anyone else it is
+   * ignored and the sender's own list is used. An index past the end or a word
+   * the round already struck is ignored either way. See shared/selfstrike.ts.
    */
-  | { t: "selfStrike"; playerId: PlayerId; index: number; struck: boolean; now: number }
+  | {
+      t: "selfStrike";
+      playerId: PlayerId;
+      /** Host only; ignored from a player, who always marks their own list. */
+      scorerId?: ScorerId;
+      index: number;
+      struck: boolean;
+      now: number;
+    }
   /**
    * `roll` is a uniform [0,1) supplied by the caller. Randomness is injected
    * at the edge so `reduce` stays a pure function and the draw is testable
@@ -222,6 +258,31 @@ function openCountdown(
 /** Where a match heads once the room is settled: writing first, if custom. */
 function afterLobby(room: Room): "creating" | "voting" {
   return customEnabled(room.settings) ? "creating" : "voting";
+}
+
+/**
+ * How many connected humans it takes to be a room, for the phase in hand.
+ *
+ * **MIN_PLAYERS in the lobby, and 1 everywhere past it.** The lobby's floor is
+ * the one that is really about a minimum: nobody's Ready button should start a
+ * match they would be playing alone, and the host's Start is the deliberate
+ * override that says so.
+ *
+ * Once the match is *running* that floor stops meaning anything and starts
+ * costing something. A room is whoever is still in it by then — a solo
+ * host-started match could not reach round two at all, a five-player game that
+ * four people walked out of hung on a count it could no longer reach, and team
+ * select would not close for the last person standing on a team. In every one of
+ * those the room genuinely is all ready, which is the only question `settle`
+ * asks.
+ *
+ * A countdown answers for whichever phase it would fall back to, so a lobby
+ * countdown still needs MIN_PLAYERS to stay up and the two halves cannot
+ * disagree about the same moment.
+ */
+function readyFloor(room: Room): number {
+  const phase = room.phase.name === "countdown" ? backPhase(room).name : room.phase.name;
+  return phase === "lobby" ? MIN_PLAYERS : 1;
 }
 
 /**
@@ -317,6 +378,10 @@ function enterTeams(room: Room): Room {
  * the round is banked into history and the words have already been shown, so
  * nothing reads it again.
  *
+ * The bots go back to ready immediately, because the standings board marks
+ * readiness per row and a bot is never going to press anything. See
+ * `readyBots` — it changes nothing about what `settle` will do.
+ *
  * `results` is what both callers must pass through `withSelfStrikes` first: the
  * places banked into history are the ones the room was shown, self-validation
  * included. The marks themselves need no clearing — they live on the phase this
@@ -332,7 +397,7 @@ function bankRound(room: Room, results: Results): Room {
     phase: { name: "standings" },
     history: [...room.history, summary],
     entries: {},
-    players: room.players.map((p) => ({ ...p, ready: false })),
+    players: readyBots(room.players.map((p) => ({ ...p, ready: false }))),
   };
 }
 
@@ -408,8 +473,13 @@ function settle(room: Room, now: number): Room {
 
   if (phase.name === "teams") {
     // `ready` here means "on a team" — joinTeam and leaveTeam own the flag,
-    // the way castVote and resetVotes own it during voting.
-    return everyoneReady(room, MIN_PLAYERS)
+    // the way castVote and resetVotes own it during voting. Everybody on a team
+    // is the whole condition, so the countdown opens with no host action; a
+    // player who changes their mind leaves their team and stops it dead.
+    //
+    // `afterLobby`, not a literal "voting": a custom match writes its own pool
+    // first, so team select hands off to `creating` instead.
+    return everyoneReady(room, readyFloor(room))
       ? openCountdown(room, now, afterLobby(room))
       : room;
   }
@@ -423,42 +493,46 @@ function settle(room: Room, now: number): Room {
     // one — so the seed comes from `seedRoll`: the room code and this instant,
     // neither client-controlled and both already in hand, rather than a fixed
     // default that would make the pool and the deal computable offline.
-    return everyoneReady(room, MIN_PLAYERS)
+    return everyoneReady(room, readyFloor(room))
       ? closeCreating(room, now, seedRoll(room.code, now))
       : room;
   }
 
   if (phase.name === "voting") {
-    return everyoneReady(room, 1) ? closeVoting(room, now) : room;
+    return everyoneReady(room, readyFloor(room)) ? closeVoting(room, now) : room;
   }
 
   if (phase.name === "scoring") {
     // The results screen is the one place `ready` means "seen enough" rather
     // than "waiting". It advances the room the host's Standings button does, so
     // a room that has finished reading does not sit waiting on the TV.
-    return everyoneReady(room, MIN_PLAYERS)
+    return everyoneReady(room, readyFloor(room))
       ? bankRound(room, withSelfStrikes(phase.results, phase.selfMarks))
       : room;
   }
 
   if (phase.name === "standings") {
     if (matchComplete(room)) return room;
-    return everyoneReady(room, MIN_PLAYERS) ? openCountdown(room, now, "playing") : room;
+    return everyoneReady(room, readyFloor(room))
+      ? openCountdown(room, now, "playing")
+      : room;
   }
 
   if (phase.name === "countdown") {
-    // The countdown from voting into round one is deliberately not
-    // readiness-cancellable: everyoneReady needs MIN_PLAYERS, so after a host
-    // solo-start this branch would tear the countdown down on the very next
-    // event. Readiness has already done its job by the time voting closes.
-    //
-    // This guard covers only that one countdown. The other two — lobby into
-    // voting, and a solo "Next round" at round two or later — have no such
-    // guard, so a solo host start there is still torn down by any event
-    // inside the 5-second window while fewer than MIN_PLAYERS are connected.
-    // Pre-existing, not fixed here; noted so it isn't mistaken for handled.
+    // The countdown out of voting into round one is deliberately not
+    // readiness-cancellable at all. On that side of the edge `ready` means
+    // "votes spent", and the 60-second deadline closes voting whether or not
+    // anybody spent theirs — so a room where one person never voted arrives
+    // here already not-ready, and tearing the countdown down would drop it back
+    // through `backPhase` to the *lobby*, abandoning the match.
     if (phase.to === "playing" && room.history.length === 0) return room;
-    if (!everyoneReady(room, MIN_PLAYERS)) return { ...room, phase: backPhase(room) };
+    // Every other countdown answers for the phase it would fall back to, so
+    // "would this phase have opened it?" and "does it stay open?" cannot
+    // disagree. That is what lets a solo running match hold its own countdown
+    // for the full five seconds; the lobby's still needs MIN_PLAYERS.
+    if (!everyoneReady(room, readyFloor(room))) {
+      return { ...room, phase: backPhase(room) };
+    }
   }
 
   return room;
@@ -697,7 +771,13 @@ function jumpTo(room: Room, to: ViewId, now: number, roll: number): Room {
           withSelfStrikes(staged.phase.results, staged.phase.selfMarks),
         );
       }
-      return { ...staged, phase: { name: "standings" }, players: unready(staged.players) };
+      // Bots ready straight back up, as they do when a round is banked — the
+      // board marks readiness per row, and scenery must not read as the holdout.
+      return {
+        ...staged,
+        phase: { name: "standings" },
+        players: readyBots(unready(staged.players)),
+      };
     }
   }
 }
@@ -1122,19 +1202,31 @@ function apply(room: Room, ev: RoomEvent): Room {
     }
 
     /**
-     * Self-validation: a scorer disowning one of their own words, or taking it
-     * back. Not host-only — it is the *player's* judgement on the player's own
-     * list, and in team play any member may mark the list the team shares.
+     * Validation: a word disowned by hand, or taken back.
      *
-     * A duplicate is refused rather than toggled. It is already struck by the
-     * round's own rule, so striking it would change nothing and restoring it
-     * would award back a point nobody had — which is why the phones render those
-     * rows inert, and why that is not the boundary.
+     * Not host-only — it is the *player's* judgement on the player's own list,
+     * and in team play any member may mark the list the team shares. But the
+     * host may mark **any** list, by naming its scorer: they are reading the
+     * round out to the room off the TV, and "that is not a real one" is a call
+     * somebody has to be able to make about a word that is not their own.
+     *
+     * The two paths are one line apart on purpose. A `scorerId` from a player is
+     * not an error to reject, it is simply not honoured — the sender's own
+     * scorer is looked up instead, exactly as it always was. And the host holds
+     * no seat, so `members.includes(hostId)` matches nothing: a host who sends
+     * no `scorerId` marks nothing at all rather than falling through to
+     * somebody's list.
+     *
+     * A duplicate is refused rather than toggled, from either of them. It is
+     * already struck by the round's own rule, so striking it would change
+     * nothing and restoring it would award back a point nobody had — which is
+     * why those rows render inert, and why that is not the boundary.
      */
     case "selfStrike": {
       if (room.phase.name !== "scoring") return room;
+      const asHost = ev.scorerId !== undefined && ev.playerId === room.hostId;
       const scorer = room.phase.results.scorers.find((s) =>
-        s.members.includes(ev.playerId),
+        asHost ? s.id === ev.scorerId : s.members.includes(ev.playerId),
       );
       if (!scorer) return room;
       const entry = scorer.entries[ev.index];
@@ -1168,10 +1260,19 @@ function apply(room: Room, ev: RoomEvent): Room {
       // work there too. `creating` joins the list for the same reason
       // `voting` is on it: both are one step out from the lobby, not the
       // match's start.
+      //
+      // `playing` and `scoring` are here because those screens carry the same
+      // top-right back-out every other host screen does. Between them they
+      // abandon a round while it is being written or while it is being read,
+      // which is exactly what a host pressing it is asking for, and the D1
+      // archive simply never sees that round: `maybeArchiveBank` keys off the
+      // `scoring -> standings` transition, and neither of these is one.
       if (
         room.phase.name !== "standings" &&
         room.phase.name !== "voting" &&
         room.phase.name !== "creating" &&
+        room.phase.name !== "playing" &&
+        room.phase.name !== "scoring" &&
         !postVotingCountdown &&
         !inTeamSelect(room)
       ) {
@@ -1185,7 +1286,9 @@ function apply(room: Room, ev: RoomEvent): Room {
       // the instant it opens. The votes go: they belonged to the voting round
       // being abandoned, and a stale tally must not sit under the team
       // screen. `drafts`/`cursors`/`pool`/`deal` go for the same reason —
-      // whatever was written or drawn belonged to the match being abandoned.
+      // whatever was written or drawn belonged to the match being abandoned —
+      // and `authorsRevealed` goes with the pool it describes, so the flag can
+      // never outlive the cards and greet the next pool already revealed.
       if (
         (room.phase.name === "voting" || room.phase.name === "creating" || postVotingCountdown) &&
         teamsEnabled(room.settings)
@@ -1193,18 +1296,28 @@ function apply(room: Room, ev: RoomEvent): Room {
         return {
           ...enterTeams(room),
           votes: {},
+          paused: null,
           drafts: {},
           cursors: {},
           pool: null,
           deal: {},
+          authorsRevealed: false,
         };
       }
       // Settings survive — the host usually wants the same match again — and
       // so does `kicked`, which is durable for the room's lifetime. The votes
       // and the teams do not: both belonged to the match being abandoned, and
       // the next one rebuilds teams from whatever `teamCount` is by then. Nor
-      // does anything written for it — `drafts`/`cursors`/`pool`/`deal` reset
-      // the same way for a custom match that never gets replayed as one.
+      // does anything written for it — `drafts`/`cursors`/`pool`/`deal` and the
+      // `authorsRevealed` flag that describes them reset the same way, for a
+      // custom match that never gets replayed as one.
+      //
+      // `paused` goes with them, for the reason the view jumper clears it: a
+      // hold belongs to the phase it was taken in, and one carried into a lobby
+      // freezes the room with no visible cause — `tick` returns early while it
+      // is set, so nobody's Ready button could ever open a countdown again. All
+      // three phases a round can be held in — `playing`, `voting` and the
+      // writing window — have a back-out on screen while the hold is on.
       return {
         ...room,
         phase: { name: "lobby" },
@@ -1213,10 +1326,12 @@ function apply(room: Room, ev: RoomEvent): Room {
         history: [],
         votes: {},
         teams: [],
+        paused: null,
         drafts: {},
         cursors: {},
         pool: null,
         deal: {},
+        authorsRevealed: false,
       };
     }
 
@@ -1315,7 +1430,31 @@ function apply(room: Room, ev: RoomEvent): Room {
       const entries = Object.fromEntries(
         Object.entries(room.entries).filter(([id]) => live.has(id)),
       );
-      return { ...room, players: seatBots(players, room.teams), entries };
+      const seated = seatBots(players, room.teams);
+      return {
+        ...room,
+        // A bot dealt onto the standings board arrives ready, the same as one
+        // that was already sitting on it when the round banked.
+        players: room.phase.name === "standings" ? readyBots(seated) : seated,
+        entries,
+      };
+    }
+
+    /**
+     * The reveal's cadence, off the debug slider.
+     *
+     * Host-only and enforced here, like its siblings — this changes what every
+     * phone in the room sees, not just the TV. Clamped on arrival because the
+     * figure is the denominator of every step in the reveal's schedule.
+     *
+     * Not exempt from `settle`, and needs no exemption: it opens and closes
+     * nothing, exactly like `debugBots`.
+     */
+    case "debugRevealSpeed": {
+      if (ev.playerId !== room.hostId) return room;
+      const lineMs = clampLineMs(ev.lineMs);
+      if (lineMs === room.revealLineMs) return room;
+      return { ...room, revealLineMs: lineMs };
     }
 
     case "tick":

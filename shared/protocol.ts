@@ -1,7 +1,7 @@
 import type { Entry, PlayerId, RoomState } from "./state";
 import type { RejectReason } from "./reduce";
 import type { ChoiceSettingKey, NumericSettingKey } from "./gamemodes";
-import type { TeamId } from "./teams";
+import type { ScorerId, TeamId } from "./teams";
 import type { ViewId } from "./views";
 import type { Hand } from "./customCategories";
 
@@ -29,11 +29,20 @@ export type ClientMessage =
   /** Host-only, `scoring` only: land every outstanding strike of the reveal. */
   | { type: "fastForward" }
   /**
-   * Self-validation, `scoring` only: strike one of your own words out by hand,
-   * or take it back. `index` is into your own scorer's `results` entries. Not
-   * host-only — it is the player's own list.
+   * Validation, `scoring` only: strike a word out by hand, or take it back.
+   *
+   * `index` is into that scorer's `results` entries. Not host-only — a player
+   * marks their own list, and `scorerId` is ignored from them. The **host** may
+   * name any scorer with `scorerId` and mark that list instead, which is how a
+   * wrong answer gets struck off the TV.
    */
-  | { type: "selfStrike"; index: number; struck: boolean }
+  | { type: "selfStrike"; index: number; struck: boolean; scorerId?: ScorerId }
+  /**
+   * The scroll mirror, `scoring` only: put my scorer's column on the host TV at
+   * this fraction of its scrollable range. Accepted only from that column's
+   * driver — see `driverOf` in `shared/mirror.ts`.
+   */
+  | { type: "scrollTo"; at: number }
   | { type: "backToLobby" }
   | { type: "castVote"; category: string }
   | { type: "resetVotes" }
@@ -73,6 +82,12 @@ export type ClientMessage =
    * 0..MAX_BOTS on arrival. Legal from every phase.
    */
   | { type: "debugBots"; count: number }
+  /**
+   * Sets the scoring reveal's cadence, in milliseconds per line, clamped on
+   * arrival. Host-only, and it moves the whole room: every phone builds the
+   * same reveal schedule the TV does.
+   */
+  | { type: "debugRevealSpeed"; lineMs: number }
   | { type: "endGame" };
 
 export type ServerMessage =
@@ -84,6 +99,14 @@ export type ServerMessage =
   /** This player's own hands. Never broadcast: a leaked hand plus a public
       tally lets the room deduce who voted for what. */
   | { type: "yourHands"; hands: Hand[] }
+  /**
+   * One column's mirrored scroll position. Sent to the host socket alone, and
+   * never persisted or broadcast — a scroll is not game state.
+   *
+   * Addressed by *scorer* rather than by sender: with teams on the sender is
+   * one member of a shared column, and the TV addresses columns by scorer.
+   */
+  | { type: "columnScroll"; scorer: ScorerId; at: number }
   | { type: "error"; code: ErrorCode; message: string };
 
 export type ErrorCode =

@@ -1,3 +1,4 @@
+import { REVEAL_TIMING, clampLineMs } from "./revealtiming";
 import { isMatch, normalize } from "./scoring";
 import type { Results, ScorerResult } from "./scoring";
 import { NO_SELF_MARKS, isSelfStruck, markCount } from "./selfstrike";
@@ -22,31 +23,15 @@ import type { Rng } from "./rng";
  */
 
 /**
- * The pacing of frames 1 and 2, in milliseconds.
- *
- * Here rather than in the host screen because the reveal is no longer only the
- * host's: every phone derives the same `step` from the same schedule and the
- * same `scoring.startedAt`, so a second copy of these numbers would put the TV
- * and the phones on visibly different lines.
+ * Re-exported, not redeclared — the same arrangement `seededRng` is in below.
+ * The pacing constants moved to `shared/revealtiming.ts` once `shared/state.ts`
+ * needed the default cadence to seed `Room.revealLineMs`, which it cannot get
+ * from here without closing an import cycle through `scoring.ts`. Every
+ * existing import site keeps working.
  */
-export const REVEAL_TIMING = {
-  /** Frame 1: per-card deal delay, and how long one card's swing lasts. */
-  DEAL_STAGGER: 150,
-  DEAL_DURATION: 920,
-  /**
-   * Frame 2: one line, every time, whatever the list length. No accelerating
-   * stagger, no length-scaled timing, no batching past a threshold — the single
-   * cadence is what pulls the whole room to the same word at the same moment.
-   */
-  LINE_INTERVAL: 260,
-  /**
-   * The extra beat before a column's first line. Not dead time: the next card
-   * shakes through it, so the room's eye is already on the list about to fill.
-   */
-  COLUMN_PAUSE: 1_000,
-  /** How long a word holds in plain ink before its own strike draws through. */
-  STRIKE_HOLD: 180,
-} as const;
+export {
+  MAX_LINE_MS, MIN_LINE_MS, REVEAL_TIMING, clampLineMs,
+} from "./revealtiming";
 
 /** Which scorer's list reveals next. */
 export type PlayerOrderMode = "random" | "shortest" | "longest";
@@ -104,6 +89,14 @@ export type RevealSchedule = {
   lastStep: number;
   /** How long frame 1 runs for, from `scoring.startedAt`. */
   dealMs: number;
+  /**
+   * The cadence this schedule was actually built at, in ms per line — either
+   * `REVEAL_TIMING.LINE_INTERVAL` or whatever the room's debug slider is set
+   * to. Read it back rather than reaching for the constant: the host screen
+   * paces one beat off it after the last line, and that beat has to be the
+   * same length as the ones before it.
+   */
+  lineMs: number;
   /**
    * Milliseconds after `scoring.startedAt` at which each step lands. Index 0 is
    * `dealMs` — the moment step 0 (nothing revealed, cards dealt) is reached.
@@ -195,7 +188,18 @@ function lineOrder(scorer: ScorerResult, mode: RevealOrderMode): number[] {
 
 export function buildSchedule(
   results: Results,
-  opts: { playerOrder: PlayerOrderMode; lineOrder: RevealOrderMode; rng: Rng },
+  opts: {
+    playerOrder: PlayerOrderMode;
+    lineOrder: RevealOrderMode;
+    rng: Rng;
+    /**
+     * Milliseconds per line, overriding `REVEAL_TIMING.LINE_INTERVAL`. Comes
+     * from the room's debug slider, which is why it is a *room* setting and not
+     * a local one: every phone builds this schedule too, and a TV revealing at
+     * its own pace would be a room watching two different reveals.
+     */
+    lineMs?: number;
+  },
 ): RevealSchedule {
   const partners = clusterRows(results.scorers);
   const order: ScorerId[] = [];
@@ -219,16 +223,19 @@ export function buildSchedule(
   const dealMs =
     Math.max(0, results.scorers.length - 1) * REVEAL_TIMING.DEAL_STAGGER +
     REVEAL_TIMING.DEAL_DURATION;
+  // The column pause rides the line cadence rather than staying fixed: at a
+  // sixth of the default interval a full second between columns stops being a
+  // beat the eye follows and becomes the whole reveal.
+  const lineMs = clampLineMs(opts.lineMs ?? REVEAL_TIMING.LINE_INTERVAL);
+  const pauseMs = REVEAL_TIMING.COLUMN_PAUSE * (lineMs / REVEAL_TIMING.LINE_INTERVAL);
+
   const timeOf = [dealMs];
   for (let s = 1; s <= step; s++) {
     const opensColumn = order.some((id) => colStart[id] === s);
-    timeOf[s] =
-      timeOf[s - 1] +
-      REVEAL_TIMING.LINE_INTERVAL +
-      (opensColumn ? REVEAL_TIMING.COLUMN_PAUSE : 0);
+    timeOf[s] = timeOf[s - 1] + lineMs + (opensColumn ? pauseMs : 0);
   }
 
-  return { order, colStart, stepOf, partners, lastStep: step, dealMs, timeOf };
+  return { order, colStart, stepOf, partners, lastStep: step, dealMs, lineMs, timeOf };
 }
 
 /** How many lines are out `elapsed` ms after `scoring.startedAt`. */

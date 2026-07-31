@@ -3,6 +3,19 @@ import { Wordmark } from "../components/Wordmark";
 
 const CODE_LEN = 4;
 
+/**
+ * Moves the caret to another box without letting the browser scroll to it.
+ *
+ * A plain `focus()` scrolls the focused element into view, and on a phone the
+ * on-screen keyboard has just shrunk the visual viewport — so every letter
+ * typed *and* every backspace made the whole page jump up and settle back
+ * down. The boxes are all on one row and all already on screen; there is
+ * nothing for that scroll to reveal.
+ */
+function focusBox(el: HTMLInputElement | null | undefined): void {
+  el?.focus({ preventScroll: true });
+}
+
 /** Four single-letter boxes, 2FA-style, instead of one free-text field. */
 function RoomCodeInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const boxes = useRef<(HTMLInputElement | null)[]>([]);
@@ -29,18 +42,18 @@ function RoomCodeInput({ value, onChange }: { value: string; onChange: (v: strin
               const next = chars.slice();
               letters.forEach((c, j) => { next[i + j] = c; });
               onChange(next.join(""));
-              boxes.current[Math.min(i + letters.length, CODE_LEN - 1)]?.focus();
+              focusBox(boxes.current[Math.min(i + letters.length, CODE_LEN - 1)]);
               return;
             }
             setChar(i, raw);
-            if (raw && i < CODE_LEN - 1) boxes.current[i + 1]?.focus();
+            if (raw && i < CODE_LEN - 1) focusBox(boxes.current[i + 1]);
           }}
           onKeyDown={(e) => {
             if (e.key === "Backspace" && !chars[i] && i > 0) {
-              boxes.current[i - 1]?.focus();
+              focusBox(boxes.current[i - 1]);
             } else if (e.key === "Enter" && i < CODE_LEN - 1) {
               e.preventDefault();
-              boxes.current[i + 1]?.focus();
+              focusBox(boxes.current[i + 1]);
             }
           }}
           autoCapitalize="characters"

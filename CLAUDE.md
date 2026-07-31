@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (550 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (564 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -123,6 +123,19 @@ replaced wholesale on each `state` push; every client action is a *request*.
   voting, and standings, and is still the one exception (host solo-start
   bypasses `MIN_PLAYERS`), and `reduce` skips `settle` for it. From a lobby with
   teams on it opens team select rather than a countdown.
+- **`backToLobby` is legal from `playing` and `scoring` as well**, so those two
+  screens can carry the same top-right back-out every other host screen does.
+  Between them they abandon a round while it is being written and while it is
+  being read, which is what a host pressing it is asking for, and that round
+  never reaches the D1 archive for free: `maybeArchiveBank` keys off the
+  `scoring -> standings` transition and neither of these is one. Both go all the
+  way home, teams or not — the one-step-back rule belongs to the phases *before*
+  round one, and from a round in progress there is nothing to step back into.
+- **`backToLobby` clears `paused`**, for the reason the view jumper does. A hold
+  belongs to the phase it was taken in, and one carried into a lobby freezes the
+  room with no visible cause: `tick` returns early while it is set, so no
+  readiness would ever open a countdown again. Both holdable phases — `playing`
+  and `voting` — now have a back-out on screen while the hold is on.
 - Voting is bookended by a countdown on both sides, so `countdown` carries a
   `to: "voting" | "playing"`. It is the one phase field that is stored rather
   than derived: two distinct countdowns now sit at `history.length === 0`, so
@@ -132,9 +145,22 @@ replaced wholesale on each `state` push; every client action is a *request*.
   `settle` closes voting before anyone has voted. It happens in exactly one
   place — the tick that opens `voting`. **Opening `scoring` clears them for the
   same reason** — see "The scoring reveal" — as does banking a round.
-- The post-voting countdown is not readiness-cancellable. `everyoneReady` needs
-  `MIN_PLAYERS`, so after a host solo-start that branch would tear it down on
-  the next event.
+- **The readiness floor is `MIN_PLAYERS` in the lobby and 1 past it**
+  (`readyFloor` in `shared/reduce.ts`). The lobby's floor is the one that is
+  really a minimum — nobody's Ready button should start a match they would play
+  alone, and the host's Start is the override that says so. Once the match is
+  *running* the room is whoever is still in it: with a floor of `MIN_PLAYERS`
+  there a solo host-started match could not reach round two, team select would
+  not close for the last person standing on a team, and a game four of five
+  people walked out of hung on a count it could no longer reach. A countdown
+  answers for whichever phase it would fall back to, so the "would this open?"
+  and "does it stay open?" halves cannot disagree about the same moment.
+- The post-voting countdown is not readiness-cancellable **at all**, and that is
+  not about the floor. On that side of the edge `ready` means "votes spent", and
+  the 60-second deadline closes voting whether or not anybody spent theirs — so
+  a room where one person never voted arrives there already not-ready, and
+  tearing the countdown down would drop it through `backPhase` to the *lobby*,
+  abandoning the match.
 - The server implements `onAlarm()`, **not** `alarm()`. PartyServer's own
   `alarm()` initializes the object then calls `onAlarm()`; overriding `alarm()`
   skips `onStart()` on a cold wake, `this.room` stays null, and the round hangs
@@ -173,8 +199,9 @@ replaced wholesale on each `state` push; every client action is a *request*.
   own.
 - **Local dev stays plain http.** An https page cannot open a `ws://` socket, so
   no `--local-protocol https`.
-- The host is not a player. A natural start needs 2+ *connected* players all
-  ready; the host's Start button force-readies everyone and can start solo.
+- The host is not a player. A natural start *out of the lobby* needs 2+
+  *connected* players all ready; the host's Start button force-readies everyone
+  and can start solo. Past the lobby the floor is 1 — see `readyFloor`.
 - **The round number is derived, never stored.** `currentRound(room)` is
   `history.length + 1`. A stored counter would have to increment when an
   inter-round countdown opens and decrement when it is cancelled; history only
@@ -452,10 +479,12 @@ slots, those become a pool of **author-blind** cards, and each player is dealt
 
 ### Debug menu
 
-Mostly off every game path — the Usage and Experimental sections are deletable
-without the game noticing. Three sections are the exception: **Debug**, **Views**
-and **Bots** are the only things outside normal play that mutate a live room, and
-all three are host-only and enforced on the server.
+Mostly off every game path — the Usage section is deletable without the game
+noticing. Three sections are the exception: **Debug**, **Views** and **Bots** are
+the only things outside normal play that mutate a live room, and all three are
+host-only and enforced on the server. **Experimental is a fourth, in part**: its
+on/off switches are local to the device, but the reveal-speed slider is not and
+cannot be — see `Room.revealLineMs` below.
 
 The Debug section holds the round controls.
 
@@ -552,6 +581,30 @@ can see a crowded screen.
   humans picking; a placeholder has nothing to pick with, and an empty panel is
   the one thing that screen is dressed to avoid.
 
+**The reveal-speed slider** (`Room.revealLineMs`, the Experimental section) sets
+how many milliseconds the scoring reveal spends per line.
+
+- **It is room state, and that is not a convenience.** Every phone builds the
+  same schedule the TV does and strikes each word on the same beat, so a cadence
+  one device kept to itself would put the room on two different reveals — the
+  same reasoning that puts FAST FORWARD and `viewNonce` in `RoomState`. It is
+  therefore host-only and rejected in `shared/reduce.ts` like its siblings, and
+  it is the one control in Experimental that is not local to the device.
+- **The column pause rides the cadence rather than staying fixed.** At a sixth
+  of the default interval a full second between columns stops being a beat the
+  eye follows and becomes the whole reveal.
+- **`clampLineMs` guards it at every door** — the event, the schedule and
+  `load()`. It is the denominator of every step in `timeOf`, so an undefined or
+  a zero would land every line on the same millisecond.
+- **`REVEAL_TIMING` now lives in `shared/revealtiming.ts`**, re-exported by
+  `shared/reveal.ts` so no import site changed. Same arrangement as
+  `shared/rng.ts` and for the same reason: `shared/state.ts` needs the default
+  cadence to seed the field, and it cannot import `reveal.ts` without closing a
+  cycle through `scoring.ts`.
+- **Read the cadence back off `RevealSchedule.lineMs`, not off the constant.**
+  `HostScoring` paces one beat after the last line, and that beat has to be the
+  same length as the ones before it.
+
 The rest is off every game path, and deletable without the game noticing.
 
 - **`GET /debug/usage` on the Worker, live in every environment including
@@ -600,14 +653,82 @@ See "The debug usage panel" in `HOSTING.md` for the API token setup.
 Entries render optimistically and reconcile on `entryAck` (a 30s round cannot
 wait on a round trip); `seq` is present only while an entry is unacked.
 
+**Every countdown in the game is one card** (`src/components/GetReady.tsx`), on
+the TV and on the phones, with no exceptions left — team select was the last
+screen wearing the old `.get-ready` plaque, which made the count a room reads
+from furthest away the one drawn smallest, and that class is gone. The lobby's
+count into the vote, the one after voting closes, the one out of team select and
+the one between rounds are the same moment, so they are the same
+object: the gold plaque, the teal tab overhanging its top-left corner naming
+where it leads, and — on the host screens that can stop it — a Stop button. No
+caption: the Ready button that opened the count is still under the player's thumb
+and still says Not ready, and a five-second card is not read. It is normally
+**posed over** the screen it interrupts
+rather than replacing it, and whatever it is posed over wears `countdown-dim`.
+Which parts dim is stated per screen and is not incidental: the phones keep their
+Ready button lit through the count, because un-readying is the room's brake on
+it, and team select dims its panels on both devices but not the Leave button or
+the host's Auto sort, which stay legal through the count.
+
+**The closed category vote is the one screen the card is laid out on rather than
+posed over** (`.host-voting__countdown`), and it is the exception that states the
+rule. Everywhere else the card interrupts furniture the room has already read.
+There it would cover the only thing on screen worth reading — the winning
+categories, or the "no one voted" line outright — and that screen exists for
+five seconds precisely so the room can read it. So the two share the height and
+nothing dims: `.host-voting__stage` takes everything under the header and spaces
+the pair with `space-around`, both sized to their content. **The reveal is the
+one that gives** — eleven surviving categories want more height than a 720p TV
+has, so the top row drops its 206px basis and the card's band never shrinks. A
+card told to shrink does not: its height is padding and a 150px numeral, so only
+the box gets smaller and the card hangs off the bottom of the screen. The phone's
+copy of that screen stays posed: it is a locked never-scrolling screen with a
+personal recap on it, and there is no height to share.
+
 **Every host screen's back-out lives top-right, as `HostExit`** — a cream
 outline on the field, deliberately not a `.btn`. Gold with a hard shadow means
 "go forward" in this app, so the footer carries exactly one forward action and
-the button that abandons the phase is never beside it. Closing the room is the
-one host action that asks first (`ConfirmDialog`), because `endGame` kicks
-everyone and cannot be undone by pressing it again. The round marker is
+the button that abandons the phase is never beside it. The round marker is
 **omitted** on team select and voting: both only happen at `history.length ===
 0`, so `HostHeader`'s `round` is optional.
+
+**It is a closed ✕ that opens into its words on hover**, and the label is the
+button's `aria-label` either way — which is the whole reason the collapse is
+safe. There is no pointer on a TV, so on the device this screen is usually
+being *watched* on the ✕ is all there is; the words are for the laptop it is
+being *driven* from. `active` holds it open and filled while the dialog it
+opened is up, because a dialog whose opener has collapsed behind it has no
+visible subject. The ✕ is **drawn, not typed**: `--display` has one weight, so
+a glyph cannot be made heavier, and its side bearings sit it a pixel or two up
+and left of a circle that makes exactly that obvious.
+
+**The lobby's Close room is `pinned` and wears no ✕** — the one exit that never
+collapses. Everything else in that corner backs out of a phase into a room that
+is still there; this ends the room itself, and it is the control a host who has
+never seen this screen needs to find without hovering anything.
+
+**Every back-out that ends a game asks first, as `HostBackToRoom`** — the
+button and its `ConfirmDialog` in one component, because the question is the
+same on all four screens that carry it. Two deliberately do not:
+
+- **The final standings**, where the match is already over. Nothing is running
+  to end, and the footer's gold button does the same thing unguarded.
+- **"Back to teams"**, the voting screen's back-out *with teams on*. That steps
+  to team select rather than home (see `backToLobby`), so no round is lost and
+  the only casualty is a tally nobody has acted on. Warning that the game will
+  end would be warning about something that does not happen.
+
+Closing the room from the lobby keeps its own dialog rather than this one:
+`endGame` kicks everybody out of the room itself, which is a different and
+larger thing than ending the game inside it.
+
+**The room chip leads the header and the screen's own title takes the far end.**
+The join instruction is the one thing on a TV that has to be in the same corner
+every time — somebody walking in reads that corner and nothing else — so no
+screen gets to lead with its own name. The standings had it the other way round,
+on the screen a room sits in front of longest. The final board is the exception
+that proves it: the match is over, there is nobody left to join, and it leads
+with the MATCH OVER plaque instead.
 
 **The standings are a staircase, and a step's height is keyed to `place`, not
 to its column index** (`src/components/Podium.tsx`). That is what makes two
@@ -632,14 +753,56 @@ different jobs, and a host toggle only ever puts the wrong one up. Both read
 the same `computeStandings` array in the same order, so **nothing about
 placement or ties may depend on which is showing.**
 
+**A round pays out inverted, and the highest total wins.** First takes a point
+for every scorer *that round had* and last always takes exactly one, so a round
+is worth more the bigger the room and a total only ever grows. The size comes
+from the round's own `places` record, never from the room as it now stands — a
+player who joined for round three must not reprice round one — and a shared
+place shares its payout while the places a tie skips are simply never awarded.
+`Standing.badges` stays a list of *places*, deliberately: what a place was worth
+depends on how big its round was, so a strip of payouts would say what the room
+was worth rather than what the scorer did. This inverts the golf scoring the
+match-structure spec describes; that document is now historical on this point.
+
 `StandingsList` runs full width to five scorers and **splits into two columns
 from six**, filled *down* the first column before the second so reading order
 stays 1st to last. That is why it is a `grid` with `grid-auto-flow: column` and
 a row-track list built in the component: the leader's row is taller only in the
 single-column board, because with two columns row one is shared with whoever
 sits at the top of column two. It carries no per-round chips — the podium's
-badge strip is where the golf sum is itemised, and between rounds the room
-wants the total, not the arithmetic.
+badge strip is where a whole match is itemised — but it does carry `last`, what
+the round just played paid, immediately left of the total. That is the one piece
+of arithmetic a room between rounds actually asks for.
+
+**Readiness on the standings board is a marker per row, never a tally.** The
+footer's "n of m READY" is gone: a count says how many are left when what the
+host wants is *which*. A ready row wears the mark, a waiting one wears nothing,
+and a part-ready *team* is the single exception that still gets a number. It is
+also why banking a round readies the bots (`readyBots` in `shared/bots.ts`) —
+`isWaiting` already excused them, but under a per-row marker a bot with a blank
+chip reads as the holdout. That is cosmetic by construction: the flag it sets
+was already true to every rule that reads it.
+
+**There is one ready marker in the app and it is the lobby's**
+(`src/components/ReadyMark.tsx`). The same tag is worn by the lobby pill, the
+standings row, the podium's mid-match state and the results card — it had been
+drawn three different ways for one fact, and a host reading the room off a TV
+should not have to learn a second shape for it halfway through a match. It
+carries an ink outline the lobby's did not need, because only there does it sit
+on gold; everywhere else the ground is cream. Sizing is the host screen's to set
+(the leader's row takes a step up, the split board a step down), the drawing is
+not. **Its predicate is `isWaiting`, never `player.ready` alone** — a bot never
+readies, and a readout that disagreed with the rules would report scenery as the
+holdout.
+
+**The results card shows readiness where RANK used to be, and dropping RANK is
+the point rather than a side effect.** Readying up on that screen is what banks
+the round, so the room's answer belongs on the card that is asking; the rank was
+already said twice by the time it meant anything — the columns re-order into it
+and the top three take a medal. The slot is always rendered, holding the tag or
+nothing: `id-card__head` is `flex: 0 0 auto` above a list that takes the rest, so
+a line that came and went would push a whole column of words down the instant
+somebody readied, mid-reveal, on the screen built not to move under the eye.
 
 Screens are a pure `switch` on `room.phase.name` in `HostView`/`PlayerView`.
 Both have an explicit `ReactElement` return type — **that annotation is what
@@ -652,6 +815,83 @@ and drops it when the focused element disappears, so the "Ready up" tap is the
 only chance to have a keyboard up when `playing` begins off a timer. Do not
 move that input into a phase-specific screen, and keep it out of a `<form>`
 (triggers Safari's AutoFill bar).
+
+### Music
+
+One track per **scene** — `sceneFor(room)` in `shared/music.ts` is the only
+mapping from phase to music, and the scene ids *are* the folder names under
+`src/audio/`. Adding one is a folder plus a case; there is no manifest.
+
+- **Naming the same scene twice is how a track carries across a screen change.**
+  `play()` is idempotent on the scene id, so continuity is expressed in
+  `sceneFor` and nowhere else. That is what makes the round's music one unbroken
+  piece across `voting`, the countdown and `playing` — three phases, one name,
+  no restart at either seam.
+- **The countdown clip is a lead-in, not a sting, and the round-one countdown is
+  the one that does not get it** — the track it would lead into is already
+  playing by then. **Its hand-off is scheduled off the clip's own duration**,
+  never off the phase change: the phase turns over on a server alarm, which is
+  near enough for a screen and nowhere near enough for a bar of music.
+- **The join fires `HANDOFF_LEAD_MS` early, on purpose.** Starting a second
+  `HTMLAudioElement` costs an audio callback or two even fully buffered, so a
+  join aimed at the last sample lands after it — and a hole in a piece of music
+  reads as a stutter where a few ms of overlap is inaudible. The bias spends the
+  latency on the side nobody hears. `ended` remains the backstop for a clip
+  whose metadata has not loaded.
+- **`COUNTDOWN_MS` is therefore set by the audio**, and must not be shorter than
+  the clip in `src/audio/countdown/`. It is the one place a file somebody
+  dragged into a folder couples to the server; `LEAD_CLIP_MS` in
+  `shared/music.ts` records the measured length and `shared/music.test.ts` fails
+  if the two disagree. Rounded up, never trimmed to fit — the overshoot is
+  inaudible, a shortfall clips the last bar.
+- **A scene is either a bed or a cue, and that decides two things.** What an
+  *empty folder* means: an empty bed is silence, an empty cue is no cue at all —
+  nothing is interrupted and whatever is playing carries on. Both standings
+  screens are cues for exactly that reason, so leaving `midgame_standings/` or
+  `endgame_standings/` empty keeps the results music going with no opt-out to
+  set. And how a track *arrives*: **a cue cuts the outgoing track dead, a bed
+  crossfades.** A cue has an attack to land on a moment, and 400ms of the last
+  track over its first bar is two songs at once rather than a transition.
+- **The media lives in `src/audio/<scene>/`, not in `public/`, and the filename
+  never matters.** `src/audio/tracks.ts` runs one `import.meta.glob` over every
+  scene folder, so replacing a track is a drag and a delete. A `public/` file
+  can only be reached by a literal path, which is the rename this arrangement
+  exists to avoid. Every scene is independently optional, and the game plays
+  with none of them.
+- **A folder may hold both encodings of one track.** Ogg is preferred where the
+  browser plays it (an MP3's encoder padding is an audible tick on every loop);
+  Safari plays no Ogg at all, so an ogg-only folder would be silence there.
+- **It is host-only, and `useMusic` being called from `HostView` alone is the
+  whole of that rule.** A phone never mounts that component, so there is no
+  per-device check to get wrong.
+- **A view jump is a teleport, not a transition, and gets none of the continuity
+  rules.** `useMusic` passes `viewNonce` — bumped by `debugJump` and by nothing
+  else — and a change to it cuts everything and starts the target scene clean.
+  Without that, jumping from a round to the standings leaves the *round's* music
+  under them, because an empty `midgame_standings/` correctly says "keep what
+  you have" and the jumper never went through the reveal that made that true.
+  It is a dependency of the effect as well as an argument, so jumping to the
+  screen already showing — the panel's refresh — restarts the music too.
+- **The cancel is told apart by where it lands, not by a flag.** A countdown
+  that runs its course moves the room on to the round's music; one somebody
+  un-readies out of arrives back at the very scene it interrupted, and that one
+  waits `MUSIC_RESUME_DELAY_MS` and restarts from the top. `interrupted`
+  deliberately outlives the hand-off — between the clip ending and the card
+  coming down a cancel is still a cancel — and is dropped when the *phase*
+  catches up, which is the no-op `play()` at the top of the method.
+- **The player is imperative and outside React** (`src/audio/music.ts`), for the
+  reason the scroll mirror is: an `HTMLAudioElement`'s job is to survive
+  re-renders, and the only question that matters is whether two strings differ.
+  Volume ramps are `setInterval`, not an `AudioContext` — 400ms of arithmetic
+  does not need a second audio graph kept alive across a hibernating tab.
+- **The round's track is constructed at the lobby, not at the countdown.** The
+  hand-off is only instant if the file is already in memory when the lead ends;
+  one that starts downloading on that event arrives well after the beat it was
+  meant to land on. `begin()` warms it while there is time to spare.
+- **A refused `play()` re-arms rather than giving up.** Creating a lobby is a
+  gesture on this very page, but a host *resuming* a room after a refresh or a
+  discarded tab arrives with no gesture on record — and that is the device the
+  room is listening to.
 
 ### The scoring reveal
 
@@ -667,10 +907,54 @@ card ends on. Rules to keep:
   **`PlayerScoring` run the identical reveal on every phone** — it builds the
   same schedule from the same arguments and strikes each word on the beat the TV
   does. Nothing about the reveal is ticked over the wire, and the two schedules
-  must not drift: `playerOrder`/`lineOrder`/seed are the same in both screens.
+  must not drift: `playerOrder`/`lineOrder`/seed **and `lineMs`** are the same in
+  both screens, which is why the cadence is room state and not a preference.
+- **The trail is `scorerMark`, shared by both screens.** A rival player is their
+  own face; a rival team is a bare swatch in its accent — the colour is what the
+  room navigates teams by, and it identifies one in less room than its name did.
+  Nothing rides inside the swatch: a team's list is shared, so *which member*
+  typed the duplicate is not the question a struck word asks. The TV and the
+  phone must draw the same trail or two people are looking at one word and
+  counting different rivals — which is why **the trail has a size floor and does
+  not scale with the word.** `--word-size` is 15px on the TV and 19px on the
+  phone, so trailing it by 4px put the faces at 11px on the screen read from
+  furthest away. It is identity, not prose. The swatch is `1em` of the trail for
+  the same reason, and the trail's line box is 1.3 rather than 1: emoji draw well
+  outside the em box, and a clip box exists to cut the strip off when it is too
+  long, never to shave the tops off the faces.
+- **The host can strike any list; a player can strike only their own.** Same
+  `selfStrike` event, with the host naming a scorer (`scorerId`) — honoured for
+  the host alone, ignored from anyone else. The host is reading the round out to
+  the room off the TV, and "that is not a real one" has to be sayable about a
+  word that is not yours. The host holds no seat, so a host who names nobody
+  marks nothing rather than falling through to somebody's list, and a duplicate
+  is refused from either of them.
 - **FAST FORWARD is room state (`scoring.skipped`), not a local jump.** A skip
   the TV kept to itself would leave the phones crawling through lines the room
   has already been shown.
+- **The scroll mirror is the one thing in the app that deliberately ticks over
+  the wire.** Once the reveal is over, a player's scroll on their own list
+  drives their column on the TV. There is no schedule to derive live human
+  input from, so the traffic is real and the rate is capped instead — 250ms
+  plus a settle send, against a 100,000/day *account-wide* DO ceiling. It rides
+  a host-directed fast path in `party/server.ts`, above the
+  reduce/persist/broadcast tail: a scroll position is not game state, must not
+  survive a refresh, and exactly one socket wants it. **Nothing about it enters
+  `Room` or React state** — `roomStore.onColumnScroll` is a plain listener and
+  `HostScoring` writes `scrollTop` onto the nodes directly, because a 4Hz value
+  in that render tree is ten columns of two hundred rows re-rendering four
+  times a second.
+- **A column's driver is derived per message, never claimed.** `driverOf`
+  (`shared/mirror.ts`) is the first **connected, human** member in roster
+  order. Human is load-bearing: bots are `connected: true`, so a bot seated by
+  `seatBots` would otherwise lead a roster and own a column it can never drive.
+  Deriving rather than storing is what makes a disconnect hand the column over
+  with nothing watching for it.
+- **The two ends of the mirror are gated at different instants, on purpose.**
+  The phone sends from `step >= lastStep`; the TV buffers and applies from
+  `rankStage === 2`. In between it is finishing its own auto-scroll and flying
+  the measured swap. Buffering rather than dropping is what makes the gap
+  invisible.
 - **The phone shows the whole list from the first frame; only the *bad news*
   arrives over time.** It is your own list and you know what is on it. So
   `PlayerScoring` ignores `RowView.revealed` and reads only `struck`/`alsoShown`,
@@ -717,8 +1001,10 @@ card ends on. Rules to keep:
 - `docs/superpowers/specs/2026-07-25-w104-mvp-design.md` — the design spec:
   decisions, rationale, failure-handling table. Read before non-trivial changes.
 - `docs/superpowers/specs/2026-07-26-match-structure-design.md` — the match
-  structure spec: host-set round count/timer, the standings phase, golf
-  placement scoring. Supersedes the single-round scope in the MVP spec above.
+  structure spec: host-set round count/timer, the standings phase, placement
+  scoring. Supersedes the single-round scope in the MVP spec above. **Its golf
+  direction is historical** — the payout is inverted now and the highest total
+  wins; see "Which shape is up" above.
 - `docs/superpowers/specs/2026-07-26-category-voting-design.md` — the category
   voting spec: the 10-category pool, vote budget, the weighted draw, spent
   categories. Supersedes the fixed `"woman"` category assumed by the MVP spec
@@ -750,6 +1036,9 @@ card ends on. Rules to keep:
   integer schedule, the strike/back-check rule, the measured swap, the podium and
   the guarded footer swap. Read with `design_handoff_host_scoring_reveal/README.md`,
   which is the brief it answers. Implemented.
+- `docs/superpowers/specs/2026-07-30-scroll-mirror-design.md` — the scroll
+  mirror: the fraction unit and why not a row index, `driverOf`, the
+  host-directed fast path and its request budget, the two gates. Implemented.
 - `docs/superpowers/specs/2026-07-30-custom-categories-design.md` — the custom
   pool: the `categorySource` setting, the writing phase, the quota and vote
   arithmetic, the exact-exposure deal, the privacy boundary, and what the rules

@@ -1,5 +1,6 @@
 import { Fragment, useRef } from "react";
 import type { ReactElement } from "react";
+import { useMusic } from "../../audio/music";
 import { roomStore } from "../../net/room";
 import type { ClientState } from "../../net/room";
 import { countdownScreen } from "../../../shared/state";
@@ -15,6 +16,13 @@ import { HostVoting } from "./HostVoting";
 
 export function HostView({ state, onLeave }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
+
+  // Music is host-only, and this call is the whole of that rule: a phone never
+  // mounts this component. It sits above the screen switch rather than inside
+  // any screen so a track survives the phase change that follows it — and above
+  // the `viewNonce` remount below, so the debug menu's refresh restarts the
+  // animations without restarting the music.
+  useMusic(room);
 
   // The host leaving is the end of the game, not just of their own session:
   // without a host nobody can start the next round, so the room goes with

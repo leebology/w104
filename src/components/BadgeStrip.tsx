@@ -13,12 +13,14 @@ type Props = {
 };
 
 /**
- * One chip per round played, showing that round's finishing place. Gold for a
- * win, cream otherwise — the strip is the score, not decoration, so a run of
- * wins should read across a room at a glance.
+ * One chip per round played, showing that round's finishing *place*. Gold for a
+ * win, cream otherwise — the strip is the shape of a match, not decoration, so
+ * a run of wins should read across a room at a glance.
  *
- * The chips are also the only place the golf sum is itemised: they add up to
- * the row's points, which is what makes a low total legible as a *good* one.
+ * Places, deliberately, not the points they paid: what a place is worth depends
+ * on how many scorers that round had, so a strip of payouts would say what the
+ * room was worth rather than what this scorer did. The points are the one big
+ * number beside the strip.
  */
 export function BadgeStrip({ places, categories, className }: Props) {
   if (places.length === 0) return null;

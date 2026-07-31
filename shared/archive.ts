@@ -329,9 +329,11 @@ export function roundRows(
 }
 
 /**
- * Final standings as rows. `computeStandings` already ranks by golf points
- * with ties sharing a place, so this is a projection rather than a second
- * ranking implementation.
+ * Final standings as rows. `computeStandings` already totals the per-round
+ * payouts and ranks by them, ties sharing a place, so this is a projection
+ * rather than a second ranking implementation. `total_score` is therefore
+ * "higher is better" — it was the reverse before the payout was inverted, and
+ * any query written against the old rows means the opposite of what it says.
  */
 export function gameResultRows(room: Room, game: string): GameResultRow[] {
   return computeStandings(rosterOf(room), room.history).map((s) => ({

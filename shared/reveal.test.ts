@@ -1,5 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
+  MAX_LINE_MS,
+  MIN_LINE_MS,
   REVEAL_TIMING,
   activeColumn,
   buildSchedule,
@@ -166,6 +168,38 @@ describe("buildSchedule", () => {
     ]);
     expect(schedule.partners[rowKey("p1", 1)]).toEqual([]);
   });
+
+  test("the cadence defaults to REVEAL_TIMING and paces every step", () => {
+    const schedule = buildSchedule(score([["a", "b"]]), inEntryOrder());
+    expect(schedule.lineMs).toBe(REVEAL_TIMING.LINE_INTERVAL);
+    // Step 1 opens the only column, so it pays the column pause as well.
+    expect(schedule.timeOf[1] - schedule.timeOf[0]).toBe(
+      REVEAL_TIMING.LINE_INTERVAL + REVEAL_TIMING.COLUMN_PAUSE,
+    );
+    expect(schedule.timeOf[2] - schedule.timeOf[1]).toBe(REVEAL_TIMING.LINE_INTERVAL);
+  });
+
+  test("a supplied cadence scales the column pause with it", () => {
+    const half = REVEAL_TIMING.LINE_INTERVAL / 2;
+    const schedule = buildSchedule(score([["a", "b"]]), {
+      ...inEntryOrder(),
+      lineMs: half,
+    });
+    expect(schedule.lineMs).toBe(half);
+    expect(schedule.timeOf[2] - schedule.timeOf[1]).toBe(half);
+    expect(schedule.timeOf[1] - schedule.timeOf[0]).toBe(
+      half + REVEAL_TIMING.COLUMN_PAUSE / 2,
+    );
+  });
+
+  test("an out-of-range cadence is clamped rather than trusted", () => {
+    const fast = buildSchedule(score([["a"]]), { ...inEntryOrder(), lineMs: 0 });
+    expect(fast.lineMs).toBe(MIN_LINE_MS);
+    const slow = buildSchedule(score([["a"]]), { ...inEntryOrder(), lineMs: 1e9 });
+    expect(slow.lineMs).toBe(MAX_LINE_MS);
+    const junk = buildSchedule(score([["a"]]), { ...inEntryOrder(), lineMs: NaN });
+    expect(junk.lineMs).toBe(REVEAL_TIMING.LINE_INTERVAL);
+  });
 });
 
 describe("rowView", () => {
@@ -199,6 +233,16 @@ describe("rowView", () => {
     expect(after.backCheck).toBe(true);
     expect(after.struckAt).toBe(3);
     expect(after.alsoShown).toEqual(["p2"]);
+  });
+
+  test("a partner with two near-spellings appears in the trail once", () => {
+    const twice = score([["zendaya"], ["zendya", "zendaya"]]);
+    const sched = buildSchedule(twice, {
+      playerOrder: "shortest", // p1 (1 word) first, p2 second
+      lineOrder: "entry",
+      rng: seededRng("x"),
+    });
+    expect(rowView(sched, "p1", 0, sched.lastStep).alsoShown).toEqual(["p2"]);
   });
 
   test("a word landing already-duplicated strikes on its own step, not before", () => {

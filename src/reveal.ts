@@ -19,8 +19,9 @@ export function parity(ordinal: number): "a" | "b" {
  * A row's manual mark as one class suffix: which way its last tap went, plus the
  * parity, so tapping the same word off and on again plays twice.
  *
- * Shared by both screens rather than written twice — the TV draws a self-strike
- * exactly as the phone that made it does, and only one of them can un-draw it.
+ * Shared by both screens rather than written twice — the TV draws a mark exactly
+ * as the phone that made it does, and either of them can un-draw it: the scorer
+ * on their own list, the host on anybody's.
  */
 export function selfMarkClass(row: RowView): RowReveal["selfMark"] {
   if (row.selfMarks === 0) return null;

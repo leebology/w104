@@ -6,7 +6,9 @@ import { customEnabled } from "../../../shared/gamemodes";
 import type { Hand } from "../../../shared/customCategories";
 import { voteBudget, voteShares, votesSpent } from "../../../shared/voting";
 import { isWaiting } from "../../../shared/bots";
+import { currentRound } from "../../../shared/state";
 import type { PlayerId, RoomState } from "../../../shared/state";
+import { GetReady } from "../../components/GetReady";
 import { roomStore } from "../../net/room";
 import { PlayerVotingCustom } from "./PlayerVotingCustom";
 
@@ -70,7 +72,7 @@ export function PlayerVoting({ room, playerId, hands, offset, countdown, drafts 
   return (
     <main className="screen screen--mobile screen--locked player-voting">
       {/* No round marker: voting only ever happens before round one. */}
-      <section className="card player-voting__head">
+      <section className={`card player-voting__head${closed ? " countdown-dim" : ""}`}>
         {left > 0 ? (
           <span className="player-voting__count" key={bump}>{left}</span>
         ) : (
@@ -98,7 +100,12 @@ export function PlayerVoting({ room, playerId, hands, offset, countdown, drafts 
         </span>
       </section>
 
-      <ul className={locked ? "player-voting__grid player-voting__grid--locked" : "player-voting__grid"}>
+      <ul
+        className={
+          (locked ? "player-voting__grid player-voting__grid--locked" : "player-voting__grid") +
+          (closed ? " countdown-dim" : "")
+        }
+      >
         {BALLOT.map((category) => {
           const n = mine[category] ?? 0;
           // Last on the ballot and the full width of the grid: it is on every
@@ -149,8 +156,10 @@ export function PlayerVoting({ room, playerId, hands, offset, countdown, drafts 
       </ul>
 
       {closed ? (
-        <div className="player-voting__foot">
-          <p className="get-ready get-ready--small">Get ready… {remaining}</p>
+        // The same card the TV is showing, over the same dimmed screen. There
+        // is no Stop on this one on either device — see HostVoting.
+        <div className="countdown-pose">
+          <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
         </div>
       ) : (
         <>

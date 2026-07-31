@@ -6,6 +6,7 @@ import { roomStore } from "../../net/room";
 import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { GetReady } from "../../components/GetReady";
 import { HostExit, HostHeader, HostHeaderRight, PlayerCount } from "./HostHeader";
 import { GameModesDrawer } from "./GameModesDrawer";
 import { GameSettingsDrawer } from "./GameSettingsDrawer";
@@ -112,6 +113,7 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
                 it again. */}
             <HostExit
               label="Close room"
+              pinned
               active={closing}
               onClick={() => setClosing(true)}
             />
@@ -119,7 +121,11 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
         }
       />
 
-      <div className="host-lobby__stage">
+      <div
+        className={
+          countdown ? "host-lobby__stage countdown-dim" : "host-lobby__stage"
+        }
+      >
         {/* The label the round screen gives NAME A: — cream Bungee above the
             gold, not a plaque on it. */}
         <p className="host-lobby__label">ROOM CODE:</p>
@@ -163,32 +169,38 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
         Game settings
       </button>
 
-      <div className="host-lobby__footer">
-        {countdown ? (
-          <>
-            <p className="get-ready">Get ready… {remaining}</p>
-            <button
-              type="button"
-              className="btn btn--secondary btn--small"
-              onClick={() => roomStore.send({ type: "cancelStart" })}
-            >
-              Stop
-            </button>
-          </>
-        ) : (
-          <>
-            {waiting && <p className="host-lobby__hint">Waiting for players to join…</p>}
-            <button
-              type="button"
-              className="btn host-lobby__start"
-              disabled={waiting}
-              onClick={() => roomStore.send({ type: "startGame" })}
-            >
-              Start game
-            </button>
-          </>
-        )}
+      {/* The footer keeps its shape through the count rather than swapping its
+          contents: it steps back with the rest of the screen and the countdown
+          card carries the only live control, so nothing under the card moves
+          when the count opens or is stopped. */}
+      <div
+        className={
+          countdown ? "host-lobby__footer countdown-dim" : "host-lobby__footer"
+        }
+      >
+        {waiting && <p className="host-lobby__hint">Waiting for players to join…</p>}
+        <button
+          type="button"
+          className="btn host-lobby__start"
+          disabled={waiting}
+          onClick={() => roomStore.send({ type: "startGame" })}
+        >
+          Start game
+        </button>
       </div>
+
+      {/* The same card the standings screen poses between rounds. Labelled for
+          where this one actually leads: with teams off the lobby counts into
+          the category vote, never straight into a round. */}
+      {countdown && (
+        <div className="countdown-pose">
+          <GetReady
+            remaining={remaining}
+            label="CATEGORY VOTE"
+            onStop={() => roomStore.send({ type: "cancelStart" })}
+          />
+        </div>
+      )}
 
       <GameModesDrawer room={room} open={drawer === "modes"} onClose={closeDrawer} />
       <GameSettingsDrawer

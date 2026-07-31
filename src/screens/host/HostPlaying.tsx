@@ -3,7 +3,7 @@ import { RoomChip } from "../../components/RoomChip";
 import { PlayerPill } from "../../components/Roster";
 import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
-import { HostHeader, PlayerCount } from "./HostHeader";
+import { HostBackToRoom, HostHeader, HostHeaderRight, PlayerCount } from "./HostHeader";
 
 type Props = { room: RoomState; endsAt: number; offset: number };
 
@@ -24,7 +24,16 @@ export function HostPlaying({ room, endsAt, offset }: Props) {
         left={<RoomChip code={room.code} />}
         round={currentRound(room)}
         of={room.settings.roundCount}
-        right={<PlayerCount n={room.players.length} />}
+        right={
+          <HostHeaderRight>
+            <PlayerCount n={room.players.length} />
+            {/* A live round is abandonable too — `backToLobby` allows this
+                phase for it. Closed to a ✕ like every other one, which matters
+                more here than anywhere: this screen is the category, and the
+                corner must not compete with it. */}
+            <HostBackToRoom />
+          </HostHeaderRight>
+        }
       />
 
       <div className="host-stage">

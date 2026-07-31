@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { useRemaining } from "../../net/clock";
 import { roomStore } from "../../net/room";
+import { GetReady } from "../../components/GetReady";
 import { TeamBadge } from "../../components/TeamBadge";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS, membersOf, teamOf } from "../../../shared/teams";
 import type { PlayerId, RoomState } from "../../../shared/state";
@@ -66,6 +67,11 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
   const [draft, setDraft] = useState(mine?.name ?? "");
   useEffect(() => setDraft(mine?.name ?? ""), [mine?.name]);
 
+  // The tiles step back behind the card once the count is running; the Leave
+  // button below does not, for the same reason the lobby keeps Ready lit —
+  // leaving a team is this room's only brake on the countdown.
+  const dim = countdown ? " countdown-dim" : "";
+
   return (
     <main className="screen screen--mobile screen--locked player-teams">
       {/* One slot at the top of the screen, holding the title *or* the name
@@ -74,7 +80,7 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
           says the same thing better, so the room the two would have taken
           between them goes to the grid instead. Its height is fixed to the
           plaque's, so the swap does not move the tiles below. */}
-      <div className="player-teams__title-slot">
+      <div className={`player-teams__title-slot${dim}`}>
         {mine ? (
           <div
             className="team-badge player-teams__title"
@@ -107,7 +113,7 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
         )}
       </div>
 
-      <ul className="player-teams__grid">
+      <ul className={`player-teams__grid${dim}`}>
         {room.teams.map((team) => {
           const joined = team.id === mine?.id;
           const members = membersOf(room, team.id);
@@ -160,8 +166,17 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
         })}
       </ul>
 
+      {/* The same card the TV is showing and the same one every other countdown
+          in the game wears, posed over the dimmed tiles rather than squeezed
+          into the footer as the old small plaque. It is deliberately over the
+          grid and not over the Leave button below it. */}
+      {countdown && (
+        <div className="countdown-pose">
+          <GetReady remaining={remaining} label="CATEGORY VOTE" />
+        </div>
+      )}
+
       <div className="player-teams__footer">
-        {countdown && <p className="get-ready get-ready--small">Get ready… {remaining}</p>}
         {/* Leaving *is* un-readying — there is no separate button, and once
             the countdown is running this is the room's only brake, since the
             TV has no Stop button by design. It does not change its wording or

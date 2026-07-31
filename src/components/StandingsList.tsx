@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import type { Player, RoomState } from "../../shared/state";
 import type { Standing } from "../../shared/standings";
 import { ordinal } from "../ordinal";
+import { ReadyMark } from "./ReadyMark";
 import { TeamBadge } from "./TeamBadge";
 
 /**
@@ -19,9 +20,9 @@ type Props = {
 /**
  * The between-rounds board: one full-width row per scorer, the leader in gold,
  * ordered strictly by rank. This is the shape the room argues over between
- * rounds — place, name, readiness and the running total, with nothing on it
- * that needs decoding. The final screen is the podium instead; see
- * `HostStandings`.
+ * rounds — place, name, readiness, what the last round paid and the running
+ * total, with nothing on it that needs decoding. The final screen is the podium
+ * instead; see `HostStandings`.
  *
  * Up to five scorers the rows run down the screen at full width. From six the
  * board splits into two columns, filled *down* the first and then the second,
@@ -46,8 +47,11 @@ export function StandingsList({ room, standings }: Props) {
       {/* The one place the scoring direction is stated outright rather than
           implied. The list has the width for a sentence; the podium does not. */}
       <div className="list-explainer">
-        <span className="list-explainer__pill">LOWEST TOTAL WINS ↓</span>
-        <span>You collect your finishing place each round — come 1st, take 1 point.</span>
+        <span className="list-explainer__pill">HIGHEST TOTAL WINS ↑</span>
+        <span>
+          Every round pays out by place — 1st takes a point for each of the{" "}
+          {standings.length}, last takes 1.
+        </span>
       </div>
 
       <ol
@@ -77,9 +81,18 @@ export function StandingsList({ room, standings }: Props) {
                 </span>
               </div>
 
+              {/* Faces *and* names. A row of bare emoji says how many people a
+                  team is, which nobody is asking — "who is on that team" is the
+                  question a board between rounds gets, and this is the only
+                  place left on the TV that can still answer it. */}
               {team ? (
                 <span className="standings-row__roster">
-                  {members.map((p) => p.emoji).join("")}
+                  {members.map((p) => (
+                    <span className="standings-row__member" key={p.id}>
+                      <span className="standings-row__member-emoji">{p.emoji}</span>
+                      <span className="standings-row__member-name">{p.name || "…"}</span>
+                    </span>
+                  ))}
                 </span>
               ) : (
                 <span className="standings-row__avatar">{s.emoji}</span>
@@ -97,23 +110,35 @@ export function StandingsList({ room, standings }: Props) {
                 ) : (
                   <span className="standings-row__name">{s.name}</span>
                 )}
+                {/* A marker for the ones who *are* ready, and silence for the
+                    rest. This is the whole readiness readout on the screen now —
+                    the footer's "n of m READY" is gone, because a tally tells
+                    the host a number when what they want is a name. A row with
+                    nothing beside it is the room still waiting on it. */}
                 {dropped ? (
                   <span className="list-chip list-chip--dropped">DROPPED OFF</span>
                 ) : isReady ? (
-                  <span className="list-chip list-chip--ready">
-                    <i className="list-chip__dot" />
-                    READY
-                  </span>
-                ) : (
+                  // The lobby's tag, not a second design of the same idea — see
+                  // `ReadyMark`. It used to be an ink chip with a mint dot,
+                  // which is one more thing to learn for a fact the room has
+                  // already been shown a shape for.
+                  <ReadyMark />
+                ) : team && here.some((p) => p.ready) ? (
+                  // A part-ready team is the one waiting row worth a number:
+                  // "who else on my team" is a question its members can act on.
                   <span className="list-chip list-chip--waiting">
-                    {team
-                      ? `${here.filter((p) => p.ready).length}/${here.length} READY`
-                      : "NOT READY"}
+                    {here.filter((p) => p.ready).length}/{here.length} READY
                   </span>
-                )}
+                ) : null}
               </div>
 
               <div className="standings-row__score">
+                {/* What the round just played was worth, beside what it added
+                    up to. Absent for a scorer who was not in it — a blank is
+                    honest there, and a "+0" is not. */}
+                {s.last !== null && (
+                  <span className="standings-row__delta">+{s.last}pts</span>
+                )}
                 <span className="standings-row__points">{s.points}</span>
                 <span className="standings-row__unit">PTS</span>
               </div>
