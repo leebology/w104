@@ -2355,6 +2355,43 @@ ul, ol { list-style: none; }
   to { opacity: 0; }
 }
 
+/* The round's time warnings. Shares .reject-banner's shape and reuses its
+   `reject-fade` timing on purpose: the two are the same kind of object — a
+   message that has to be read mid-round without being tappable. */
+.time-warning {
+  position: fixed;
+  left: -20px;
+  right: -20px;
+  transform: rotate(-2.5deg);
+  padding: 9px 20px 11px;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--display);
+  letter-spacing: 0.06em;
+  text-align: center;
+  z-index: 15;
+  /* It sits over the list mid-round; it must never eat a tap. */
+  pointer-events: none;
+  animation: reject-fade 2s linear forwards;
+}
+
+/* High on the phone, never centre — .reject-banner owns the centre, and both
+   can be on screen at the same moment. */
+.time-warning--player {
+  top: calc(var(--vv-top, 0px) + 96px);
+  font-size: 15px;
+}
+
+/* The TV is read across a room, so this is the one that gets big. Absolute
+   within .host-stage, which is already position: relative. */
+.time-warning--host {
+  position: absolute;
+  top: 8%;
+  left: -40px;
+  right: -40px;
+  font-size: clamp(28px, 3.4vw, 52px);
+}
+
 /* ------------------------------------------------------- player: scoring */
 
 .player-scoring { gap: 16px; }
