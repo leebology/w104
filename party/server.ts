@@ -11,6 +11,7 @@ import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes
 import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
 import type { Scorer } from "../shared/teams";
 import { isHuman } from "../shared/bots";
+import { driverOf } from "../shared/mirror";
 import { isViewId } from "../shared/views";
 import type { ViewId } from "../shared/views";
 import { SCORING_VERSION, scoreRound } from "../shared/scoring";
@@ -442,6 +443,46 @@ export class W104 extends Server<Env> {
       // Deliberately no `broadcastState`: entry counts are not published, and
       // nothing in `RoomState` changed.
       return;
+    }
+
+    /**
+     * The scroll mirror: one player's position in their own results list,
+     * forwarded to the TV so their column follows.
+     *
+     * Handled here rather than as a `reduce` event on purpose. A scroll
+     * position is not game state — it has no bearing on scoring, it must not
+     * survive a refresh, and exactly one socket in the room wants it. Going
+     * through `reduce` would make every send a Durable Object storage write
+     * *and* a full `RoomState` re-encode to every socket: an eight-player room
+     * paying eight encodes to move one column.
+     *
+     * This is the one place the app deliberately ticks over the wire. Every
+     * other continuous thing — the round timer, the reveal — broadcasts an
+     * absolute moment once and is counted locally against `clockOffset`. A
+     * scroll is live human input with no schedule to derive it from, so there
+     * is no derivation that avoids the traffic; the rate is capped on the
+     * client instead. See the request-budget arithmetic in
+     * docs/superpowers/specs/2026-07-30-scroll-mirror-design.md.
+     */
+    if (msg.type === "scrollTo") {
+      if (this.room.phase.name !== "scoring") return;
+      const scorer = rosterOf(this.room).find((s) => s.members.includes(playerId));
+      if (!scorer) return;
+      // Enforced here and not on the TV: this is the only place that knows the
+      // roster and the connection states, and the panel-style "the client
+      // wouldn't send it" argument is not a boundary.
+      if (driverOf(this.room, scorer.id) !== playerId) return;
+      // A hand-rolled message never went through `scrollFraction`, so the
+      // clamp is repeated rather than assumed — the same reason the selfStrike
+      // case runs `Number` over `msg.index`.
+      const at = Number(msg.at);
+      if (!Number.isFinite(at)) return;
+      this.sendToHost({
+        type: "columnScroll",
+        scorer: scorer.id,
+        at: Math.min(1, Math.max(0, at)),
+      });
+      return; // Nothing to persist, nothing to broadcast.
     }
 
     // Ends the room outright rather than producing a new state, so it cannot
@@ -971,6 +1012,23 @@ export class W104 extends Server<Env> {
     for (const conn of this.getConnections<ConnState>()) {
       if (conn.state && members.includes(conn.state.playerId)) {
         this.sendTo(conn, msg);
+      }
+    }
+  }
+
+  /**
+   * Sends to the host's socket alone, dropping the message when no host is
+   * connected. Silent by design: a mirrored scroll that did not land breaks
+   * nothing and is not worth a round trip to complain about.
+   */
+  private sendToHost(msg: ServerMessage): void {
+    if (!this.room) return;
+    const hostId = this.room.hostId;
+    if (hostId === null) return;
+    for (const conn of this.getConnections<ConnState>()) {
+      if (conn.state?.playerId === hostId) {
+        this.sendTo(conn, msg);
+        return;
       }
     }
   }

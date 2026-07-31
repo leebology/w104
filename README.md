@@ -19,7 +19,7 @@ Requires Node 22+ (`.nvmrc`). Two terminals:
 npm install
 npm run dev:party    # wrangler dev — realtime server on :8787
 npm run dev          # web app on :5173
-npm test             # 378 tests
+npm test             # 564 tests
 ```
 
 Every build shows a small triangle in the top-right corner. Hover it, click it,

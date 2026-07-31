@@ -1616,6 +1616,15 @@ ul, ol { list-style: none; }
   border-radius: 99px;
 }
 
+/* The mirror: this column is being scrolled from its owner's phone.
+   The scrollbar thumb is the whole signal. It costs no layout on a card that
+   has none to spare, and it sits exactly where the eye already is when
+   something moves — without it, one column of ten scrolling on its own moments
+   after the reveal stopped scrolling them all reads as a glitch rather than as
+   a person. */
+.word-list--driven { scrollbar-color: var(--cream) transparent; }
+.word-list--driven::-webkit-scrollbar-thumb { background: var(--cream); }
+
 .word-row {
   display: flex;
   justify-content: space-between;
