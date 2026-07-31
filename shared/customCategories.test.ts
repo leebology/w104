@@ -146,3 +146,133 @@ describe("publicPool", () => {
     expect(shown.map((c) => c.authorId).sort()).toEqual(["p0", "p1"]);
   });
 });
+
+import { buildDeal, exposureFor as expo } from "./customCategories";
+import type { Hand } from "./customCategories";
+
+/** A room where everybody wrote every slot. */
+function room(players: number, quota: number, roll = 0.42) {
+  const ids = seats(players);
+  const drafts: Record<string, string[]> = {};
+  ids.forEach((id, i) => {
+    drafts[id] = Array.from({ length: quota }, (_, s) => `${id}-cat-${s}`);
+  });
+  const pool = buildPool(ids, drafts, quota, HOUSE, roll);
+  return { ids, pool, deal: buildDeal(pool, ids, quota, roll) };
+}
+
+describe("buildDeal", () => {
+  const shapes: Array<[number, number]> = [
+    [3, 3], [3, 4], [4, 3], [4, 4], [5, 2], [5, 3],
+    [6, 2], [7, 2], [8, 1], [8, 2], [10, 1], [10, 2],
+    [13, 1], [20, 1], [30, 1],
+  ];
+
+  it("gives every player exactly VOTE_BUDGET hands of HAND_SIZE", () => {
+    for (const [players, quota] of shapes) {
+      const { ids, deal } = room(players, quota);
+      for (const id of ids) {
+        expect(deal[id]).toHaveLength(VOTE_BUDGET);
+        for (const hand of deal[id]) {
+          expect(hand.cardIds).toHaveLength(HAND_SIZE);
+        }
+      }
+    }
+  });
+
+  it("never repeats a card inside one hand", () => {
+    for (const [players, quota] of shapes) {
+      const { ids, deal } = room(players, quota);
+      for (const id of ids) {
+        for (const hand of deal[id]) {
+          expect(new Set(hand.cardIds).size).toBe(HAND_SIZE);
+        }
+      }
+    }
+  });
+
+  it("never deals a player their own card", () => {
+    for (const [players, quota] of shapes) {
+      const { ids, pool, deal } = room(players, quota);
+      const authorOf = new Map(pool.map((c) => [c.id, c.authorId]));
+      for (const id of ids) {
+        for (const hand of deal[id]) {
+          for (const cardId of hand.cardIds) {
+            expect(authorOf.get(cardId)).not.toBe(id);
+          }
+        }
+      }
+    }
+  });
+
+  it("shows every card exactly the same number of times", () => {
+    for (const [players, quota] of shapes) {
+      const { ids, pool, deal } = room(players, quota);
+      const seen = new Map<string, number>(pool.map((c) => [c.id, 0]));
+      for (const id of ids) {
+        for (const hand of deal[id]) {
+          for (const cardId of hand.cardIds) {
+            seen.set(cardId, (seen.get(cardId) ?? 0) + 1);
+          }
+        }
+      }
+      const counts = [...seen.values()];
+      // Exact, not ±1. This is the property that makes the vote fair.
+      expect(new Set(counts).size).toBe(1);
+      expect(counts[0]).toBe(expo(quota));
+    }
+  });
+
+  it("spreads a player's repeats evenly", () => {
+    for (const [players, quota] of shapes) {
+      const { ids, deal } = room(players, quota);
+      for (const id of ids) {
+        const mine = new Map<string, number>();
+        for (const hand of deal[id]) {
+          for (const cardId of hand.cardIds) {
+            mine.set(cardId, (mine.get(cardId) ?? 0) + 1);
+          }
+        }
+        const counts = [...mine.values()];
+        expect(Math.max(...counts) - Math.min(...counts)).toBeLessThanOrEqual(1);
+      }
+    }
+  });
+
+  it("does not filter teammates out — there is no team filter at all", () => {
+    // A team filter would break equal exposure, which is why the deal knows
+    // nothing about teams. Asserted as a shape property: with 4 players and a
+    // quota of 3, every one of the 9 non-own cards must be reachable.
+    const { ids, pool, deal } = room(4, 3);
+    const authorOf = new Map(pool.map((c) => [c.id, c.authorId]));
+    const mine = new Set(deal[ids[0]].flatMap((h) => h.cardIds));
+    const others = pool.filter((c) => authorOf.get(c.id) !== ids[0]);
+    expect(mine.size).toBe(others.length);
+  });
+
+  it("deals a player their own cards only when there is nobody else", () => {
+    for (const players of [1, 2]) {
+      const quota = quotaFor(players, 3);
+      const { ids, deal } = room(players, quota);
+      for (const id of ids) {
+        expect(deal[id]).toHaveLength(VOTE_BUDGET);
+        for (const hand of deal[id]) {
+          expect(hand.cardIds).toHaveLength(HAND_SIZE);
+          expect(new Set(hand.cardIds).size).toBe(HAND_SIZE);
+        }
+      }
+    }
+  });
+
+  it("gives two rolls two different deals", () => {
+    const a = room(8, 2, 0.11);
+    const b = room(8, 2, 0.88);
+    const flat = (d: Record<string, Hand[]>) =>
+      JSON.stringify(Object.values(d).map((hs) => hs.map((h) => h.cardIds)));
+    expect(flat(a.deal)).not.toBe(flat(b.deal));
+  });
+
+  it("returns an empty deal for an empty room", () => {
+    expect(buildDeal([], [], 1, 0.5)).toEqual({});
+  });
+});

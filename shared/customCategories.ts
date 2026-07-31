@@ -186,3 +186,111 @@ export function publicPool(
     .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
     .map((c) => (revealAuthors ? { ...c } : { ...c, authorId: null }));
 }
+
+/**
+ * Splits one player's dealt cards into hands.
+ *
+ * Greedy on remaining count, so a card that has to appear twice is placed
+ * while there are still hands left to place it in, with ties broken by the rng
+ * — that tie-break is what stops two hands coming out as the same three cards
+ * in a small room, which the obvious round-robin does constantly.
+ *
+ * The `!hand.includes` filter is the no-duplicate-within-a-hand rule and is
+ * the only filter in this file. It cannot break exposure: it rearranges a
+ * multiset that `buildDeal` has already fixed.
+ */
+function toHands(cardIds: readonly string[], rng: Rng): Hand[] {
+  const remaining = new Map<string, number>();
+  for (const id of cardIds) remaining.set(id, (remaining.get(id) ?? 0) + 1);
+
+  const hands: Hand[] = [];
+  for (let h = 0; h < VOTE_BUDGET; h++) {
+    const hand: string[] = [];
+    for (let i = 0; i < HAND_SIZE; i++) {
+      const candidates = [...remaining.entries()].filter(
+        ([id, n]) => n > 0 && !hand.includes(id),
+      );
+      if (candidates.length === 0) break;
+      const most = Math.max(...candidates.map(([, n]) => n));
+      const top = candidates.filter(([, n]) => n === most);
+      const [id] = top[Math.floor(rng() * top.length)];
+      hand.push(id);
+      remaining.set(id, (remaining.get(id) ?? 0) - 1);
+    }
+    hands.push({ cardIds: hand });
+  }
+  return hands;
+}
+
+/**
+ * Who sees what. Solved in one shot at the close, never sampled per hand.
+ *
+ * The construction is a walk around a ring of seats, one slot at a time. Seat
+ * `k` takes, from every slot, the cards sitting at ring offsets `1, 2, …`
+ * cycled — never offset 0, which is what "never your own card" is, and cycling
+ * is what lets a room with fewer non-own cards than dealt slots still fill
+ * them. Because every seat walks the *same* multiset of offsets, every card is
+ * taken exactly as many times as every other: exposure is exact by
+ * construction rather than by correction.
+ *
+ * **The ring is a shuffled seat order, and that matters.** The walk is
+ * deterministic, so an unshuffled ring would make every hand "one card from
+ * each of the next three seats" and hand authorship to anyone who noticed.
+ *
+ * One- and two-player rooms cannot satisfy any of this — there is nobody
+ * else's card to deal — so they fall back to a cyclic walk of the whole pool
+ * with own cards included. They are exempt from exact exposure by design; see
+ * the spec's §3.4.
+ */
+export function buildDeal(
+  pool: readonly PoolCard[],
+  playerIds: readonly PlayerId[],
+  quota: number,
+  roll: number,
+): Record<PlayerId, Hand[]> {
+  const out: Record<PlayerId, Hand[]> = {};
+  const players = playerIds.length;
+  if (players === 0 || pool.length === 0) return out;
+
+  const rng = seededRng(`deal:${roll}`);
+  const slots = VOTE_BUDGET * HAND_SIZE;
+
+  if (players <= TINY_ROOM) {
+    playerIds.forEach((id, k) => {
+      const start = Math.floor(rng() * pool.length) + k;
+      const picks = Array.from(
+        { length: slots },
+        (_, i) => pool[(start + i) % pool.length].id,
+      );
+      out[id] = toHands(picks, rng);
+    });
+    return out;
+  }
+
+  // `ring[r]` is the seat standing at ring position r; `posOf[k]` is where
+  // seat k stands. Two arrays rather than repeated `indexOf`, so the walk is
+  // linear and the permutation is used in both directions.
+  const ring = shuffled(
+    playerIds.map((_, i) => i),
+    rng,
+  );
+  const posOf = new Array<number>(players);
+  ring.forEach((seat, position) => {
+    posOf[seat] = position;
+  });
+
+  const exposure = exposureFor(quota);
+  playerIds.forEach((id, seat) => {
+    const picks: string[] = [];
+    for (let slot = 0; slot < quota; slot++) {
+      for (let t = 0; t < exposure; t++) {
+        // Offsets run 1..players-1 and cycle. Never 0.
+        const offset = 1 + (t % (players - 1));
+        const owner = ring[(posOf[seat] + offset) % players];
+        picks.push(pool[owner * quota + slot].id);
+      }
+    }
+    out[id] = toHands(picks, rng);
+  });
+  return out;
+}
