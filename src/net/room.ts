@@ -208,6 +208,21 @@ export class RoomStore {
     this.send({ type: "submitEntry", text: trimmed, seq });
   }
 
+  /**
+   * The buffer still in the box when the round ended. Fire-and-forget: no
+   * `seq` and no optimistic copy, unlike `submit`. Nothing renders `entries`
+   * once `playing` is over — `PlayerScoring` reads `room.phase.results` — so
+   * an optimistic copy would only sit unacked in client state until the
+   * standings transition swept it up.
+   *
+   * Length, phase and every other entry rule are the server's. This end knows
+   * only that the box was not empty.
+   */
+  flush(text: string): void {
+    if (text.trim() === "") return;
+    this.send({ type: "flushEntry", text });
+  }
+
   now(): number {
     return Date.now() + this.state.clockOffset;
   }
