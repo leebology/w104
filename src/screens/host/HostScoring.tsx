@@ -63,6 +63,9 @@ const SWAP_X_DELAY = 180;
  */
 const MIRROR_EASE = 0.25;
 
+/** How long a column keeps its driven marker after the last message. */
+const MIRROR_IDLE = 2000;
+
 /**
  * FAST FORWARD is a compressed run, not a hard cut: the outstanding strikes all
  * land on one frame, the grid takes a single penalty ring together as the
@@ -240,6 +243,8 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
   const mirrorTargets = useRef(new Map<ScorerId, number>());
   /** Kicks the rAF loop when a new target lands. Set by the effect below. */
   const mirrorPump = useRef<() => void>(() => {});
+  /** Per-column timers that clear the driven marker. */
+  const mirrorIdle = useRef(new Map<ScorerId, ReturnType<typeof setTimeout>>());
   /** The ack fires once per screen; see the effect below. */
   const acked = useRef(reduced);
 
@@ -365,6 +370,26 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
       roomStore.onColumnScroll((scorer, at) => {
         mirrorTargets.current.set(scorer, at);
         mirrorPump.current();
+
+        /**
+         * The driven marker, toggled straight on the node rather than through
+         * a class in the render tree — same reason as the scroll itself, and it
+         * keeps the whole mirror out of React.
+         *
+         * Safe against a re-render: `WordList` renders a constant
+         * `className="word-list"`, so React's diff finds no change and never
+         * rewrites the attribute. A `viewNonce` remount does drop it, which is
+         * correct — that is a fresh screen.
+         */
+        const box = lists.current.get(scorer);
+        if (!box) return;
+        box.classList.add("word-list--driven");
+        const prev = mirrorIdle.current.get(scorer);
+        if (prev !== undefined) clearTimeout(prev);
+        mirrorIdle.current.set(
+          scorer,
+          setTimeout(() => box.classList.remove("word-list--driven"), MIRROR_IDLE),
+        );
       }),
     [],
   );
@@ -419,6 +444,8 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
     return () => {
       if (frame !== 0) cancelAnimationFrame(frame);
       mirrorPump.current = () => {};
+      for (const timer of mirrorIdle.current.values()) clearTimeout(timer);
+      mirrorIdle.current.clear();
     };
   }, [rankStage, reduced]);
 
