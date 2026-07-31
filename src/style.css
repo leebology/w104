@@ -5491,8 +5491,10 @@ ul, ol { list-style: none; }
 
 /* ---- motion ---- */
 
-/* Two identical copies — see CLAUDE.md's "the one that will definitely bite
-   you". NEXT, NEXT, DONE fires this on the same card frame three times in a
+/* Two identical copies — see "the one that will definitely bite you" in
+   docs/design/2026-07-30-custom-categories-traps.md, and the same A/B pairs
+   the scoring reveal keeps. NEXT, NEXT, DONE fires this on the same frame
+   three times in a
    row; an unchanged class name would not restart the animation, so the
    component alternates between these two. One continuous 220ms motion on the
    single content node: the outgoing card fades out to the left, then the
