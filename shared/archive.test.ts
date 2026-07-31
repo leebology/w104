@@ -233,7 +233,9 @@ describe("roundRows", () => {
   describe("in team play", () => {
     const teamRoom = () =>
       room({
-        settings: { mode: "ffa", roundCount: 3, durationSec: 30, teamCount: 2 },
+        settings: {
+          mode: "ffa", roundCount: 3, durationSec: 30, teamCount: 2, categorySource: "stock",
+        },
         players: [
           player("a", { teamId: "t0" }),
           player("b", { teamId: "t0" }),

@@ -1,8 +1,9 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, it } from "vitest";
 import {
-  DEFAULT_MODE, GAME_MODES, GAME_MODE_IDS, MAX_TEAM_COUNT, defaultSettings, isGameModeId, modeSpec,
-  normalizeSetting,
+  DEFAULT_MODE, GAME_MODES, GAME_MODE_IDS, MAX_TEAM_COUNT, customEnabled, defaultSettings,
+  isGameModeId, isNumericSpec, modeSpec, normalizeChoice, normalizeSetting,
 } from "./gamemodes";
+import type { NumericSettingSpec } from "./gamemodes";
 import { MAX_DURATION_SEC, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_ROUND_COUNT } from "./reduce";
 import { createRoom } from "./state";
 
@@ -18,9 +19,10 @@ describe("the catalog", () => {
     for (const id of GAME_MODE_IDS) expect(GAME_MODES[id].id).toBe(id);
   });
 
-  test("every spec's default sits inside its own bounds", () => {
+  test("every numeric spec's default sits inside its own bounds", () => {
     for (const mode of ALL_MODES) {
       for (const spec of mode.settings) {
+        if (!isNumericSpec(spec)) continue;
         expect(spec.min).toBeLessThan(spec.max);
         expect(spec.default).toBeGreaterThanOrEqual(spec.min);
         expect(spec.default).toBeLessThanOrEqual(spec.max);
@@ -38,10 +40,11 @@ describe("the catalog", () => {
   // Guards the hand-written NumericSettingKey union against drift: a key that
   // stops naming a numeric MatchSettings field fails here rather than silently
   // becoming a setting nothing reads.
-  test("every spec key names a numeric field of MatchSettings", () => {
+  test("every numeric spec key names a numeric field of MatchSettings", () => {
     const sample = createRoom("PLUM", 0).settings;
     for (const mode of ALL_MODES) {
       for (const spec of mode.settings) {
+        if (!isNumericSpec(spec)) continue;
         expect(typeof sample[spec.key]).toBe("number");
       }
     }
@@ -85,7 +88,9 @@ describe("a new room", () => {
 
 describe("the teamCount setting", () => {
   test("Free-for-All exposes it, off by default", () => {
-    const spec = GAME_MODES.ffa.settings.find((s) => s.key === "teamCount");
+    const spec = GAME_MODES.ffa.settings.find((s) => s.key === "teamCount") as
+      | NumericSettingSpec
+      | undefined;
     expect(spec).toBeDefined();
     expect(spec!.kind).toBe("teams");
     expect(spec!.min).toBe(0);
@@ -95,13 +100,13 @@ describe("the teamCount setting", () => {
   });
 
   test("normalizeSetting snaps a one-team value to off", () => {
-    const spec = GAME_MODES.ffa.settings.find((s) => s.key === "teamCount")!;
+    const spec = GAME_MODES.ffa.settings.find((s) => s.key === "teamCount")! as NumericSettingSpec;
     expect(normalizeSetting(spec, 1, 0)).toBe(0);
     expect(normalizeSetting(spec, 4, 0)).toBe(4);
   });
 
   test("normalizeSetting still clamps and still falls back on nonsense", () => {
-    const spec = GAME_MODES.ffa.settings.find((s) => s.key === "teamCount")!;
+    const spec = GAME_MODES.ffa.settings.find((s) => s.key === "teamCount")! as NumericSettingSpec;
     expect(normalizeSetting(spec, 99, 0)).toBe(MAX_TEAM_COUNT);
     expect(normalizeSetting(spec, -3, 0)).toBe(0);
     expect(normalizeSetting(spec, Number.NaN, 6)).toBe(6);
@@ -109,7 +114,34 @@ describe("the teamCount setting", () => {
   });
 
   test("the snap does not touch the other kinds", () => {
-    const rounds = GAME_MODES.ffa.settings.find((s) => s.key === "roundCount")!;
+    const rounds = GAME_MODES.ffa.settings.find((s) => s.key === "roundCount")! as NumericSettingSpec;
     expect(normalizeSetting(rounds, 1, 3)).toBe(1);
+  });
+});
+
+describe("the categories setting", () => {
+  it("is the fourth card, after teams", () => {
+    const keys = GAME_MODES.ffa.settings.map((s) => s.key);
+    expect(keys).toEqual(["roundCount", "durationSec", "teamCount", "categorySource"]);
+  });
+
+  it("defaults to the built-in pool", () => {
+    expect(defaultSettings("ffa").categorySource).toBe("stock");
+    expect(customEnabled(defaultSettings("ffa"))).toBe(false);
+  });
+
+  it("separates the two descriptor kinds", () => {
+    const specs = GAME_MODES.ffa.settings;
+    expect(specs.filter(isNumericSpec)).toHaveLength(3);
+    expect(specs.filter((s) => !isNumericSpec(s))).toHaveLength(1);
+  });
+
+  it("falls back to the current value for an option it does not know", () => {
+    const spec = GAME_MODES.ffa.settings.find((s) => s.key === "categorySource")!;
+    expect(isNumericSpec(spec)).toBe(false);
+    if (isNumericSpec(spec)) return;
+    expect(normalizeChoice(spec, "custom", "stock")).toBe("custom");
+    expect(normalizeChoice(spec, "nonsense", "stock")).toBe("stock");
+    expect(normalizeChoice(spec, undefined, "custom")).toBe("custom");
   });
 });

@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { BALLOT, CATEGORIES, DEFAULT_CATEGORY, RANDOM_CATEGORY } from "./categories";
 import { MAX_ROUND_COUNT } from "./gamemodes";
 import {
@@ -262,5 +262,15 @@ describe("the random option", () => {
     const shares = voteShares({ p0: { song: 1, movie: 1, [RANDOM_CATEGORY]: 1 } });
     expect(shares.song).toBe(34);
     expect(shares[RANDOM_CATEGORY]).toBe(33);
+  });
+});
+
+describe("voteShares with an explicit order", () => {
+  it("breaks remainder ties by the given order rather than the ballot", () => {
+    const votes = { a: { x: 1 }, b: { y: 1 }, c: { z: 1 } };
+    const shares = voteShares(votes, ["z", "y", "x"]);
+    expect(shares.x + shares.y + shares.z).toBe(100);
+    // 33.33 each: the extra point goes to whichever sorts first in `order`.
+    expect(shares.z).toBe(34);
   });
 });

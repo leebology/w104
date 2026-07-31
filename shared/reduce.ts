@@ -5,9 +5,21 @@ import { NO_SELF_MARKS, toggleMark } from "./selfstrike";
 import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, MatchSettings, Player, PlayerId, Room, RoundSummary } from "./state";
-import { BALLOT } from "./categories";
-import { isGameModeId, modeSpec, normalizeSetting } from "./gamemodes";
-import type { NumericSettingKey } from "./gamemodes";
+import { BALLOT, CATEGORIES } from "./categories";
+import {
+  customEnabled, isGameModeId, isNumericSpec, modeSpec, normalizeChoice, normalizeSetting,
+} from "./gamemodes";
+import type { CategorySource, ChoiceSettingKey, NumericSettingKey } from "./gamemodes";
+import {
+  MAX_CATEGORY_LEN,
+  WRITE_MS,
+  buildDeal,
+  buildPool,
+  pickCustomCategory,
+  quotaFor,
+  seedRoll,
+  voteBudgetFor,
+} from "./customCategories";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, balanceTeams, makeTeams, rosterOf, teamsEnabled } from "./teams";
 import type { ScorerId, TeamId } from "./teams";
@@ -80,6 +92,7 @@ export type RoomEvent =
       playerId: PlayerId;
       /** Only keys the *active mode* exposes are honoured. */
       values: Partial<Record<NumericSettingKey, number>>;
+      choices: Partial<Record<ChoiceSettingKey, string>>;
       now: number;
     }
   | { t: "setMode"; playerId: PlayerId; mode: string; now: number }
@@ -91,6 +104,18 @@ export type RoomEvent =
   | { t: "joinTeam"; playerId: PlayerId; teamId: TeamId; now: number }
   | { t: "leaveTeam"; playerId: PlayerId; now: number }
   | { t: "setTeamName"; playerId: PlayerId; teamId: TeamId; name: string; now: number }
+  /**
+   * The phone publishing which slot it is on. Cheap and frequent; the only
+   * thing that drives the writing state on the TV, and it carries no text.
+   */
+  | { t: "moveCursor"; playerId: PlayerId; slot: number; now: number }
+  /**
+   * Committing a category. **Committing is readying** — never on keystroke,
+   * or the phase could close under a player mid-word.
+   */
+  | { t: "commitDraft"; playerId: PlayerId; slot: number; text: string; now: number }
+  /** Taking one back. Un-readies, which tears down an in-flight close. */
+  | { t: "clearDraft"; playerId: PlayerId; slot: number; now: number }
   /**
    * The host's Auto sort. `roll` is a uniform [0,1) from the caller, the same
    * arrangement the category draw uses: the deal has to be random — pressing
@@ -167,6 +192,43 @@ const mapPlayer = (
   fn: (p: Player) => Player,
 ): Player[] => players.map((p) => (p.id === id ? fn(p) : p));
 
+/** This room's quota, derived from the live room. Never stored. */
+function quotaOf(room: Room): number {
+  return quotaFor(room.players.length, room.settings.roundCount);
+}
+
+/** Whether every slot this player owns holds something. */
+function hasWrittenAll(room: Room, playerId: PlayerId): boolean {
+  const quota = quotaOf(room);
+  const mine = room.drafts[playerId] ?? [];
+  for (let i = 0; i < quota; i++) {
+    if ((mine[i] ?? "").trim() === "") return false;
+  }
+  return true;
+}
+
+function writeSlot(room: Room, playerId: PlayerId, slot: number, text: string): Room {
+  const quota = quotaOf(room);
+  if (!Number.isInteger(slot) || slot < 0 || slot >= quota) return room;
+  if (!room.players.some((p) => p.id === playerId)) return room;
+
+  const mine = [...(room.drafts[playerId] ?? [])];
+  while (mine.length < quota) mine.push("");
+  const next = text.trim().slice(0, MAX_CATEGORY_LEN);
+  if (mine[slot] === next) return room;
+  mine[slot] = next;
+
+  const drafts = { ...room.drafts, [playerId]: mine };
+  const staged: Room = { ...room, drafts };
+  return {
+    ...staged,
+    players: mapPlayer(staged.players, playerId, (p) => ({
+      ...p,
+      ready: hasWrittenAll(staged, playerId),
+    })),
+  };
+}
+
 /**
  * Readiness counts only connected players. Otherwise one person whose phone
  * died in the lobby would block the game for everyone until they came back.
@@ -185,8 +247,17 @@ function everyoneReady(room: Room, min: number): boolean {
   return active.filter(isHuman).length >= min && active.every(isWaiting);
 }
 
-function openCountdown(room: Room, now: number, to: "voting" | "playing"): Room {
+function openCountdown(
+  room: Room,
+  now: number,
+  to: "creating" | "voting" | "playing",
+): Room {
   return { ...room, phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to } };
+}
+
+/** Where a match heads once the room is settled: writing first, if custom. */
+function afterLobby(room: Room): "creating" | "voting" {
+  return customEnabled(room.settings) ? "creating" : "voting";
 }
 
 /**
@@ -223,11 +294,19 @@ function readyFloor(room: Room): number {
 function applySettings(
   settings: MatchSettings,
   values: Partial<Record<NumericSettingKey, number>>,
+  choices: Partial<Record<ChoiceSettingKey, string>>,
 ): MatchSettings {
   let next = settings;
   for (const spec of modeSpec(settings.mode).settings) {
-    const value = normalizeSetting(spec, values[spec.key], settings[spec.key]);
-    if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    if (isNumericSpec(spec)) {
+      const value = normalizeSetting(spec, values[spec.key], settings[spec.key]);
+      if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    } else {
+      const value = normalizeChoice(spec, choices[spec.key], settings[spec.key]);
+      if (value !== next[spec.key]) {
+        next = { ...next, [spec.key]: value as CategorySource };
+      }
+    }
   }
   return next;
 }
@@ -240,8 +319,10 @@ function applySettings(
 function clampToMode(settings: MatchSettings): MatchSettings {
   let next = settings;
   for (const spec of modeSpec(settings.mode).settings) {
-    const value = normalizeSetting(spec, settings[spec.key], settings[spec.key]);
-    if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    if (isNumericSpec(spec)) {
+      const value = normalizeSetting(spec, settings[spec.key], settings[spec.key]);
+      if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    }
   }
   return next;
 }
@@ -321,6 +402,54 @@ function bankRound(room: Room, results: Results): Room {
 }
 
 /**
+ * Turns the writing window into a pool and a deal, and opens voting.
+ *
+ * **Both happen exactly once, here.** House cards do not exist before this
+ * call, and the deal is solved in one shot rather than sampled per hand —
+ * every card has to be shown to the same number of people or the vote is not
+ * fair.
+ *
+ * No countdown on this edge: the transition between the two screens is an
+ * animation, not a phase. See the design brief's §1c.
+ */
+function closeCreating(room: Room, now: number, roll: number): Room {
+  const quota = quotaOf(room);
+  const playerIds = room.players.map((p) => p.id);
+  const pool = buildPool(playerIds, room.drafts, quota, CATEGORIES, roll);
+  return {
+    ...room,
+    phase: { name: "voting", endsAt: now + VOTING_MS },
+    pool,
+    deal: buildDeal(pool, playerIds, quota, roll),
+    authorsRevealed: false,
+    // `ready` means "votes spent" on the far side of this edge, so the flags
+    // and the empty tally have to agree.
+    players: unready(room.players),
+    votes: {},
+  };
+}
+
+/**
+ * Closing voting hands the clients authorship. It is the reveal, so it happens
+ * once, on the way out of `voting`, and never on any earlier edge.
+ */
+function closeVoting(room: Room, now: number): Room {
+  return {
+    ...room,
+    phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to: "playing" },
+    authorsRevealed: customEnabled(room.settings) ? true : room.authorsRevealed,
+  };
+}
+
+/** The round's category, from whichever pool this match is playing. */
+function drawCategory(room: Room, roll: number): string {
+  if (customEnabled(room.settings) && room.pool) {
+    return pickCustomCategory(room.pool, room.votes, spentCategories(room), roll);
+  }
+  return pickCategory(room.votes, spentCategories(room), roll);
+}
+
+/**
  * The pre-round <-> countdown edge is derived, not commanded: any event that
  * changes readiness re-evaluates it, so un-readying mid-countdown backs out
  * without needing its own case.
@@ -339,7 +468,7 @@ function settle(room: Room, now: number): Room {
     if (!everyoneReady(room, MIN_PLAYERS)) return room;
     return teamsEnabled(room.settings)
       ? enterTeams(room)
-      : openCountdown(room, now, "voting");
+      : openCountdown(room, now, afterLobby(room));
   }
 
   if (phase.name === "teams") {
@@ -347,15 +476,30 @@ function settle(room: Room, now: number): Room {
     // the way castVote and resetVotes own it during voting. Everybody on a team
     // is the whole condition, so the countdown opens with no host action; a
     // player who changes their mind leaves their team and stops it dead.
+    //
+    // `afterLobby`, not a literal "voting": a custom match writes its own pool
+    // first, so team select hands off to `creating` instead.
     return everyoneReady(room, readyFloor(room))
-      ? openCountdown(room, now, "voting")
+      ? openCountdown(room, now, afterLobby(room))
+      : room;
+  }
+
+  if (phase.name === "creating") {
+    // `ready` means "every slot committed" here — `commitDraft` and
+    // `clearDraft` own the flag, the way `castVote` owns it during voting.
+    // Which is why clearing a card tears the close down for free.
+    //
+    // `settle` has no `roll` on its event — unlike `tick`, nothing here carries
+    // one — so the seed comes from `seedRoll`: the room code and this instant,
+    // neither client-controlled and both already in hand, rather than a fixed
+    // default that would make the pool and the deal computable offline.
+    return everyoneReady(room, readyFloor(room))
+      ? closeCreating(room, now, seedRoll(room.code, now))
       : room;
   }
 
   if (phase.name === "voting") {
-    return everyoneReady(room, readyFloor(room))
-      ? openCountdown(room, now, "playing")
-      : room;
+    return everyoneReady(room, readyFloor(room)) ? closeVoting(room, now) : room;
   }
 
   if (phase.name === "scoring") {
@@ -402,11 +546,12 @@ function settle(room: Room, now: number): Room {
 function backPhase(room: Room): Room["phase"] {
   if (
     room.phase.name === "countdown" &&
-    room.phase.to === "voting" &&
+    (room.phase.to === "voting" || room.phase.to === "creating") &&
     teamsEnabled(room.settings)
   ) {
-    // Same derivation as `countdownScreen`: with teams on, a `to: "voting"`
-    // countdown can only have come out of team select.
+    // Same derivation as `countdownScreen`: with teams on, a `to: "voting"` or
+    // `to: "creating"` countdown can only have come out of team select —
+    // `afterLobby` is what a teams-on room's Continue always heads through.
     return { name: "teams" };
   }
   return preRoundPhase(room) === "lobby" ? { name: "lobby" } : { name: "standings" };
@@ -417,12 +562,17 @@ function backPhase(room: Room): Room["phase"] {
  * countdown out of it. The countdown case is what lets a player cancel the
  * start by leaving their team — allowing a *switch* in the same window costs
  * nothing extra.
+ *
+ * `to === "creating"` joins `to === "voting"` here for the same reason it
+ * joins it in `backPhase`: a custom match with teams on heads to the writing
+ * window through team select exactly as a stock match heads to voting, so the
+ * countdown that follows Continue is a team-select countdown either way.
  */
 function inTeamSelect(room: Room): boolean {
   if (room.phase.name === "teams") return true;
   return (
     room.phase.name === "countdown" &&
-    room.phase.to === "voting" &&
+    (room.phase.to === "voting" || room.phase.to === "creating") &&
     teamsEnabled(room.settings)
   );
 }
@@ -431,14 +581,14 @@ const unready = (players: Player[]): Player[] =>
   players.map((p) => ({ ...p, ready: false }));
 
 /**
- * The phases the debug menu's hold and skip apply to: the two that run a
+ * The phases the debug menu's hold and skip apply to: the ones that run a
  * deadline the room can still be *deciding* against. Written as a predicate so
  * both events agree on the list and tsc narrows `endsAt` for them.
  */
 function isHoldable(
   phase: Room["phase"],
-): phase is Extract<Room["phase"], { name: "playing" | "voting" }> {
-  return phase.name === "playing" || phase.name === "voting";
+): phase is Extract<Room["phase"], { name: "playing" | "voting" | "creating" }> {
+  return phase.name === "playing" || phase.name === "voting" || phase.name === "creating";
 }
 
 /**
@@ -511,6 +661,7 @@ function jumpTo(room: Room, to: ViewId, now: number, roll: number): Room {
       return enterTeams({ ...base, settings, teams: [] });
     }
 
+    case "countdownToCreating":
     case "countdownToVoting":
     case "countdownToPlaying": {
       const staged = standUpTeams(base);
@@ -521,8 +672,33 @@ function jumpTo(room: Room, to: ViewId, now: number, roll: number): Room {
         phase: {
           name: "countdown",
           endsAt: now + COUNTDOWN_MS,
-          to: to === "countdownToVoting" ? "voting" : "playing",
+          to:
+            to === "countdownToCreating"
+              ? "creating"
+              : to === "countdownToVoting"
+                ? "voting"
+                : "playing",
         },
+        // Matches the `creating` case below: a countdown headed there must not
+        // carry over the last close's pool and deal, or a room jumped back to
+        // re-write would land its next close atop the previous shuffle's
+        // leftovers. `countdownToVoting`/`countdownToPlaying` land on a phase
+        // that reads an *existing* pool, so only this target clears it.
+        ...(to === "countdownToCreating" ? { pool: null, deal: {} } : {}),
+      };
+    }
+
+    case "creating": {
+      const staged = standUpTeams(base);
+      return {
+        ...staged,
+        phase: { name: "creating", endsAt: now + WRITE_MS },
+        players: unready(staged.players),
+        drafts: {},
+        cursors: {},
+        pool: null,
+        deal: {},
+        authorsRevealed: false,
       };
     }
 
@@ -546,7 +722,7 @@ function jumpTo(room: Room, to: ViewId, now: number, roll: number): Room {
         // Drawn here for the same reason the whistle draws it: `playing` is the
         // first screen that shows the category, so it is the first that needs
         // one. Weighted by whatever votes the room has, uniform when it has none.
-        category: pickCategory(staged.votes, spentCategories(staged), roll),
+        category: drawCategory(staged, roll),
         phase: { name: "playing", endsAt: now + staged.settings.durationSec * 1_000 },
         // A round starts empty. This is also what makes jumping to `playing`
         // the way to re-run a round from the top, rather than resuming into a
@@ -714,7 +890,15 @@ function apply(room: Room, ev: RoomEvent): Room {
           players: assignStragglers(room.players, room.teams).map((p) => ({
             ...p, ready: true,
           })),
-          phase: { name: "countdown", endsAt: ev.now + COUNTDOWN_MS, to: "voting" },
+          phase: { name: "countdown", endsAt: ev.now + COUNTDOWN_MS, to: afterLobby(room) },
+        };
+      }
+      // A solo host closing voting still hands out authorship the same way a
+      // natural close does — `closeVoting` is the one place that flag flips.
+      if (from === "voting") {
+        return {
+          ...closeVoting(room, ev.now),
+          players: room.players.map((p) => ({ ...p, ready: true })),
         };
       }
       return {
@@ -724,8 +908,8 @@ function apply(room: Room, ev: RoomEvent): Room {
           name: "countdown",
           endsAt: ev.now + COUNTDOWN_MS,
           // Only `lobby` (with teams off — the teams-on lobby returned above)
-          // heads for voting; `voting` and `standings` head for a round.
-          to: from === "lobby" ? "voting" : "playing",
+          // heads for writing or voting; `standings` heads for a round.
+          to: from === "lobby" ? afterLobby(room) : "playing",
         },
       };
     }
@@ -813,7 +997,7 @@ function apply(room: Room, ev: RoomEvent): Room {
       // Locked once the match starts: changing the round count mid-match
       // would move the finish line under the players.
       if (room.phase.name !== "lobby") return room;
-      const settings = applySettings(room.settings, ev.values);
+      const settings = applySettings(room.settings, ev.values, ev.choices);
       return settings === room.settings ? room : { ...room, settings };
     }
 
@@ -847,13 +1031,31 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "castVote": {
       if (room.phase.name !== "voting") return room;
-      // A hand-rolled socket message is not bound by the UI, so the ballot and
-      // the budget are both checked here rather than trusted. The *ballot*,
-      // not the pool: `random` is votable but is not a category.
-      if (!(BALLOT as readonly string[]).includes(ev.category)) return room;
       if (!room.players.some((p) => p.id === ev.playerId)) return room;
-      const budget = voteBudget(room.settings);
+
       const row = room.votes[ev.playerId] ?? {};
+
+      if (customEnabled(room.settings)) {
+        // The hand is the ballot, and *how many hands held this card* is the
+        // per-card cap. A hand-rolled socket message is not bound by the UI, so
+        // both are checked here rather than trusted: without the first anyone
+        // could vote for a card they were never shown, and without the second
+        // they could put their whole budget on one card dealt once. The
+        // built-in ballot genuinely lets a player stack votes on a category;
+        // here you cannot choose to be dealt a card again, so backing it twice
+        // is luck rather than a move — see the spec's §4.3. Nothing downstream
+        // may treat this tally as a 0/1 flag: a card dealt twice is two votes.
+        const hands = room.deal[ev.playerId] ?? [];
+        const dealt = hands.filter((h) => h.cardIds.includes(ev.category)).length;
+        if (dealt === 0) return room;
+        if ((row[ev.category] ?? 0) >= dealt) return room;
+      } else if (!(BALLOT as readonly string[]).includes(ev.category)) {
+        return room;
+      }
+
+      const budget = customEnabled(room.settings)
+        ? voteBudgetFor()
+        : voteBudget(room.settings);
       const spent = votesSpent(row);
       if (spent >= budget) return room;
       return {
@@ -955,6 +1157,28 @@ function apply(room: Room, ev: RoomEvent): Room {
       };
     }
 
+    case "moveCursor": {
+      if (room.phase.name !== "creating") return room;
+      if (!room.players.some((p) => p.id === ev.playerId)) return room;
+      const quota = quotaOf(room);
+      if (!Number.isInteger(ev.slot) || ev.slot < 0 || ev.slot >= quota) return room;
+      if (room.cursors[ev.playerId] === ev.slot) return room;
+      return { ...room, cursors: { ...room.cursors, [ev.playerId]: ev.slot } };
+    }
+
+    case "commitDraft": {
+      if (room.phase.name !== "creating") return room;
+      return writeSlot(room, ev.playerId, ev.slot, ev.text);
+    }
+
+    case "clearDraft": {
+      if (room.phase.name !== "creating") return room;
+      // Goes through the same path a commit does, so un-readying is the same
+      // one rule rather than a second copy of it — and `settle` then tears
+      // down any close this player's readiness was holding open.
+      return writeSlot(room, ev.playerId, ev.slot, "");
+    }
+
     case "showStandings": {
       if (ev.playerId !== room.hostId) return room;
       if (room.phase.name !== "scoring") return room;
@@ -1033,7 +1257,9 @@ function apply(room: Room, ev: RoomEvent): Room {
         room.history.length === 0;
       // `inTeamSelect` rather than a bare `=== "teams"`: the host's Back button
       // stays on screen through the countdown out of team select, so it has to
-      // work there too.
+      // work there too. `creating` joins the list for the same reason
+      // `voting` is on it: both are one step out from the lobby, not the
+      // match's start.
       //
       // `playing` and `scoring` are here because those screens carry the same
       // top-right back-out every other host screen does. Between them they
@@ -1044,6 +1270,7 @@ function apply(room: Room, ev: RoomEvent): Room {
       if (
         room.phase.name !== "standings" &&
         room.phase.name !== "voting" &&
+        room.phase.name !== "creating" &&
         room.phase.name !== "playing" &&
         room.phase.name !== "scoring" &&
         !postVotingCountdown &&
@@ -1051,27 +1278,46 @@ function apply(room: Room, ev: RoomEvent): Room {
       ) {
         return room;
       }
-      // With teams on, Back out of voting (or the countdown right after it)
-      // is one step, not all the way home: the room returns to team
-      // selection. The teams themselves survive — `enterTeams` keeps them
-      // when the count still matches — but nobody is on one, which is also
-      // what stops `settle` closing team select again the instant it opens.
-      // The votes go: they belonged to the voting round being abandoned, and
-      // a stale tally must not sit under the team screen.
-      if ((room.phase.name === "voting" || postVotingCountdown) && teamsEnabled(room.settings)) {
-        return { ...enterTeams(room), votes: {}, paused: null };
+      // With teams on, Back out of voting, the writing window, or the
+      // countdown right after voting is one step, not all the way home: the
+      // room returns to team selection. The teams themselves survive —
+      // `enterTeams` keeps them when the count still matches — but nobody is
+      // on one, which is also what stops `settle` closing team select again
+      // the instant it opens. The votes go: they belonged to the voting round
+      // being abandoned, and a stale tally must not sit under the team
+      // screen. `drafts`/`cursors`/`pool`/`deal` go for the same reason —
+      // whatever was written or drawn belonged to the match being abandoned —
+      // and `authorsRevealed` goes with the pool it describes, so the flag can
+      // never outlive the cards and greet the next pool already revealed.
+      if (
+        (room.phase.name === "voting" || room.phase.name === "creating" || postVotingCountdown) &&
+        teamsEnabled(room.settings)
+      ) {
+        return {
+          ...enterTeams(room),
+          votes: {},
+          paused: null,
+          drafts: {},
+          cursors: {},
+          pool: null,
+          deal: {},
+          authorsRevealed: false,
+        };
       }
       // Settings survive — the host usually wants the same match again — and
       // so does `kicked`, which is durable for the room's lifetime. The votes
       // and the teams do not: both belonged to the match being abandoned, and
-      // the next one rebuilds teams from whatever `teamCount` is by then.
+      // the next one rebuilds teams from whatever `teamCount` is by then. Nor
+      // does anything written for it — `drafts`/`cursors`/`pool`/`deal` and the
+      // `authorsRevealed` flag that describes them reset the same way, for a
+      // custom match that never gets replayed as one.
       //
       // `paused` goes with them, for the reason the view jumper clears it: a
       // hold belongs to the phase it was taken in, and one carried into a lobby
       // freezes the room with no visible cause — `tick` returns early while it
-      // is set, so nobody's Ready button could ever open a countdown again. Both
-      // phases a round can be held in, `playing` and `voting`, now have a
-      // back-out on screen while the hold is on.
+      // is set, so nobody's Ready button could ever open a countdown again. All
+      // three phases a round can be held in — `playing`, `voting` and the
+      // writing window — have a back-out on screen while the hold is on.
       return {
         ...room,
         phase: { name: "lobby" },
@@ -1081,6 +1327,11 @@ function apply(room: Room, ev: RoomEvent): Room {
         votes: {},
         teams: [],
         paused: null,
+        drafts: {},
+        cursors: {},
+        pool: null,
+        deal: {},
+        authorsRevealed: false,
       };
     }
 
@@ -1223,12 +1474,16 @@ function tick(room: Room, now: number, roll: number): Room {
   if (room.paused !== null) return room;
   const phase = room.phase;
   if (phase.name === "countdown" && now >= phase.endsAt) {
-    if (phase.to === "voting") {
+    if (phase.to === "voting" || phase.to === "creating") {
       return {
         ...room,
-        phase: { name: "voting", endsAt: now + VOTING_MS },
+        phase:
+          phase.to === "creating"
+            ? { name: "creating", endsAt: now + WRITE_MS }
+            : { name: "voting", endsAt: now + VOTING_MS },
         // Load-bearing, not housekeeping: `ready` means "has a team" on this
-        // side of the edge and "votes spent" on the other.
+        // side of the edge and "votes spent" (or "every slot committed") on
+        // the other.
         //
         // The backstop for auto-assignment. The host's Continue already places
         // every straggler, and leaving a team tears the countdown down rather
@@ -1239,6 +1494,10 @@ function tick(room: Room, now: number, roll: number): Room {
           ...p, ready: false,
         })),
         votes: {},
+        // A fresh writing window starts with nothing written; a fresh voting
+        // window has no drafts to carry, so this is a no-op on that edge.
+        drafts: phase.to === "creating" ? {} : room.drafts,
+        cursors: phase.to === "creating" ? {} : room.cursors,
       };
     }
     return {
@@ -1247,14 +1506,17 @@ function tick(room: Room, now: number, roll: number): Room {
       // the countdown opens means there is no window in which a cancelled
       // countdown could re-roll it, and nothing on the countdown screen can
       // leak it.
-      category: pickCategory(room.votes, spentCategories(room), roll),
+      category: drawCategory(room, roll),
       phase: { name: "playing", endsAt: now + room.settings.durationSec * 1_000 },
     };
+  }
+  if (phase.name === "creating" && now >= phase.endsAt) {
+    return closeCreating(room, now, roll);
   }
   if (phase.name === "voting" && now >= phase.endsAt) {
     // The global deadline closes voting into the same countdown the other two
     // triggers open, so a round always starts the same way.
-    return { ...room, phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to: "playing" } };
+    return closeVoting(room, now);
   }
   if (phase.name === "playing" && now >= phase.endsAt) {
     return { ...room, phase: { name: "timesup", endsAt: now + TIMESUP_MS } };

@@ -16,8 +16,11 @@ export function pulseInterval(id: string): string {
 
 type PillProps = {
   player: Player;
-  /** `lobby` shows readiness; `playing` is the name and the face alone. */
-  variant: "playing" | "lobby";
+  /** `lobby` shows readiness; `playing` is the name and the face alone;
+      `creating` shows readiness too, but also spells out the not-ready state
+      as "··· WRITING" — the writing phase's author columns, unlike the lobby,
+      have something to say about a waiting player besides "not yet". */
+  variant: "playing" | "lobby" | "creating";
   onKick?: (id: string) => void;
 };
 
@@ -32,11 +35,12 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
   // (`everyoneReady` never waits on one). A pill that sat flat forever while
   // the room started anyway would misreport the only thing this pill says.
   const ready = isWaiting(player);
-  if (variant === "lobby") {
+  const showsReadiness = variant === "lobby" || variant === "creating";
+  if (showsReadiness) {
     classes.push(ready ? "player-pill--ready" : "player-pill--waiting");
   }
   if (!player.connected) classes.push("player-pill--offline");
-  const bobbing = variant === "lobby" && !ready;
+  const bobbing = showsReadiness && !ready;
 
   const body = (
     <>
@@ -52,6 +56,12 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
           once — ten of them blinking out of step were the busiest thing on a
           screen whose job is the category. */}
       {variant === "lobby" && ready && <ReadyMark />}
+      {/* The writing phase is the one place the *not*-ready state is worth
+          naming: an author column with nothing under it reads as broken,
+          where an unmarked lobby pill just reads as unmarked. Ready still
+          draws the one `ReadyMark` the whole app draws. */}
+      {variant === "creating" &&
+        (ready ? <ReadyMark /> : <span className="player-pill__mark">··· WRITING</span>)}
     </>
   );
 

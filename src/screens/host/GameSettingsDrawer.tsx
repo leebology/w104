@@ -1,7 +1,8 @@
 import { Drawer } from "../../components/Drawer";
+import { SettingChoice } from "../../components/SettingChoice";
 import { Stepper, stepperPropsForKind } from "../../components/Stepper";
 import { roomStore } from "../../net/room";
-import { modeSpec } from "../../../shared/gamemodes";
+import { isNumericSpec, modeSpec } from "../../../shared/gamemodes";
 import type { RoomState } from "../../../shared/state";
 
 type Props = {
@@ -23,20 +24,36 @@ export function GameSettingsDrawer({ room, open, onClose, disabled }: Props) {
     <Drawer side="right" open={open} title="Game settings" onClose={onClose}>
       <p className="drawer__note">Current game mode: {mode.name}</p>
       <div className="drawer__settings">
-        {mode.settings.map((spec) => (
-          <Stepper
-            key={spec.key}
-            label={spec.label}
-            value={room.settings[spec.key]}
-            min={spec.min}
-            max={spec.max}
-            disabled={disabled}
-            {...stepperPropsForKind(spec.kind)}
-            onChange={(value) =>
-              roomStore.send({ type: "setSettings", values: { [spec.key]: value } })
-            }
-          />
-        ))}
+        {mode.settings.map((spec) =>
+          isNumericSpec(spec) ? (
+            <Stepper
+              key={spec.key}
+              label={spec.label}
+              value={room.settings[spec.key]}
+              min={spec.min}
+              max={spec.max}
+              disabled={disabled}
+              {...stepperPropsForKind(spec.kind)}
+              onChange={(value) =>
+                roomStore.send({ type: "setSettings", values: { [spec.key]: value } })
+              }
+            />
+          ) : (
+            <SettingChoice
+              key={spec.key}
+              spec={spec}
+              value={room.settings[spec.key]}
+              disabled={disabled}
+              onChange={(value) =>
+                roomStore.send({
+                  type: "setSettings",
+                  values: {},
+                  choices: { [spec.key]: value },
+                })
+              }
+            />
+          ),
+        )}
       </div>
     </Drawer>
   );

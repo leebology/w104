@@ -3,6 +3,7 @@ import { formatClock, useRemaining } from "../../net/clock";
 import { BALLOT, RANDOM_CATEGORY } from "../../../shared/categories";
 import { tallyVotes, voteBudget, voteShares } from "../../../shared/voting";
 import { teamsEnabled } from "../../../shared/teams";
+import { customEnabled } from "../../../shared/gamemodes";
 import { isWaiting } from "../../../shared/bots";
 import { currentRound } from "../../../shared/state";
 import type { Player, RoomState } from "../../../shared/state";
@@ -17,6 +18,7 @@ import {
   HostHeaderRight,
   VotingCount,
 } from "./HostHeader";
+import { HostVotingCustom } from "./HostVotingCustom";
 
 type Props = {
   room: RoomState;
@@ -25,6 +27,11 @@ type Props = {
   offset: number;
   /** Present once voting has closed and the round countdown is running. */
   countdown?: { endsAt: number; offset: number };
+  /** The last `creating`-phase `RoomState` this client saw — `null` for a
+      stock match (there is no writing phase to have seen) and for a custom
+      match this client joined after it closed. Only the custom fork's open
+      board does anything with it; see `HostVotingCustom`'s transition. */
+  creatingSnapshot?: RoomState | null;
 };
 
 /** Who voted for this category, and how many times each. */
@@ -77,8 +84,11 @@ function VoteFoot({
  * ends nothing — no round has been played, the teams survive the trip, and the
  * only casualty is a tally nobody has acted on yet. A dialog warning that the
  * game will end would be warning about something that does not happen.
+ *
+ * Exported: the custom fork's closed reveal wants the identical behaviour
+ * rather than a second copy of it.
  */
-function VotingExit({ room }: { room: RoomState }) {
+export function VotingExit({ room }: { room: RoomState }) {
   if (!teamsEnabled(room.settings)) return <HostBackToRoom />;
   return (
     <HostExit
@@ -110,42 +120,61 @@ function cardLabel(category: string): string {
 }
 
 /**
- * The eleven cards split into the two rows the TV shows, balanced so the rows
- * carry near-equal total grow.
+ * The pool split into the two rows the TV shows, balanced so the rows carry
+ * near-equal total grow.
  *
  * Width is the odds, but `flex-grow` is only ever relative to the row a card
  * is in — so without this a one-vote card in a quiet row comes out wider than
  * a two-vote card in a loud one, and the whole mechanic quietly lies. Heaviest
- * card to the lighter row, half the ballot per row, then each row is put back
- * into ballot order: the list itself never re-sorts, only which row a card
- * lands in.
+ * card to the lighter row, half the pool per row, then each row is put back
+ * into its original order: the list itself never re-sorts, only which row a
+ * card lands in.
+ *
+ * Generic over the card shape and exported: the custom fork's pool is a
+ * `PoolCard`, not this file's inline ballot shape, and its "position" is a
+ * board rank rather than a ballot index, so both are supplied by the caller
+ * instead of assumed here. The stock caller passes `(c) => c.votes` and
+ * `(c) => BALLOT.indexOf(...)`.
  */
-type VoteCard = { category: string; votes: number };
-
-function balancedRows(cards: VoteCard[]): VoteCard[][] {
-  const rowA: VoteCard[] = [];
-  const rowB: VoteCard[] = [];
+export function balancedRows<T>(
+  cards: readonly T[],
+  weightOf: (card: T) => number,
+  orderOf: (card: T) => number,
+): T[][] {
+  const rowA: T[] = [];
+  const rowB: T[] = [];
   let sumA = 0;
   let sumB = 0;
   const half = Math.ceil(cards.length / 2);
-  for (const card of [...cards].sort((a, b) => b.votes - a.votes)) {
+  for (const card of [...cards].sort((a, b) => weightOf(b) - weightOf(a))) {
     const toA = rowB.length >= half || (rowA.length < half && sumA <= sumB);
     if (toA) {
       rowA.push(card);
-      sumA += card.votes + 1;
+      sumA += weightOf(card) + 1;
     } else {
       rowB.push(card);
-      sumB += card.votes + 1;
+      sumB += weightOf(card) + 1;
     }
   }
-  const poolIndex = (c: VoteCard) =>
-    BALLOT.indexOf(c.category as (typeof BALLOT)[number]);
-  rowA.sort((a, b) => poolIndex(a) - poolIndex(b));
-  rowB.sort((a, b) => poolIndex(a) - poolIndex(b));
+  rowA.sort((a, b) => orderOf(a) - orderOf(b));
+  rowB.sort((a, b) => orderOf(a) - orderOf(b));
   return rowB.length > 0 ? [rowA, rowB] : [rowA];
 }
 
-export function HostVoting({ room, offset, countdown }: Props) {
+export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props) {
+  // A different pool, a different fork — everything past this point (both
+  // rows, the closed reveal) is the stock ballot's only.
+  if (customEnabled(room.settings) && room.pool) {
+    return (
+      <HostVotingCustom
+        room={room}
+        offset={offset}
+        countdown={countdown}
+        creatingSnapshot={creatingSnapshot ?? null}
+      />
+    );
+  }
+
   const totals = tallyVotes(room.votes);
   // One hook, one deadline: the voting window while it runs, the round
   // countdown once it has closed. `useRemaining` returns whole seconds.
@@ -176,7 +205,11 @@ export function HostVoting({ room, offset, countdown }: Props) {
   // One scale across both rows, so a name's size means the same thing
   // wherever the card sits.
   const maxVotes = Math.max(1, ...cards.map((c) => c.votes));
-  const rows = balancedRows(cards);
+  const rows = balancedRows(
+    cards,
+    (c) => c.votes,
+    (c) => BALLOT.indexOf(c.category as (typeof BALLOT)[number]),
+  );
 
   return (
     <main className="screen screen--host host-voting">

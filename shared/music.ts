@@ -114,11 +114,16 @@ type SceneView = Pick<Room, "history" | "settings"> & { phase: Phase };
  * screen change.** The player compares scene ids and does nothing when they
  * match, so anything that should not restart simply keeps its name.
  *
- * - **The round's music starts at the category vote and runs unbroken into
- *   round one.** `voting`, the countdown that follows it and `playing` all
- *   return `gameplay`, so the track that comes up when the room picks a
- *   category is still going when the whistle blows — one continuous piece
- *   across three screens, with no restart at either seam.
+ * - **The round's music starts wherever the room first touches the category,
+ *   and runs unbroken into round one.** `voting`, the countdown that follows
+ *   it and `playing` all return `gameplay`, so the track that comes up when
+ *   the room picks a category is still going when the whistle blows — one
+ *   continuous piece across three screens, with no restart at either seam.
+ *   In a custom match that reach starts one screen earlier, at `creating`:
+ *   writing the pool is the room deciding what it will play, and
+ *   `closeCreating` opens `voting` with no countdown between them, so naming
+ *   the same scene is what carries the track across a seam that has no room
+ *   for a sting anyway.
  * - **That is why the round-one countdown is the one countdown with no sting.**
  *   The countdown clip is a *lead-in* to the round's music, and by that point
  *   the round's music is already playing. Every other countdown does get it:
@@ -134,6 +139,7 @@ export function sceneFor(view: SceneView): SceneId {
     case "lobby":
     case "teams":
       return "lobby";
+    case "creating":
     case "voting":
       return "gameplay";
     case "countdown":

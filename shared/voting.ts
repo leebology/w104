@@ -46,7 +46,15 @@ export function tallyVotes(votes: VoteMap): Record<string, number> {
  * has been stable since ES2019), but it would depend on insertion order —
  * i.e. on who voted first — rather than being a fixed property of the votes.
  */
-export function voteShares(votes: VoteMap): Record<string, number> {
+export function voteShares(
+  votes: VoteMap,
+  /**
+   * Remainder tie-break order. Defaults to the built-in ballot; the custom
+   * pool passes its own card ids, because `BALLOT.indexOf` would hand every
+   * one of them -1 and float them all to the front of every tie.
+   */
+  order: readonly string[] = BALLOT,
+): Record<string, number> {
   const totals = tallyVotes(votes);
   const entries = Object.entries(totals);
   const sum = entries.reduce((a, [, n]) => a + n, 0);
@@ -55,10 +63,7 @@ export function voteShares(votes: VoteMap): Record<string, number> {
   const exact = entries.map(([category, n]) => ({
     category,
     value: (n * 100) / sum,
-    // The *ballot's* order, not the pool's: the random option is votable and
-    // therefore shareable, and `CATEGORIES.indexOf` would hand it -1 and float
-    // it to the front of every remainder tie.
-    order: BALLOT.indexOf(category as (typeof BALLOT)[number]),
+    order: order.indexOf(category),
   }));
 
   const out: Record<string, number> = {};
@@ -154,7 +159,7 @@ function uniformPick(pool: readonly string[], roll: number): string {
  * belt-and-braces rather than load-bearing — kept because it costs nothing and
  * rules the case out up front.
  */
-function weightedPick(
+export function weightedPick(
   weights: Array<[string, number]>,
   roll: number,
 ): { pick: string; fraction: number } {

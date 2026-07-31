@@ -12,7 +12,7 @@ import { debugEnabled, fetchUsage } from "../net/usage";
 import type { UsageResult } from "../net/usage";
 import { getPlayerId } from "../net/identity";
 import { roomStore, useRoom } from "../net/room";
-import { VIEWS, currentView } from "../../shared/views";
+import { VIEWS, currentView, isViewId } from "../../shared/views";
 import { MAX_BOTS, isBot } from "../../shared/bots";
 import { MAX_LINE_MS, MIN_LINE_MS, REVEAL_TIMING } from "../../shared/reveal";
 
@@ -211,19 +211,24 @@ export function DebugPanel() {
  * the server has to assume the buttons are missing.
  *
  * The phases differ between them, and the split is not arbitrary: hold and skip
- * act on a *deadline*, and both phases that run one long enough to be caught
- * mid-decision have one — the round and the category vote. Auto-fill writes
- * words, so it is the round alone.
+ * act on a *deadline*, and every phase that runs one long enough to be caught
+ * mid-decision has one — the round, the category vote, and the writing phase.
+ * Auto-fill needs somewhere to *write*, which is the round and the writing
+ * phase but not the vote, where there is nothing to fill in.
  */
 function DebugControls({ state }: { state: ReturnType<typeof useRoom> }) {
   const room = state.room;
   const isHost = room !== null && room.hostId === getPlayerId();
   const playing = room?.phase.name === "playing";
+  const creating = room?.phase.name === "creating";
   // Kept in step with `isHoldable` in shared/reduce.ts, which is what actually
   // decides — this only greys the buttons out.
-  const timed = playing || room?.phase.name === "voting";
+  const timed = playing || creating || room?.phase.name === "voting";
   const paused = room?.paused ?? null;
-  const canAct = isHost && playing;
+  // The two phases `party/server.ts`'s `debugFill` branch knows how to write
+  // into: words during the round, categories during the writing phase.
+  const fillable = playing || creating;
+  const canAct = isHost && fillable;
   const canTime = isHost && timed;
 
   const reason = !room
@@ -231,9 +236,9 @@ function DebugControls({ state }: { state: ReturnType<typeof useRoom> }) {
     : !isHost
       ? "Host device only."
       : !timed
-        ? "Only while a round or the vote is running."
-        : !playing
-          ? "Auto-fill needs a running round."
+        ? "Only while a round, the vote or the writing phase is running."
+        : !fillable
+          ? "Auto-fill needs a round or the writing phase."
           : null;
 
   return (
@@ -265,12 +270,13 @@ function DebugControls({ state }: { state: ReturnType<typeof useRoom> }) {
           disabled={!canAct}
           onClick={() => roomStore.send({ type: "debugFill" })}
         >
-          Auto-fill test data
+          {creating ? "Fill categories" : "Fill words"}
         </button>
       </div>
       {paused !== null && (
         <p className="debug-section__detail debug-section__detail--live">
-          {playing ? "Round" : "Vote"} held with {Math.ceil(paused / 1000)}s left.
+          {playing ? "Round" : creating ? "Writing" : "Vote"} held with{" "}
+          {Math.ceil(paused / 1000)}s left.
         </p>
       )}
     </section>
@@ -294,7 +300,11 @@ function DebugControls({ state }: { state: ReturnType<typeof useRoom> }) {
 function ViewJumper({ state }: { state: ReturnType<typeof useRoom> }) {
   const room = state.room;
   const isHost = room !== null && room.hostId === getPlayerId();
-  const here = room ? currentView(room) : null;
+  const rawHere = room ? currentView(room) : null;
+  // `currentView` can answer `"creating"`, which has no catalog entry or jump
+  // target yet — narrowed here so "restart this view" has nothing to send to
+  // while the room sits on a phase the panel cannot yet name.
+  const here = rawHere !== null && isViewId(rawHere) ? rawHere : null;
 
   return (
     <section className="debug-section">

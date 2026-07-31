@@ -47,7 +47,14 @@ export type SettingKind = "count" | "duration" | "teams";
  */
 export type NumericSettingKey = "roundCount" | "durationSec" | "teamCount";
 
-export type SettingSpec = {
+/** The two-option settings a descriptor is allowed to drive. */
+export type ChoiceSettingKey = "categorySource";
+
+export type CategorySource = "stock" | "custom";
+
+export const CATEGORY_SOURCES: readonly CategorySource[] = ["stock", "custom"];
+
+export type NumericSettingSpec = {
   key: NumericSettingKey;
   /** Rendered on the Stepper. Uppercase, matching the rest of the UI. */
   label: string;
@@ -56,6 +63,25 @@ export type SettingSpec = {
   max: number;
   default: number;
 };
+
+/**
+ * A setting whose value is a word rather than a number. Kept a separate shape
+ * rather than a numeric one with two values, because the drawer renders the
+ * option's own label and a 0/1 stepper would have to invent one.
+ */
+export type ChoiceSettingSpec = {
+  key: ChoiceSettingKey;
+  label: string;
+  kind: "choice";
+  options: ReadonlyArray<{ value: string; label: string }>;
+  default: string;
+};
+
+export type SettingSpec = NumericSettingSpec | ChoiceSettingSpec;
+
+export function isNumericSpec(spec: SettingSpec): spec is NumericSettingSpec {
+  return spec.kind !== "choice";
+}
 
 export type GameMode = {
   id: GameModeId;
@@ -99,6 +125,16 @@ export const GAME_MODES: Record<GameModeId, GameMode> = {
         max: MAX_TEAM_COUNT,
         default: 0,
       },
+      {
+        key: "categorySource",
+        label: "CATEGORIES",
+        kind: "choice",
+        options: [
+          { value: "stock", label: "DEFAULT" },
+          { value: "custom", label: "CUSTOM" },
+        ],
+        default: "stock",
+      },
     ],
   },
 };
@@ -125,8 +161,12 @@ export function defaultSettings(id: GameModeId): MatchSettings {
     roundCount: DEFAULT_ROUND_COUNT,
     durationSec: DEFAULT_DURATION_SEC,
     teamCount: 0,
+    categorySource: "stock",
   };
-  for (const spec of GAME_MODES[id].settings) settings[spec.key] = spec.default;
+  for (const spec of GAME_MODES[id].settings) {
+    if (isNumericSpec(spec)) settings[spec.key] = spec.default;
+    else settings[spec.key] = spec.default as CategorySource;
+  }
   return settings;
 }
 
@@ -139,11 +179,32 @@ export function defaultSettings(id: GameModeId): MatchSettings {
  * room with NaN.
  */
 export function normalizeSetting(
-  spec: SettingSpec,
+  spec: NumericSettingSpec,
   value: number | undefined,
   current: number,
 ): number {
   if (value === undefined || !Number.isFinite(value)) return current;
   const clamped = Math.min(spec.max, Math.max(spec.min, Math.round(value)));
   return spec.kind === "teams" ? snapTeamCount(clamped) : clamped;
+}
+
+/**
+ * Clamps a host-supplied choice to one the descriptor actually offers. Falls
+ * back to what is already set for anything unrecognised, exactly as
+ * `normalizeSetting` falls back on a non-finite number — settings arrive over
+ * a socket, and the drawer's refusal to render a third option is not a
+ * guarantee.
+ */
+export function normalizeChoice(
+  spec: ChoiceSettingSpec,
+  value: string | undefined,
+  current: string,
+): string {
+  if (value === undefined) return current;
+  return spec.options.some((o) => o.value === value) ? value : current;
+}
+
+/** Whether this match writes its own categories. One place, many readers. */
+export function customEnabled(settings: Pick<MatchSettings, "categorySource">): boolean {
+  return settings.categorySource === "custom";
 }

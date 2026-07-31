@@ -1200,16 +1200,24 @@ ul, ol { list-style: none; }
    order and competes for width like everything else. */
 .vote-card--random { border-style: dashed; }
 
-/* Two ceilings, and the smaller wins. `--name-size` is the ideal — it scales
-   with share of the leader, set inline per card — and `17cqw` is what the
-   card can actually afford at the width flex-grow has left it. `anywhere`
-   is the last resort under both. */
+/* Two ceilings. `--name-size` is the ideal — it scales with share of the
+   leader, set inline per card — and `17cqw` is what the card can actually
+   afford at the width flex-grow has left it. `anywhere` is the last resort. */
 .vote-card__name {
   font-family: var(--display);
   font-size: min(var(--name-size, 21px), 17cqw);
   line-height: 1.06;
   overflow-wrap: anywhere;
   hyphens: auto;
+}
+
+/* The custom board adds a hard floor, and only the custom board: it is the
+   one that can crowd a row past six, where `17cqw` alone would land near
+   12.7px on the smallest card. Deliberately not on the shared rule — the
+   stock ballot's zero-vote cards ask for 20px (`nameSize` in HostVoting), so
+   a shared floor would silently resize a screen this feature never touched. */
+.host-voting--custom .vote-card__name {
+  font-size: max(24px, min(var(--name-size, 21px), 17cqw));
 }
 
 .vote-card__foot {
@@ -1280,6 +1288,129 @@ ul, ol { list-style: none; }
   .host-voting--closed .get-ready-pose {
     animation: none;
   }
+}
+
+/* ---------------------------------------------------- host voting, custom */
+
+/* The custom board caps at ten cards (`BOARD_CAP`) rather than the ballot's
+   up to eleven, so its five-per-row minimum can afford to be wider — 132px
+   instead of the stock 104px — which is what lets `17cqw` clear the 24px
+   floor above without help at ten cards over two rows of five. Applied to
+   every custom card, open board and closed reveal alike, so the promise is
+   uniform across the whole screen. */
+.vote-card--custom { min-width: 132px; }
+
+/* The closed reveal's runners-up keep the stock `.vote-card--small` sizing
+   (150px basis, 220px cap, 19px name, 20px total) but stand taller — 110px
+   rather than 86px — a number the design brief calls out for this board
+   specifically, not a mistaken re-derivation of the stock one. */
+.vote-card--custom.vote-card--small { min-height: 110px; }
+
+/* No voter trail on this board — hands stay private until the reveal — so
+   the lone total has nothing to sit opposite. `.vote-card__foot`'s own
+   `space-between` would otherwise push a single child to the left. */
+.vote-card__foot--solo { justify-content: flex-end; }
+
+/* "+ N MORE ON THE BOARD": a count, never a list — a list would be a second
+   board. Centred under the grid, above the footer. */
+.host-voting__pack {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding: 0 0 12px;
+}
+
+.host-voting__pack-pill {
+  font-family: var(--display);
+  font-size: 13px;
+  color: var(--ink-dim);
+  background: var(--cream);
+  border: var(--border);
+  border-radius: 99px;
+  padding: 8px 18px;
+}
+
+/* The author chip's slot, stacked above the name rather than beside it — the
+   phone's voting tile puts the chip next to the chance figure instead, but
+   the board pins it "top-left inside the card" per the brief. Grouped with
+   the name in its own flex column so `.vote-card`'s own `space-between`
+   still only has two things to split: this group, and the total below. */
+.vote-card__top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* The count-to-chance crossfade: both figures stacked in the same grid cell
+   so neither has to be measured or absolutely positioned against the other.
+   `justify-items: end` keeps the stack right-aligned, matching the stock
+   total's own position. */
+.vote-card__crossfade {
+  display: grid;
+  justify-items: end;
+}
+
+.vote-card__crossfade > span { grid-area: 1 / 1; }
+
+@keyframes countFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes countFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.vote-card__total--out { animation: countFadeOut 200ms ease-out both; }
+.vote-card__total--in { animation: countFadeIn 200ms ease-out both; }
+
+/* Zero-vote cards at the close: on screen just long enough to leave. This
+   row only ever exists for the ~200ms it takes to empty — see
+   `HostVotingCustom.tsx`'s `zeroGone`. */
+.host-voting__row--leaving {
+  display: flex;
+  gap: 12px;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.vote-card--leaving { animation: cardLeave 200ms ease-in both; }
+
+@keyframes cardLeave {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(6px); }
+}
+
+/* The 260ms reflow onto the podium — slower and a different curve than the
+   live board's own 220ms `flex-grow` transition, because this one is playing
+   once, at a fixed moment, rather than tracking a vote as it lands. */
+.host-voting--closed .vote-card--custom {
+  transition: flex-grow 260ms ease-out;
+}
+
+/* The transition's board wipe-in (§1c row 4): every pool card, sunken and
+   unvoted, translating up 8px as it fades in — staggered per card by
+   `HostVotingCustom`'s own `animation-delay`. Reduced motion (below) drops
+   this to nothing rather than a shortened version — the board is meant to
+   simply already be there. */
+.vote-card--wipe { animation: voteBoardWipeIn 180ms ease-out both; }
+
+@keyframes voteBoardWipeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vote-card--leaving { animation: none; opacity: 0; }
+  .vote-card__total--out,
+  .vote-card__total--in { animation: none; }
+  .vote-card__total--out { opacity: 0; }
+  .vote-card__total--in { opacity: 1; }
+  .host-voting--closed .vote-card--custom { transition: none; }
+  .vote-card--wipe { animation: none; }
 }
 
 /* ---------------------------------------------------------- host scoring */
@@ -4016,6 +4147,45 @@ ul, ol { list-style: none; }
   border-radius: 4px;
 }
 
+/* A Stepper's control row, holding two words instead of a number. The 38px
+   height is what keeps the four drawer cards stacking as one rhythm. */
+.setting-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  height: 38px;
+  width: 200px;
+  background: var(--code-empty);
+  border: var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.setting-choice__opt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  font-family: "Bungee", sans-serif;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+
+/* A fill, not a border: a bordered segment inside a bordered track draws a
+   double rule, and at drawer distance a fill reads where a tick does not. */
+.setting-choice__opt--on {
+  background: var(--gold);
+  color: var(--ink-gold);
+}
+
+.stepper--disabled .setting-choice__opt {
+  cursor: default;
+}
+
 .stepper__value--display {
   cursor: pointer;
   display: inline-flex;
@@ -4777,6 +4947,418 @@ ul, ol { list-style: none; }
   white-space: nowrap;
 }
 
+/* ------------------------------------------------- host: custom categories */
+
+.host-creating { padding: 0; }
+
+.host-creating__plaque-wrapper {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.host-creating__plaque {
+  font-size: 22px;
+  letter-spacing: 0.14em;
+  padding: 8px 28px;
+  transform: rotate(-2.5deg);
+}
+
+.host-creating__count {
+  font-family: var(--display);
+  font-size: 20px;
+  line-height: 1.06;
+  letter-spacing: 0.12em;
+  color: var(--cream);
+  text-transform: uppercase;
+}
+
+/* The standard `.timer-bar`, at its own default 106px — no override needed.
+   `.host-creating__timer` only scopes the clock and track down to §1b's 52px
+   / 28px, the same way `.player-voting__bar` scopes its own pair. */
+.host-creating__timer .timer-bar__num { font-size: 52px; }
+.host-creating__timer .timer-track { height: 28px; }
+
+/* Layout A: centred row of fixed-width columns, one player per column.
+   TV screens never scroll — `flex-wrap` is what lets 6-12 authors spill to a
+   second row instead, the same problem `.team-grid` solves. `safe center` on
+   both axes is that screen's fix too: plain `center` would push the first
+   row out of reach above the scrollport once wrapped content overflows.
+   `overflow-y: auto` stays only as the same escape valve `.team-grid` keeps
+   for a room dressed with bots — never `overflow-x`. */
+.host-creating__columns {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: safe center;
+  align-content: safe center;
+  gap: 18px;
+  padding: 24px 34px;
+  overflow-y: auto;
+}
+
+.host-creating__column {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 218px;
+}
+
+.host-creating__slots {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Layout B: grid of `--wall-cols` columns (6/7/8, escalating with slot count
+   — see `wallCols` in HostCreating.tsx), one cell per pool slot. Same
+   `overflow-y: auto` + `align-content: safe center` escape valve as
+   `.team-grid`, never `overflow-x` — the columns already fill the row. */
+.host-creating__wall {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--wall-cols, 6), 1fr);
+  grid-auto-rows: minmax(0, 1fr);
+  align-content: safe center;
+  gap: 12px;
+  padding: 24px 34px;
+  overflow-y: auto;
+}
+
+.host-creating__cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- slot states ---- */
+
+/* 218 × 96px cream card with ink border, radius 14px, contents centred.
+   The transition here is the empty → writing edge (§1b): 160ms ease-out,
+   `--code-empty` → cream, shadow in, opacity to 1. The div itself persists
+   across all three states (React reuses it; only its class changes), which
+   is what lets a `transition` — rather than a keyframe — carry that edge. */
+.slot-state {
+  width: 218px;
+  height: 96px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0;
+  transition: background 160ms ease-out, box-shadow 160ms ease-out, opacity 160ms ease-out;
+}
+
+/* Empty slot: --code-empty fill, no shadow, opacity .72. */
+.slot-state--empty {
+  background: var(--code-empty);
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+/* Writing slot: cream fill, 6px 6px 0 shadow, three 14px teal dots. */
+.slot-state--writing {
+  background: var(--cream);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+}
+
+.slot-state__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--teal);
+  animation: pulseDot 1.2s infinite;
+}
+
+.slot-state__dot:nth-child(1) { animation-delay: 0s; }
+.slot-state__dot:nth-child(2) { animation-delay: 0.2s; }
+.slot-state__dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* Done slot: cream fill, 6px 6px 0 shadow, gold DONE stamp. */
+.slot-state--done {
+  background: var(--cream);
+  box-shadow: var(--shadow-card);
+}
+
+.slot-state__stamp {
+  background: var(--gold);
+  color: var(--ink-gold);
+  border: var(--border);
+  border-radius: 8px;
+  padding: 5px 14px;
+  font-family: var(--display);
+  font-size: 16px;
+  line-height: 1.06;
+  letter-spacing: 0.14em;
+  font-weight: normal;
+  text-transform: uppercase;
+  box-shadow: 3px 3px 0 var(--ink);
+  transform: rotate(-8deg);
+  opacity: 0;
+}
+
+/* A/B pair for alternation, chosen by `landClassFor` in HostCreating.tsx from
+   an ordinal frozen the moment a slot first arrives at "done" — never a
+   fixed per-slot index, or the class string never changes and the animation
+   never restarts (see CLAUDE.md traps). Both animations run together: the
+   260ms transform and the separate, shorter 180ms opacity ramp. */
+.slot-state__stamp--a {
+  animation: cardLandA 260ms cubic-bezier(0.34, 1.42, 0.64, 1) forwards,
+    stampReveal 180ms linear forwards;
+}
+
+.slot-state__stamp--b {
+  animation: cardLandB 260ms cubic-bezier(0.34, 1.42, 0.64, 1) forwards,
+    stampReveal 180ms linear forwards;
+}
+
+/* The transition's leave overlay (§1c) renders a *cached* snapshot of
+   already-landed slots — the bounce-in above has already played, on the
+   real `HostCreating` screen this overlay is standing in for, so replaying
+   it here would restamp a card that is about to fly away. This holds the
+   stamp at `cardLandA`/`cardLandB`'s own 100% frame with no animation at
+   all. See `CreatingSlot`'s `frozen` prop. */
+.slot-state__stamp--static {
+  opacity: 1;
+  transform: rotate(-8deg);
+}
+
+/* Mini pill inside a wall cell: 3px ink, radius 99px, positioned bottom-left. */
+.mini-pill {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 5px;
+  border-radius: 99px;
+  border: var(--border);
+  background: var(--cream);
+  color: var(--ink);
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+.mini-pill--ready {
+  background: var(--gold);
+  color: var(--ink-gold);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.mini-pill--waiting {
+  background: var(--code-empty);
+  color: var(--ink-dim);
+}
+
+.mini-pill--offline { opacity: 0.45; }
+
+.mini-pill__avatar {
+  font-size: 15px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.mini-pill__name {
+  font-family: var(--display);
+  font-size: 11px;
+  line-height: 1.06;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 6ch;
+}
+
+/* ---- animations ---- */
+
+/* `pulseDot` itself lives once, at its original definition near the top of
+   this file (search `@keyframes pulseDot`) — reused here, not redefined. A
+   second `@keyframes pulseDot` block used to live in this section; a global
+   stylesheet lets the later definition of a repeated name win everywhere, so
+   it was silently overriding the dot pulse on every screen that uses it, not
+   just this one. Do not reintroduce it here.
+
+   The stamp landing from scale(.86) translateY(-10px) rotate(-8deg) to rest.
+   KEY MOMENT ~62%: the overshoot — the card is being *stamped*. Opacity is
+   deliberately not in this keyframe — see `stampReveal` below, which runs the
+   opacity ramp on its own, shorter timeline. */
+@keyframes cardLandA {
+  0% { transform: scale(0.86) translateY(-10px) rotate(-8deg); }
+  62% { transform: scale(1.12) translateY(0) rotate(-8deg); }
+  100% { transform: scale(1) translateY(0) rotate(-8deg); }
+}
+
+@keyframes cardLandB {
+  0% { transform: scale(0.86) translateY(-10px) rotate(-8deg); }
+  62% { transform: scale(1.12) translateY(0) rotate(-8deg); }
+  100% { transform: scale(1) translateY(0) rotate(-8deg); }
+}
+
+/* The stamp's own opacity ramp, 180ms linear — shorter than the 260ms
+   transform above so the stamp is solid well before it finishes settling
+   (§1b). Run alongside `cardLandA`/`cardLandB` in the same `animation`
+   shorthand, never folded into their keyframes. */
+@keyframes stampReveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---- the transition (§1c): host leave overlay ---- */
+
+/* Every pill and every slot that never finished, fading and dropping as it
+   goes (§1c row 1: "the people leave first"). One keyframe for both the host
+   and the phone — a non-done `.slot-state`/`.player-pill`/`.mini-pill` and a
+   phone's writing card/pager/button are visually different objects, but the
+   motion is identical apart from distance (the host's pills drop 12px, the
+   phone's card 28px — `--leave-y`, set inline per caller, defaults to the
+   host's 12px). This fires exactly once per element (a match writes
+   categories once), so there is no retrigger to guard against with an A/B
+   pair the way `cardLandA/B` needs one. */
+.creating-leave__fade {
+  animation: creatingLeaveFade 240ms ease-in both;
+}
+
+@keyframes creatingLeaveFade {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(var(--leave-y, 12px)); }
+}
+
+/* A done slot's FLIP into the centre deck, then (for the six that stay
+   visible) the deck's own shrink-away — one keyframe spanning both, because
+   both share one element and one `animation-delay`; splitting them into two
+   `animation`s would need the delay list and the name list kept in lockstep
+   by hand. `--flip-dx`/`--flip-dy`/`--flip-rot` are set per element from a
+   *measured* delta (`CreatingLeaveBoard`), never calculated — the same
+   precedent the scoring reveal's frame-3 swap sets. Percentages are the
+   table's own offsets against this keyframe's 960ms span (80ms -> 1040ms):
+   56% is 620ms (arrived), 83% is 880ms (shrink begins). Each keyframe
+   selector carries its own easing, which is what lets one `@keyframes` block
+   still play the FLIP's overshoot and the shrink's ease-in as two different
+   curves. */
+.creating-leave__flip {
+  animation: creatingCardToDeck 960ms both;
+}
+
+@keyframes creatingCardToDeck {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.34, 1.28, 0.64, 1);
+  }
+  56% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot)) scale(1);
+    opacity: 1;
+    animation-timing-function: linear;
+  }
+  83% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot)) scale(1);
+    opacity: 1;
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot)) scale(0.6);
+    opacity: 0;
+  }
+}
+
+/* Slots past the top six (§1c: "fade out during their own travel") — the
+   same FLIP, but fully faded by the moment it would have landed rather than
+   joining the visible deck and shrinking away with it. */
+.creating-leave__flip--fade {
+  animation-name: creatingCardFade;
+}
+
+@keyframes creatingCardFade {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.34, 1.28, 0.64, 1);
+  }
+  56% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot));
+    opacity: 0;
+  }
+  100% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot));
+    opacity: 0;
+  }
+}
+
+/* The header count and the prompt line crossfading into their voting-screen
+   selves at 880ms (§1c). Grid-stacked, the same technique
+   `.vote-card__crossfade` already uses for count -> chance: both children
+   share one cell, so the fade is the only thing moving. `--prompt` blockifies
+   it for the plaque/prompt pairing, which — unlike the header count — are
+   full-width block elements, not an inline run in a header row. */
+.creating-crossfade {
+  display: inline-grid;
+}
+
+.creating-crossfade--prompt {
+  display: grid;
+}
+
+/* The phone counter crossfade (§1c: "the counter stays"). Unlike the header
+   count and the prompt, this one sits inside a flex row of its own
+   (`.player-voting__head`) and has to keep filling it, or the card visibly
+   narrows the moment this wrapper — now the row's only child — stops
+   matching its content width. */
+.creating-crossfade--counter {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.creating-crossfade__out,
+.creating-crossfade__in {
+  grid-area: 1 / 1;
+}
+
+/* Each side of the counter crossfade reproduces `.player-voting__head`'s own
+   row layout, since wrapping the numeral and its label pair in the grid cell
+   above takes them out of that flex row. */
+.creating-crossfade--counter .creating-crossfade__out,
+.creating-crossfade--counter .creating-crossfade__in {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.creating-crossfade__out { animation: creatingCrossfadeOut 180ms ease-out both; }
+.creating-crossfade__in { animation: creatingCrossfadeIn 180ms ease-out both; }
+
+@keyframes creatingCrossfadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes creatingCrossfadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .creating-leave__fade,
+  .creating-leave__flip,
+  .creating-crossfade__out,
+  .creating-crossfade__in {
+    animation: none;
+  }
+}
+
 /* ------------------------------------------------------ player: teams */
 
 /* Less top padding than every other mobile screen. This one is a grid of
@@ -5526,3 +6108,412 @@ ul, ol { list-style: none; }
 
 /* The plaque already separates it; a rule as well is two dividers for one job. */
 .debug-section--usage { border-top: 0; padding-top: 16px; }
+
+/* ------------------------------------------------------- player creating */
+
+.player-creating {
+  padding: 44px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.player-creating__meta {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+  text-align: center;
+}
+
+.player-creating__card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The card frame above never moves; this wrapper is what commit-driven
+   advance animates, so the border/shadow/padding stay put. */
+.player-creating__card-inner {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.player-creating__card-inner--a { animation: slotAdvanceA 220ms cubic-bezier(0.34, 1.28, 0.64, 1); }
+.player-creating__card-inner--b { animation: slotAdvanceB 220ms cubic-bezier(0.34, 1.28, 0.64, 1); }
+
+.player-creating__label {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.player-creating__input {
+  font: inherit;
+  font-family: var(--display);
+  font-size: 30px;
+  line-height: 1.06;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  padding: 0;
+  /* Spec calls for a 4px x 34px teal caret; `caret-width`/`caret-height`
+     are not real CSS properties, so only the caret's colour is settable. */
+  caret-color: var(--teal);
+}
+
+.player-creating__counter {
+  text-align: right;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+.slot-strip {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.slot-strip__chip {
+  width: 56px;
+  height: 44px;
+  flex: 0 0 auto;
+  font: inherit;
+  font-family: var(--display);
+  font-size: 16px;
+  line-height: 1.06;
+  border: var(--border);
+  border-radius: 12px;
+  background: var(--code-empty);
+  color: var(--ink-dim);
+  cursor: pointer;
+  text-align: center;
+  padding: 0;
+  transition: background 160ms ease-out, color 160ms ease-out, box-shadow 160ms ease-out;
+}
+
+.slot-strip__chip--current {
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.slot-strip__chip--done {
+  background: var(--gold);
+  color: var(--ink-gold);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.player-creating__commit {
+  min-height: 61px;
+}
+
+.player-creating__ready-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.player-creating__ready-card {
+  flex: 1;
+  position: relative;
+  font: inherit;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 16px 44px 16px 16px;
+  /* The brief's ready-card shadow is 5px 5px 0, not --shadow-card's 6px —
+     --shadow-btn already holds that exact value. */
+  box-shadow: var(--shadow-btn);
+  cursor: pointer;
+  font-family: var(--display);
+  font-size: 26px;
+  line-height: 1.06;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.player-creating__ready-card:active {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.player-creating__pen {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--ink-dim);
+  /* Stroked, not filled, so stroke-width is what draws it. */
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6px;
+  pointer-events: none;
+}
+
+.player-creating__ready-hint {
+  font-size: 13px;
+  color: var(--cream-dim);
+  text-align: center;
+}
+
+/* ---- compact keyboard view ---- */
+
+.vv-compact .player-creating {
+  padding: 14px 20px 0;
+}
+
+.vv-compact .player-creating__meta {
+  display: none;
+}
+
+.vv-compact .player-voting__head {
+  flex: 0 0 44px;
+  padding: 8px 12px;
+}
+
+.vv-compact .player-voting__count {
+  font-size: 26px;
+}
+
+.vv-compact .player-voting__head-text {
+  min-height: 26px;
+  gap: 2px;
+}
+
+.vv-compact .player-voting__head-title {
+  font-size: 11px;
+}
+
+.vv-compact .player-creating__card {
+  min-height: 132px;
+}
+
+.vv-compact .player-creating__input {
+  font-size: 26px;
+}
+
+.vv-compact .slot-strip__chip {
+  height: 44px;
+}
+
+.vv-compact .player-creating__commit {
+  min-height: 52px;
+}
+
+.vv-compact .player-voting__bar {
+  height: 34px;
+  padding: 0 12px;
+}
+
+.vv-compact .player-voting__bar .timer-bar__num {
+  display: none;
+}
+
+.vv-compact .player-voting__bar .timer-track {
+  height: 14px;
+}
+
+/* ---- motion ---- */
+
+/* Two identical copies — see "the one that will definitely bite you" in
+   docs/design/2026-07-30-custom-categories-traps.md, and the same A/B pairs
+   the scoring reveal keeps. NEXT, NEXT, DONE fires this on the same frame
+   three times in a
+   row; an unchanged class name would not restart the animation, so the
+   component alternates between these two. One continuous 220ms motion on the
+   single content node: the outgoing card fades out to the left, then the
+   incoming card (already the new content, by the time this plays) fades in
+   from the right — the "the card frame does not move, only its contents"
+   the brief asks for, since only this inner wrapper animates. */
+@keyframes slotAdvanceA {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  40% {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  60% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slotAdvanceB {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  40% {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  60% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-creating__card-inner--a,
+  .player-creating__card-inner--b {
+    animation: none;
+  }
+  .slot-strip__chip { transition: none; }
+}
+
+/* -------------------------------------------------------- player voting, custom */
+
+/* The hand, and later the picks-only review — both are the same object: a
+   flex column of full cards, `flex: 1` each, never a grid. Same role as
+   `.player-voting__grid` but a column, because a hand is dealt one at a time
+   and the picks review can run to `VOTE_BUDGET` (4) cards without scrolling —
+   the same no-scroll trick `.player-creating__ready-cards` already relies on. */
+.player-voting__hand {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Bigger than the stock ballot tile on purpose — dealing hands of three
+   instead of showing a ten-category grid buys the room to go big. */
+.vote-tile--hand {
+  flex: 1;
+  font-size: 28px;
+  line-height: 1.12;
+  padding: 16px;
+}
+
+/* The picks-only review renders `<div>`s, not `<button>`s — a spent hand
+   cannot be revisited — and needs the box model spelled out explicitly, the
+   same as the stock locked grid: without it the picks measure wider than the
+   cards they replace. */
+.vote-tile--picked {
+  box-sizing: border-box;
+  /* Not a button: nothing to tap, so nothing should press. */
+  pointer-events: none;
+}
+
+/* Chance and authorship share a row, chance on the left where the stock tile
+   already puts it, the author chip pinned to the right of it. */
+.vote-tile__pick-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.vote-tile__pick-foot .vote-tile__chance { margin-top: 0; }
+
+.author-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-family: var(--display);
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 11px;
+  border-radius: 99px;
+  border: var(--border);
+  background: var(--paper-lit);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  transform: rotate(-2.5deg);
+  animation: plaquePop 280ms cubic-bezier(0.34, 1.42, 0.64, 1) both;
+}
+
+.author-chip__emoji { font-size: 17px; line-height: 1; }
+
+/* Gold on `--ink-gold`, the DONE-stamp pairing: the house is the game itself,
+   never a player, so it never wears the paper-lit "this is somebody's" chip. */
+.author-chip--house {
+  background: var(--gold);
+  color: var(--ink-gold);
+}
+
+/* The hand swap, 840ms total. `pickFlashA`/`pickFlashB` and `dealInA`/
+   `dealInB` are identical pairs, not two designs — the three hand slots are
+   the same three elements for the whole voting phase, so an unchanged
+   `animation` value would not restart on the very next hand. The exit motion
+   (the picked card lifting away, the other two dropping) is a plain
+   transition instead, which does not have that problem: the slots always
+   pass back through their un-exited rest state before the next hand deals,
+   so the same target values retrigger correctly every time. */
+@keyframes pickFlashA {
+  0% { background: var(--cream); }
+  45% { background: var(--gold); }
+  100% { background: var(--cream); }
+}
+
+@keyframes pickFlashB {
+  0% { background: var(--cream); }
+  45% { background: var(--gold); }
+  100% { background: var(--cream); }
+}
+
+.vote-tile--flash-a { animation: pickFlashA 180ms ease-out; }
+.vote-tile--flash-b { animation: pickFlashB 180ms ease-out; }
+
+.vote-tile--exit-up {
+  transition: transform 200ms ease-in, opacity 200ms ease-in;
+  transform: translateY(-40px);
+  opacity: 0;
+}
+
+.vote-tile--exit-down {
+  transition: transform 180ms ease-in;
+  transform: translateY(24px);
+}
+
+@keyframes dealInA {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes dealInB {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+
+.vote-tile--deal-a { animation: dealInA 320ms cubic-bezier(0.34, 1.42, 0.64, 1) both; }
+.vote-tile--deal-b { animation: dealInB 320ms cubic-bezier(0.34, 1.42, 0.64, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vote-tile--flash-a,
+  .vote-tile--flash-b,
+  .vote-tile--deal-a,
+  .vote-tile--deal-b {
+    animation: none;
+  }
+  .vote-tile--exit-up,
+  .vote-tile--exit-down {
+    transition: none;
+  }
+  .author-chip {
+    animation: none;
+    transform: rotate(-2.5deg);
+  }
+}

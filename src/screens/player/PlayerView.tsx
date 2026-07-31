@@ -12,6 +12,7 @@ import { PlayerScoring } from "./PlayerScoring";
 import { PlayerStandings } from "./PlayerStandings";
 import { PlayerTeams } from "./PlayerTeams";
 import { PlayerVoting } from "./PlayerVoting";
+import { PlayerCreating } from "./PlayerCreating";
 
 export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
@@ -107,7 +108,15 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
     case "lobby":
       return <PlayerLobby room={room} playerId={getPlayerId()} onLeave={onLeave} />;
     case "voting":
-      return <PlayerVoting room={room} playerId={getPlayerId()} offset={state.clockOffset} />;
+      return (
+        <PlayerVoting
+          room={room}
+          playerId={getPlayerId()}
+          hands={state.hands}
+          offset={state.clockOffset}
+          drafts={state.drafts}
+        />
+      );
     case "countdown": {
       const countdown = { endsAt: room.phase.endsAt, offset: state.clockOffset };
       const screen = countdownScreen(room);
@@ -131,6 +140,7 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
           <PlayerVoting
             room={room}
             playerId={getPlayerId()}
+            hands={state.hands}
             offset={state.clockOffset}
             countdown={countdown}
           />
@@ -164,5 +174,14 @@ function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): 
       return <PlayerStandings room={room} playerId={getPlayerId()} />;
     case "teams":
       return <PlayerTeams room={room} playerId={getPlayerId()} />;
+    case "creating":
+      return (
+        <PlayerCreating
+          room={room}
+          playerId={getPlayerId()}
+          drafts={state.drafts}
+          offset={state.clockOffset}
+        />
+      );
   }
 }
