@@ -7,11 +7,16 @@ import { warningsFor } from "../shared/roundwarnings";
  * Seeded once on mount with already-passed marks silently banked, then fires
  * marks as `remaining` crosses them. Each mark fires exactly once per round.
  *
- * **Dependency on remount:** This hook is correct only because its consumer
- * (the HostPlaying/PlayerPlaying screens) remounts on every round boundary via
- * `viewNonce`. Keeping the calling component mounted across a round boundary
- * would break the hook — the fired set would never reset for a second round on
- * the same mount.
+ * **Remount boundary — phase-switch type change:** This hook's correctness
+ * depends on its consumer (HostPlaying/PlayerPlaying screens) remounting on
+ * round transitions. `HostView` and `PlayerView` render different component
+ * types per phase (via `switch (room.phase.name)`), and React unmounts when
+ * the component type changes. Between rounds the phase passes through `timesup`,
+ * `scoring`, `standings`, `countdown`, forcing the screen to unmount and
+ * remount, which resets `seeded` and `fired`. Keeping the screen mounted
+ * across a phase change (e.g., by hoisting a band to an overlay above the
+ * switch) would break this invariant and cause warnings to stop firing after
+ * the first round.
  */
 export function useRoundWarning(
   remaining: number,
