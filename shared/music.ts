@@ -48,7 +48,14 @@ export function loops(scene: SceneId): boolean {
 }
 
 /**
- * Per-scene trim, 0..1. The room's mix.
+ * Per-scene trim, 0..1. The room's mix, and the one knob here worth turning.
+ *
+ * **The scale is linear amplitude, not loudness** — it goes straight to
+ * `HTMLMediaElement.volume`. Halving the number is not halving the volume, and
+ * a value close to 1 does almost nothing: 0.8 is about -2dB, which is on the
+ * edge of audible as a change at all. Roughly, 0.7 is -3dB, 0.5 is -6dB and is
+ * where a track reads as clearly quieter, and 0.35 is -9dB and well back. Move
+ * in those steps rather than in tenths.
  *
  * Deliberately `Partial`, unlike `LOOPS` above: a scene with no entry plays at
  * the level it was mastered at, which is both the right default and the honest
@@ -60,7 +67,7 @@ export function loops(scene: SceneId): boolean {
  */
 const LEVELS: Partial<Record<SceneId, number>> = {
   // Mastered hotter than the rest of the set.
-  round_results: 0.8,
+  round_results: 0.5,
 };
 
 export function levelOf(scene: SceneId): number {
