@@ -398,6 +398,58 @@ computed while nobody was looking.
   untouched — and sends it *before* the `entryAck`, so the authoritative copy
   lands ahead of the message that retires the client's optimistic one.
 
+### Custom categories
+
+The `categorySource` setting (`shared/gamemodes.ts`, a `choice` descriptor) swaps
+the built-in `CATEGORIES` list for one the room writes itself. It inserts a
+`creating` phase before category voting: everyone fills a quota of numbered
+slots, those become a pool of **author-blind** cards, and each player is dealt
+`hands` to vote from instead of the whole ballot. All of it lives in
+`shared/customCategories.ts`; `shared/reduce.ts` owns the phase.
+
+- **Every rule is arithmetic in one module.** `quotaFor(players, rounds)` says how
+  many cards each person writes, `voteBudgetFor()` how many votes they get,
+  `exposureFor` how many hands a card appears in. `buildPool` turns drafts into
+  cards, `buildDeal` turns the pool into hands, `boardCards`/`customShares`/
+  `pickCustomCategory` do the board and the draw. Pure, so it tests under the
+  existing `shared/**/*.test.ts` glob.
+- **`buildDeal`'s exposure is EXACT, not ±1, and no filter may ever be added to
+  its walk.** Equal exposure is the only thing making the vote fair — a card seen
+  by more people wins more often for no reason anyone chose. The offset walk is
+  exact *by construction* whether or not `players - 1` divides the exposure, and
+  a filter would break it silently. If a test fails there the walk is wrong; do
+  not repair it with a filter. `toHands`'s filters are the within-hand rule and
+  its tie-break, and are not on the exposure path.
+- **Authorship is secret until it is not.** `publicPool` nulls every `authorId`
+  and `toRoomState` strips `drafts` and `deal` outright, so a player's own slots
+  and hands reach only their own socket (`yourDrafts`/`yourHands`), exactly as
+  `yourEntries` does. `Room.authorsRevealed` flips in **one place** —
+  `closeVoting`, on the way out of `voting` — and every authorship affordance on
+  every screen is gated on it, never on `authorId !== null`. Before the reveal
+  *every* card's author is null, so an ungated "no author" branch labels the
+  whole board.
+- **`drafts` is top-level on `Room`, not inside the phase.** Losing a phone
+  mid-phase must not lose what was typed, and a phase object is replaced on
+  every transition. `cursors` and `slotStates` sit beside it; only
+  `slotStates` — three states per slot, never text — is broadcast.
+- **Both shuffles take a `roll` from the caller, and neither has a default.**
+  `closeCreating` runs from `tick` (which carries one) *and* from `settle` (which
+  does not), so `settle` derives one via `seedRoll(room.code, now)`. A defaulted
+  seed would make the pool order and the deal computable offline and hand
+  authorship to anyone who bothered. `reduce` stays pure either way, the same
+  arrangement the category draw and `balanceTeams` have.
+- **The rules bend at 1–2 players rather than falling back to the stock pool.**
+  A room that small cannot satisfy never-own-card, so it does not try. See the
+  spec's §3.4 — the design brief's "2 players" row is superseded.
+- **Identical texts merge at the draw and nowhere else.** Two people writing the
+  same category get two cards, two tallies on the board, and one summed entry in
+  the weighted draw. Merging earlier would hide that two people wrote it.
+- **The transition is an animation, not a phase.** `closeCreating` opens `voting`
+  directly, so the 1120ms beat is owned by the *entering* screens and clocked off
+  `phase.endsAt - VOTING_MS` (`src/transition.ts`). A client mounting mid-beat
+  gets a negative CSS `animation-delay` and lands where the clock says instead of
+  replaying it.
+
 ### Debug menu
 
 Mostly off every game path — the Usage and Experimental sections are deletable
@@ -698,6 +750,18 @@ card ends on. Rules to keep:
   integer schedule, the strike/back-check rule, the measured swap, the podium and
   the guarded footer swap. Read with `design_handoff_host_scoring_reveal/README.md`,
   which is the brief it answers. Implemented.
+- `docs/superpowers/specs/2026-07-30-custom-categories-design.md` — the custom
+  pool: the `categorySource` setting, the writing phase, the quota and vote
+  arithmetic, the exact-exposure deal, the privacy boundary, and what the rules
+  do at 1–2 players (§3.4, which supersedes the design brief's "2 players" row).
+  §11 is the deliberate out-of-scope list — read it before adding anything.
+- `docs/design/2026-07-30-custom-categories-brief.md` — the design handoff those
+  screens answer, and **the authority on every value in them**: §1b the creation
+  TV, §1c the 1120ms transition, §1d the custom board and the authorship reveal,
+  §1e the phone. The plan defers to it rather than restating the numbers.
+- `docs/design/2026-07-30-custom-categories-traps.md` — the short list of things
+  that have actually bitten this feature, headed by "the one that will definitely
+  bite you". Worth reading before writing CSS here.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.
