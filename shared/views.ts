@@ -21,6 +21,8 @@ import type { Room } from "./state";
 export const VIEWS = [
   { id: "lobby", label: "Lobby" },
   { id: "teams", label: "Team select" },
+  { id: "countdownToCreating", label: "Countdown → write" },
+  { id: "creating", label: "Write categories" },
   { id: "countdownToVoting", label: "Countdown → vote" },
   { id: "voting", label: "Category vote" },
   { id: "countdownToPlaying", label: "Countdown → round" },
@@ -46,16 +48,11 @@ export function isViewId(value: unknown): value is ViewId {
  *
  * This is what makes "refresh the view I am on" a jump to where you already
  * are, rather than its own event with its own per-phase rules to keep in step.
- *
- * **Widened to include `"creating"`, which is not in `ViewId`.** The writing
- * phase has no catalog entry or `jumpTo` case yet — that lands with its real
- * screens — so a room sitting in it correctly matches no button in the panel
- * rather than lying about being on `"lobby"` or crashing a switch that does
- * not expect it.
  */
-export function currentView(view: Pick<Room, "phase">): ViewId | "creating" {
+export function currentView(view: Pick<Room, "phase">): ViewId {
   const phase = view.phase;
   if (phase.name === "countdown") {
+    if (phase.to === "creating") return "countdownToCreating";
     return phase.to === "voting" ? "countdownToVoting" : "countdownToPlaying";
   }
   return phase.name;

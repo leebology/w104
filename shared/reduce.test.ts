@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, it } from "vitest";
 import { createRoom, currentRound, matchComplete, preRoundPhase } from "./state";
 import type { Room } from "./state";
 import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, TIMESUP_MS, VOTING_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
@@ -9,6 +9,7 @@ import { rowKey } from "./reveal";
 import { isSelfStruck } from "./selfstrike";
 import type { SelfMarks } from "./selfstrike";
 import type { Results } from "./scoring";
+import { MAX_CATEGORY_LEN, WRITE_MS, quotaFor } from "./customCategories";
 
 /** A room with `n` joined players, none ready, plus a host. */
 function seed(n: number, now = 1000): Room {
@@ -2026,3 +2027,154 @@ describe("selfStrike in team play", () => {
 function marksOfPhase(room: Room): SelfMarks {
   return (room.phase as { selfMarks: SelfMarks }).selfMarks;
 }
+
+/**
+ * A room in the `creating` phase: `n` players, quota `quotaFor(n, roundCount)`,
+ * nobody has written anything yet. Walks the real edges — a custom-categories
+ * lobby, the countdown, the whistle — so the helper cannot drift from the
+ * rules, the same reasoning `seedVoting` and `playingRoom` follow.
+ */
+function creatingRoom(n: number, roundCount: number, now = 1000): Room {
+  let room = seed(n, now);
+  room = { ...room, settings: { ...room.settings, categorySource: "custom", roundCount } };
+  room = reduce(room, { t: "startGame", playerId: room.hostId!, now });
+  return reduce(room, { t: "tick", now: now + COUNTDOWN_MS, roll: 0.5 });
+}
+
+/**
+ * Every player's whole quota committed, via real `commitDraft` events — the
+ * very last one is what closes the phase, so this returns a room already on
+ * `voting`. See the "closes when everyone is ready" test below.
+ */
+function allWritten(n: number, roundCount: number, now = 1000): Room {
+  let room = creatingRoom(n, roundCount, now);
+  const quota = quotaFor(n, roundCount);
+  room.players.forEach((p, i) => {
+    for (let slot = 0; slot < quota; slot++) {
+      room = reduce(room, {
+        t: "commitDraft", playerId: p.id, slot, text: `${p.id}-${slot}`, now: now + i * quota + slot + 1,
+      });
+    }
+  });
+  return room;
+}
+
+describe("the creating phase", () => {
+  const custom = (players: number, roundCount = 3) => {
+    let room = seed(players); // existing helper: N connected, unready players
+    room = { ...room, settings: { ...room.settings, categorySource: "custom", roundCount } };
+    return room;
+  };
+
+  it("opens a countdown to creating rather than to voting", () => {
+    let room = custom(3);
+    room = reduce(room, { t: "startGame", playerId: room.hostId!, now: 0 });
+    expect(room.phase).toEqual({ name: "countdown", endsAt: COUNTDOWN_MS, to: "creating" });
+  });
+
+  it("opens the writing window at the whistle, and clears readiness", () => {
+    let room = custom(3);
+    room = reduce(room, { t: "startGame", playerId: room.hostId!, now: 0 });
+    room = reduce(room, { t: "tick", now: COUNTDOWN_MS, roll: 0.5 });
+    expect(room.phase).toEqual({ name: "creating", endsAt: COUNTDOWN_MS + WRITE_MS });
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+    expect(room.pool).toBeNull();
+  });
+
+  it("readies a player only when every slot they own is committed", () => {
+    let room = creatingRoom(3, 3); // helper: 3 players, quota 3, phase creating
+    const me = room.players[0].id;
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 0, text: "smells", now: 1 });
+    expect(room.players[0].ready).toBe(false);
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 1, text: "noises", now: 2 });
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 2, text: "places", now: 3 });
+    expect(room.players[0].ready).toBe(true);
+  });
+
+  it("trims, caps and rejects an out-of-range slot", () => {
+    let room = creatingRoom(3, 3);
+    const me = room.players[0].id;
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 0, text: "  a  ", now: 1 });
+    expect(room.drafts[me][0]).toBe("a");
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 1, text: "x".repeat(40), now: 2 });
+    expect(room.drafts[me][1]).toHaveLength(MAX_CATEGORY_LEN);
+    const before = room;
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 9, text: "no", now: 3 });
+    expect(room).toBe(before);
+  });
+
+  /**
+   * Deviation from the brief: its literal test built this scenario from
+   * `allWritten(3, 3)` and then asserted the phase was still `"creating"`
+   * after a `clearDraft`. That cannot happen — `allWritten` (below) drives
+   * real `commitDraft` events, and the moment the *last* player finishes,
+   * `settle` closes the phase in that same `reduce` call. There is no later
+   * moment at which a `clearDraft` can still catch the room in `creating`
+   * with everyone otherwise ready; the close is atomic with the event that
+   * completes it, exactly as spending the last vote is atomic with closing
+   * voting. So this rebuilds the scenario the description actually asks for:
+   * two players ready, a third one slot short (phase still open), and shows
+   * that clearing one of the two *already-ready* players' slots is what stops
+   * the third's final commit from closing the phase a moment later — the
+   * clear pre-empts a close that would otherwise have fired.
+   */
+  it("un-readies on a clear, and that pre-empts a close it would otherwise let happen", () => {
+    let room = creatingRoom(3, 3);
+    const [a, b, c] = room.players.map((p) => p.id);
+    const finish = (id: string, upTo: number, now: number) => {
+      for (let slot = 0; slot < upTo; slot++) {
+        room = reduce(room, { t: "commitDraft", playerId: id, slot, text: `${id}${slot}`, now });
+      }
+    };
+    finish(a, 3, 10);
+    finish(b, 3, 11);
+    finish(c, 2, 12); // one slot short — the phase is still open
+    expect(room.phase.name).toBe("creating");
+
+    room = reduce(room, { t: "clearDraft", playerId: a, slot: 0, now: 20 });
+    expect(room.players.find((p) => p.id === a)!.ready).toBe(false);
+    expect(room.phase.name).toBe("creating");
+
+    // c's final commit would have closed the phase had a's readiness not just
+    // been pulled out from under it.
+    room = reduce(room, { t: "commitDraft", playerId: c, slot: 2, text: "c2", now: 30 });
+    expect(room.phase.name).toBe("creating");
+  });
+
+  it("closes when everyone is ready, building the pool and the deal once", () => {
+    const room = allWritten(4, 3);
+    // `settle` runs on the event that completed the last player, so the room
+    // has already left `creating`.
+    expect(room.phase.name).toBe("voting");
+    expect(room.pool).toHaveLength(12);
+    expect(Object.keys(room.deal)).toHaveLength(4);
+  });
+
+  it("closes on the deadline with blanks backfilled", () => {
+    let room = creatingRoom(4, 3);
+    room = reduce(room, { t: "tick", now: 10 ** 9, roll: 0.5 });
+    expect(room.phase.name).toBe("voting");
+    expect(room.pool!.every((c) => c.authorId === null)).toBe(true);
+  });
+
+  it("moves the cursor without touching readiness", () => {
+    let room = creatingRoom(3, 3);
+    const me = room.players[0].id;
+    room = reduce(room, { t: "moveCursor", playerId: me, slot: 2, now: 1 });
+    expect(room.cursors[me]).toBe(2);
+    expect(room.players[0].ready).toBe(false);
+  });
+
+  it("steps back one phase, not all the way home", () => {
+    let room = creatingRoom(3, 3);
+    room = reduce(room, { t: "backToLobby", playerId: room.hostId!, now: 1 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.drafts).toEqual({});
+  });
+
+  it("never opens for a stock match", () => {
+    let room = seed(3);
+    room = reduce(room, { t: "startGame", playerId: room.hostId!, now: 0 });
+    expect(room.phase).toEqual({ name: "countdown", endsAt: COUNTDOWN_MS, to: "voting" });
+  });
+});

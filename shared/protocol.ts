@@ -41,6 +41,18 @@ export type ClientMessage =
   | { type: "setTeamName"; teamId: TeamId; name: string }
   | { type: "balanceTeams" }
   /**
+   * The phone publishing which slot it is on. Cheap and frequent; the only
+   * thing that drives the writing state on the TV, and it carries no text.
+   */
+  | { type: "moveCursor"; slot: number }
+  /**
+   * Committing a category. **Committing is readying** — never on keystroke,
+   * or the phase could close under a player mid-word.
+   */
+  | { type: "commitDraft"; slot: number; text: string }
+  /** Taking one back. Un-readies, which tears down an in-flight close. */
+  | { type: "clearDraft"; slot: number }
+  /**
    * Debug-panel controls. Host-only and enforced as such in `shared/reduce.ts`
    * and `party/server.ts` — the panel hides them from non-hosts, but a hidden
    * button is not an authorization boundary and these mutate a live round.
