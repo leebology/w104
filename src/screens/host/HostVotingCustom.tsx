@@ -76,7 +76,7 @@ export function HostVotingCustom({ room, offset, countdown }: Props) {
   );
 
   return (
-    <main className="screen screen--host host-voting">
+    <main className="screen screen--host host-voting host-voting--custom">
       {/* No round marker: voting only ever happens before round one. */}
       <HostHeader
         left={<RoomChip code={room.code} />}
@@ -225,7 +225,7 @@ function HostVotingCustomClosed({
   const showNoVotes = survivors.length === 0 && (zeroGone || zeroCards.length === 0);
 
   return (
-    <main className="screen screen--host host-voting host-voting--closed">
+    <main className="screen screen--host host-voting host-voting--custom host-voting--closed">
       <HostHeader
         left={<RoomChip code={room.code} />}
         right={

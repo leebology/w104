@@ -1083,20 +1083,24 @@ ul, ol { list-style: none; }
    order and competes for width like everything else. */
 .vote-card--random { border-style: dashed; }
 
-/* Two ceilings and a floor. `--name-size` is the ideal — it scales with share
-   of the leader, set inline per card — `17cqw` is what the card can actually
-   afford at the width flex-grow has left it, and `max(24px, …)` is the hard
-   TV floor: at eight cards per row `17cqw` alone would land near 12.7px on
-   the smallest card. The custom board is what makes this floor load-bearing
-   (the stock ballot never crowds a row past six), but it belongs on the
-   shared rule rather than a custom-only override — the same card, the same
-   promise, everywhere it appears. `anywhere` is the last resort under both. */
+/* Two ceilings. `--name-size` is the ideal — it scales with share of the
+   leader, set inline per card — and `17cqw` is what the card can actually
+   afford at the width flex-grow has left it. `anywhere` is the last resort. */
 .vote-card__name {
   font-family: var(--display);
-  font-size: max(24px, min(var(--name-size, 21px), 17cqw));
+  font-size: min(var(--name-size, 21px), 17cqw);
   line-height: 1.06;
   overflow-wrap: anywhere;
   hyphens: auto;
+}
+
+/* The custom board adds a hard floor, and only the custom board: it is the
+   one that can crowd a row past six, where `17cqw` alone would land near
+   12.7px on the smallest card. Deliberately not on the shared rule — the
+   stock ballot's zero-vote cards ask for 20px (`nameSize` in HostVoting), so
+   a shared floor would silently resize a screen this feature never touched. */
+.host-voting--custom .vote-card__name {
+  font-size: max(24px, min(var(--name-size, 21px), 17cqw));
 }
 
 .vote-card__foot {
