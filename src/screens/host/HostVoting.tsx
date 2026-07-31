@@ -5,6 +5,7 @@ import { tallyVotes, voteBudget, voteShares } from "../../../shared/voting";
 import { teamsEnabled } from "../../../shared/teams";
 import { customEnabled } from "../../../shared/gamemodes";
 import { isWaiting } from "../../../shared/bots";
+import { seatedPlayers } from "../../../shared/waiting";
 import { currentRound } from "../../../shared/state";
 import type { Player, RoomState } from "../../../shared/state";
 import { VOTING_MS } from "../../../shared/reduce";
@@ -192,7 +193,12 @@ export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props)
   // Matches `everyoneReady` in shared/reduce.ts, which is what actually closes
   // voting: a disconnected player must not read as "ready" on the TV, or the
   // count can say "not everyone's ready" right before voting closes anyway.
-  const ready = room.players.filter((p) => p.connected && isWaiting(p)).length;
+  // Seated players only, on both halves — a latecomer has no vote to spend
+  // (voting is one window at the top of the match) and `everyoneReady` does not
+  // count them, so including them would leave this readout permanently one
+  // short of the count that actually closes the vote.
+  const voters = seatedPlayers(room.players);
+  const ready = voters.filter((p) => p.connected && isWaiting(p)).length;
 
   if (countdown) {
     return <HostVotingClosed room={room} totals={totals} remaining={remaining} cast={cast} />;
@@ -215,10 +221,10 @@ export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props)
     <main className="screen screen--host host-voting">
       {/* No round marker: voting only ever happens before round one. */}
       <HostHeader
-        left={<RoomChip code={room.code} />}
+        left={<RoomChip room={room} />}
         right={
           <HostHeaderRight>
-            <VotingCount n={room.players.length} ready={ready} />
+            <VotingCount n={voters.length} ready={ready} />
             <VotingExit room={room} />
           </HostHeaderRight>
         }
@@ -306,7 +312,7 @@ function HostVotingClosed({
   return (
     <main className="screen screen--host host-voting host-voting--closed">
       <HostHeader
-        left={<RoomChip code={room.code} />}
+        left={<RoomChip room={room} />}
         right={
           <HostHeaderRight>
             <span className="host-header__count">

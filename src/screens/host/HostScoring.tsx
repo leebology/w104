@@ -551,7 +551,7 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
           instruction is the one thing on a TV that has to be in the same
           corner every time, so the screen's own title takes the far end. */}
       <HostHeader
-        left={<RoomChip code={room.code} />}
+        left={<RoomChip room={room} />}
         round={round}
         of={room.settings.roundCount}
         right={

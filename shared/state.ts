@@ -90,6 +90,20 @@ export type Player = {
    * player, so nothing downstream has to be told which is which.
    */
   isBot?: true;
+  /**
+   * Seated, but not in the match yet — they joined past the lobby and are
+   * waiting for the next whistle. Inert in every derivation the match is made
+   * of; see `shared/waiting.ts` and `admitWaiting` in `shared/reduce.ts`.
+   *
+   * Optional, and absent on everyone in a room stored before this landed,
+   * which reads as seated through `inWaitingRoom` — the correct answer, since
+   * such a room has no waiting players by construction. That is why it needs
+   * no `load()` fallback, unlike `paused` or `revealLineMs`.
+   *
+   * `boolean` rather than the `true` literal `isBot` uses, because unlike
+   * `isBot` this one is *cleared*: returning to the lobby seats everybody.
+   */
+  waiting?: boolean;
 };
 
 export type Phase =

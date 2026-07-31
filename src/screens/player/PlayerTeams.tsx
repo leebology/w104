@@ -3,8 +3,8 @@ import type { CSSProperties } from "react";
 import { useRemaining } from "../../net/clock";
 import { roomStore } from "../../net/room";
 import { GetReady } from "../../components/GetReady";
-import { TeamBadge } from "../../components/TeamBadge";
-import { MAX_TEAM_NAME_LEN, TEAM_COLORS, membersOf, teamOf } from "../../../shared/teams";
+import { TeamGrid } from "../../components/TeamGrid";
+import { MAX_TEAM_NAME_LEN, TEAM_COLORS, teamOf } from "../../../shared/teams";
 import type { PlayerId, RoomState } from "../../../shared/state";
 
 type Props = {
@@ -113,58 +113,11 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
         )}
       </div>
 
-      <ul className={`player-teams__grid${dim}`}>
-        {room.teams.map((team) => {
-          const joined = team.id === mine?.id;
-          const members = membersOf(room, team.id);
-          return (
-            <li key={team.id}>
-              <button
-                type="button"
-                className={joined ? "team-tile team-tile--mine" : "team-tile"}
-                // Your own team is not a target. Left in the flow and left
-                // looking like a tile — it is still the card that answers the
-                // screen's question, and removing it is exactly the jump this
-                // layout exists to avoid.
-                aria-current={joined ? "true" : undefined}
-                onClick={() => {
-                  if (joined) return;
-                  roomStore.send({ type: "joinTeam", teamId: team.id });
-                }}
-              >
-                <TeamBadge
-                  name={team.name}
-                  colorIndex={team.colorIndex}
-                  className="team-badge--sm"
-                />
-                {joined && <span className="team-tile__joined">JOINED!</span>}
-                {/* Spans, not a list: this is inside a `<button>`, which takes
-                    phrasing content only — a `<ul>` here is invalid markup that
-                    browsers merely tolerate. */}
-                <span className="team-tile__members">
-                  {members.map((p) => (
-                    <span
-                      key={p.id}
-                      className={
-                        (p.id === playerId ? "team-tile__member team-tile__member--you" : "team-tile__member") +
-                        (p.connected ? "" : " team-member--gone")
-                      }
-                    >
-                      <span className="team-tile__avatar">{p.emoji}</span>
-                      <span className="team-tile__name">{p.name || "…"}</span>
-                    </span>
-                  ))}
-                  {/* An empty team still has to occupy a row, or a tile's height
-                      changes the moment its last member leaves. */}
-                  {members.length === 0 && (
-                    <span className="team-tile__member team-tile__member--empty">nobody yet</span>
-                  )}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ul>
+      {/* The tiles themselves are `TeamGrid`, shared with the waiting room —
+          a latecomer picks a team from the same grid, on a screen that is not
+          this one. Everything around it differs between the two and stays
+          here. */}
+      <TeamGrid room={room} playerId={playerId} dim={countdown !== undefined} />
 
       {/* The same card the TV is showing and the same one every other countdown
           in the game wears, posed over the dimmed tiles rather than squeezed

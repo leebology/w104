@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (564 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (724 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -289,7 +289,9 @@ meant to leave. `leaveRoom` is the deliberate version: everything a kick does to
 the room, minus the ban, and not host-only since it only ever acts on the
 sender. Lobby and its countdown only — walking out mid-match would leave a
 half-scored round and a hole in the standings, and closing the tab is still
-there for anyone who wants it.
+there for anyone who wants it. **The waiting room is the exception, in every
+phase**: that rule is about the damage of leaving a match in progress, and a
+latecomer is not in one.
 
 - `session` — fresh per `connect()` call. partysocket reuses the query string
   across its *own* auto-reconnects, so a matching session means "the kicked
@@ -476,6 +478,79 @@ slots, those become a pool of **author-blind** cards, and each player is dealt
   `phase.endsAt - VOTING_MS` (`src/transition.ts`). A client mounting mid-beat
   gets a negative CSS `animation-delay` and lands where the clock says instead of
   replaying it.
+### The waiting room
+
+
+Joining is legal in **every** phase now. Past the lobby a newcomer is seated
+`waiting`, sits out whatever is running, and is dealt in at the next whistle.
+See `docs/superpowers/specs/2026-07-31-waiting-room-design.md`.
+
+- **`Player.waiting` is one optional flag, read through `inWaitingRoom`**
+  (`shared/waiting.ts` — types only, so `teams.ts` can import it without a
+  cycle). Absent on a room stored before it existed, which reads as seated, so
+  it needs no `load()` fallback. `boolean` rather than `isBot`'s `true` literal
+  because unlike `isBot` it is *cleared*.
+- **Not to be confused with `isWaiting` in `shared/bots.ts`**, which means
+  "not the one everybody is waiting on" and is about readiness. Nothing in the
+  waiting room is called `isWaiting` for that reason.
+- **The seating rule is `phase.name !== "lobby"`, with no phase list.** Uniform
+  is what stops a newcomer tearing down a live countdown, holding a vote open or
+  moving a team panel under a thumb — and it costs the common case nothing,
+  because admission is at the *whistle* and the whistle into round one is a
+  whistle. Somebody arriving during team select or the vote plays round one and
+  misses only the ballot.
+- **Inertness is four filters at the four places the rules already live.**
+  `everyoneReady` drops them from `active` (both halves at once: not counted
+  toward `readyFloor`, never asked whether they are ready); `rosterOf` drops
+  them from the scorers, which is also where "empty teams do not score" lives;
+  `submitEntry` refuses them; and `ready`/`castVote` are rejected. Everything
+  downstream — the reveal, `placeRound`, `computeStandings`, `driverOf`, the
+  archive — is then correct without knowing this exists. `membersOf` is
+  deliberately *not* filtered: it is display truth, and the team tiles want to
+  show a latecomer who has picked.
+- **The writing phase is the sharpest case of that.** `quotaOfRoom` counts
+  *seated* players, and it is the only way anything asks: the server sizes what
+  it will accept by it and three screens size what they draw by it, so a phone
+  counting one more person than the server does would draw a slot that cannot be
+  written. Counting the waiting room would move everybody's quota the moment
+  somebody walked in — slots appearing under a thumb mid-word, and
+  `hasWrittenAll` silently un-readying whoever had finished. `writeSlot`,
+  `moveCursor` and `clearDraft` all refuse a latecomer, and `closeCreating`
+  builds the pool and the deal from `writersOf` alone: an author who never wrote
+  would put house cards under their name in the authorship reveal, and a hand
+  nobody can spend costs every card in it its exposure.
+- **`admitWaiting` runs at the `countdown -> playing` tick and nowhere else**,
+  beside the category draw and for the same reason: admitting when the countdown
+  *opens* would have to be undone when it is cancelled. At the whistle, a
+  cancelled countdown is a genuine no-op and a team picked during the count still
+  gets you in — **the card is not the deadline, the whistle is.** Two conditions,
+  both about honesty: connected, and on a live team when teams are on.
+- **Nothing places a latecomer on a team.** `assignStragglers` and
+  `balanceTeams` both skip them, and so does `startGame`'s force-ready. Their
+  pick is theirs; without one they are simply not admitted. `joinTeam` from the
+  waiting room also does **not** re-stamp a running countdown — a latecomer who
+  could extend it repeatedly could stop the match — and `setTeamName` stays
+  team-select-only.
+- **The flag is cleared by `backToLobby` and by the view jumper**, which admits
+  on every target but `lobby`: a jump is a teleport, not a promise.
+- **`RoomChip` carries the waiting strip itself**, the `TeamBadge` arrangement,
+  so it is correct wherever the chip is dropped rather than being a rule six host
+  screens have to remember. One arrival gets a face and a name, two or more get
+  faces only — five names would compete with the room code, which is the one
+  thing in that corner that must not move. A hollow badge means "no team yet",
+  which is the host's only view of what is holding somebody out.
+- **`PlayerWaiting` renders ahead of `PlayerView`'s phase switch** — a waiting
+  player is not on the room's screen at all. It has **no Ready button**, which
+  is the design: the countdown that admits them was opened by the seated
+  players' readiness on their own account, and a latecomer able to un-ready out
+  of it could hold the match open indefinitely. The team grid is
+  `src/components/TeamGrid.tsx`, shared with `PlayerTeams`.
+- **The archive re-emits the game-start rows at each bank**, seated players
+  only. `word.player_id` has a foreign key onto `player`, D1 enforces it, and
+  those rows were written once at match start — so a latecomer's words would
+  have failed their whole chunk. Every statement there is already idempotent,
+  which is the property being spent; seated-only is because `participation` is
+  `DO NOTHING` and a row written before admission would freeze a null team.
 
 ### Debug menu
 
@@ -657,8 +732,9 @@ wait on a round trip); `seq` is present only while an entry is unacked.
 the TV and on the phones, with no exceptions left — team select was the last
 screen wearing the old `.get-ready` plaque, which made the count a room reads
 from furthest away the one drawn smallest, and that class is gone. The lobby's
-count into the vote, the one after voting closes, the one out of team select and
-the one between rounds are the same moment, so they are the same
+count into the vote, the one after voting closes, the one out of team select,
+the one between rounds and the one a latecomer is admitted on are the same
+moment, so they are the same
 object: the gold plaque, the teal tab overhanging its top-left corner naming
 where it leads, and — on the host screens that can stop it — a Stop button. No
 caption: the Ready button that opened the count is still under the player's thumb
@@ -1051,6 +1127,10 @@ card ends on. Rules to keep:
 - `docs/design/2026-07-30-custom-categories-traps.md` — the short list of things
   that have actually bitten this feature, headed by "the one that will definitely
   bite you". Worth reading before writing CSS here.
+- `docs/superpowers/specs/2026-07-31-waiting-room-design.md` — the waiting
+  room: joining past the lobby, what a waiting player is inert in, admission at
+  the whistle, picking a team while waiting, the host strip and the phone
+  screen. Implemented; §14 records what changed on the way.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.

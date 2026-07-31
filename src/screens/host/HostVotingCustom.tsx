@@ -6,6 +6,7 @@ import { boardCards, customShares, voteBudgetFor } from "../../../shared/customC
 import type { PoolCard } from "../../../shared/customCategories";
 import { tallyVotes } from "../../../shared/voting";
 import { isWaiting } from "../../../shared/bots";
+import { seatedPlayers } from "../../../shared/waiting";
 import type { RoomState } from "../../../shared/state";
 import { VOTING_MS } from "../../../shared/reduce";
 import { RoomChip } from "../../components/RoomChip";
@@ -56,7 +57,8 @@ export function HostVotingCustom({ room, offset, countdown, creatingSnapshot }: 
   const budget = voteBudgetFor();
   const cast = Object.values(totals).reduce((a, b) => a + b, 0);
   // Matches `everyoneReady` in shared/reduce.ts, same as the stock screen.
-  const ready = room.players.filter((p) => p.connected && isWaiting(p)).length;
+  const voters = seatedPlayers(room.players);
+  const ready = voters.filter((p) => p.connected && isWaiting(p)).length;
 
   // The transition (§1c): 1120ms, driven off `voting`'s own `endsAt` rather
   // than a phase of its own — `closeCreating` opens `voting` directly, with
@@ -142,7 +144,7 @@ export function HostVotingCustom({ room, offset, countdown, creatingSnapshot }: 
     <main className="screen screen--host host-voting host-voting--custom">
       {/* No round marker: voting only ever happens before round one. */}
       <HostHeader
-        left={<RoomChip code={room.code} />}
+        left={<RoomChip room={room} />}
         right={
           <HostHeaderRight>
             {crossfading ? (
@@ -154,11 +156,11 @@ export function HostVotingCustom({ room, offset, countdown, creatingSnapshot }: 
                   </span>
                 </span>
                 <span className="creating-crossfade__in" style={{ animationDelay: crossfadeDelay }}>
-                  <VotingCount n={room.players.length} ready={ready} />
+                  <VotingCount n={voters.length} ready={ready} />
                 </span>
               </span>
             ) : (
-              <VotingCount n={room.players.length} ready={ready} />
+              <VotingCount n={voters.length} ready={ready} />
             )}
             <VotingExit room={room} />
           </HostHeaderRight>
@@ -327,7 +329,7 @@ function HostVotingCustomClosed({
   return (
     <main className="screen screen--host host-voting host-voting--custom host-voting--closed">
       <HostHeader
-        left={<RoomChip code={room.code} />}
+        left={<RoomChip room={room} />}
         right={
           <HostHeaderRight>
             <span className="host-header__count">

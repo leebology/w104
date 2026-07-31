@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
 import { roomStore } from "../../net/room";
-import { quotaFor, WRITE_MS, MAX_CATEGORY_LEN } from "../../../shared/customCategories";
+import { quotaOfRoom, WRITE_MS, MAX_CATEGORY_LEN, writersOf } from "../../../shared/customCategories";
 import type { RoomState } from "../../../shared/state";
 import type { PlayerId } from "../../../shared/state";
 
@@ -14,7 +14,7 @@ type Props = {
 
 export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
   const me = room.players.find((p) => p.id === playerId);
-  const quota = quotaFor(room.players.length, room.settings.roundCount);
+  const quota = quotaOfRoom(room);
 
   // In-flight text for the current slot
   const [text, setText] = useState("");
@@ -216,7 +216,7 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
               <span className="player-voting__head-title">you're in</span>
               <span className="player-voting__head-sub">
                 all {quota} {quota === 1 ? "card" : "cards"} written — waiting on{" "}
-                {room.players.filter(
+                {writersOf(room.players).filter(
                   (p) => p.connected && !p.ready && p.id !== playerId
                 ).length}
               </span>

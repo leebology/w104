@@ -318,3 +318,43 @@ describe("playedCategories", () => {
     expect(playedCategories(r).sort()).toEqual(["song", "woman"]);
   });
 });
+
+describe("the waiting room and the archive", () => {
+  test("a waiting player scores no row in the round they sat out", () => {
+    // Falls out of `rosterOf`, which is where the rule lives — nothing in the
+    // row builders has to know the waiting room exists.
+    const r = room({
+      players: [player("a"), player("b"), player("late", { waiting: true })],
+      phase: { name: "playing", endsAt: 9000 },
+      entries: {
+        a: [entry("Adele", "a", 6000)],
+        b: [entry("Beyonce", "b", 6100)],
+      },
+    });
+    const { scores, words } = bank(r, {
+      gameId: "ABCD:5000", roundIndex: 0, startedAt: 5000, endedAt: 9000,
+    });
+    expect(scores.map((s) => s.scorer_id).sort()).toEqual(["a", "b"]);
+    expect(words.every((w) => w.player_id !== "late")).toBe(true);
+  });
+
+  test("they are not on the standings either, until they have played one", () => {
+    const r = room({
+      players: [player("a"), player("late", { waiting: true })],
+      history: [{ category: "woman", places: { a: { unique: 1, total: 1, place: 1 } } }],
+    });
+    expect(gameResultRows(r, "ABCD:5000").map((g) => g.scorer_id)).toEqual(["a"]);
+  });
+
+  test("the game-start rows carry whoever they are given", () => {
+    // The server hands this the *seated* players at each bank — re-emitting is
+    // what gives a latecomer's words a parent row before they land, and D1
+    // enforces the foreign key. Nothing here filters; the caller decides.
+    const r = room({ players: [player("a"), player("late")] });
+    const { players, participation } = gameStartRows(r, {
+      gameId: "ABCD:5000", lobbyCreatedAt: 1000, startedAt: 9000, scoringVersion: 1,
+    });
+    expect(players.map((p) => p.player_id).sort()).toEqual(["a", "host", "late"]);
+    expect(participation.some((p) => p.player_id === "late")).toBe(true);
+  });
+});
