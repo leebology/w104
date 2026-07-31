@@ -676,6 +676,70 @@ only chance to have a keyboard up when `playing` begins off a timer. Do not
 move that input into a phase-specific screen, and keep it out of a `<form>`
 (triggers Safari's AutoFill bar).
 
+### Music
+
+One track per **scene** — `sceneFor(room)` in `shared/music.ts` is the only
+mapping from phase to music, and the scene ids *are* the folder names under
+`src/audio/`. Adding one is a folder plus a case; there is no manifest.
+
+- **Naming the same scene twice is how a track carries across a screen change.**
+  `play()` is idempotent on the scene id, so continuity is expressed in
+  `sceneFor` and nowhere else. That is what makes the round's music one unbroken
+  piece across `voting`, the countdown and `playing` — three phases, one name,
+  no restart at either seam.
+- **The countdown clip is a lead-in, not a sting, and the round-one countdown is
+  the one that does not get it** — the track it would lead into is already
+  playing by then. **Its hand-off fires on the clip's own `ended` event**, never
+  on the phase change: the phase turns over on a server alarm, which is near
+  enough for a screen and nowhere near enough for a bar of music.
+- **`COUNTDOWN_MS` is therefore set by the audio**, and must not be shorter than
+  the clip in `src/audio/countdown/`. It is the one place a file somebody
+  dragged into a folder couples to the server; `LEAD_CLIP_MS` in
+  `shared/music.ts` records the measured length and `shared/music.test.ts` fails
+  if the two disagree. Rounded up, never trimmed to fit — the overshoot is
+  inaudible, a shortfall clips the last bar.
+- **A scene is either a bed or a cue, and that decides two things.** What an
+  *empty folder* means: an empty bed is silence, an empty cue is no cue at all —
+  nothing is interrupted and whatever is playing carries on. Both standings
+  screens are cues for exactly that reason, so leaving `midgame_standings/` or
+  `endgame_standings/` empty keeps the results music going with no opt-out to
+  set. And how a track *arrives*: **a cue cuts the outgoing track dead, a bed
+  crossfades.** A cue has an attack to land on a moment, and 400ms of the last
+  track over its first bar is two songs at once rather than a transition.
+- **The media lives in `src/audio/<scene>/`, not in `public/`, and the filename
+  never matters.** `src/audio/tracks.ts` runs one `import.meta.glob` over every
+  scene folder, so replacing a track is a drag and a delete. A `public/` file
+  can only be reached by a literal path, which is the rename this arrangement
+  exists to avoid. Every scene is independently optional, and the game plays
+  with none of them.
+- **A folder may hold both encodings of one track.** Ogg is preferred where the
+  browser plays it (an MP3's encoder padding is an audible tick on every loop);
+  Safari plays no Ogg at all, so an ogg-only folder would be silence there.
+- **It is host-only, and `useMusic` being called from `HostView` alone is the
+  whole of that rule.** A phone never mounts that component, so there is no
+  per-device check to get wrong. The call sits above the `viewNonce` remount, so
+  the debug menu's refresh restarts the animations and not the music.
+- **The cancel is told apart by where it lands, not by a flag.** A countdown
+  that runs its course moves the room on to the round's music; one somebody
+  un-readies out of arrives back at the very scene it interrupted, and that one
+  waits `MUSIC_RESUME_DELAY_MS` and restarts from the top. `interrupted`
+  deliberately outlives the hand-off — between the clip ending and the card
+  coming down a cancel is still a cancel — and is dropped when the *phase*
+  catches up, which is the no-op `play()` at the top of the method.
+- **The player is imperative and outside React** (`src/audio/music.ts`), for the
+  reason the scroll mirror is: an `HTMLAudioElement`'s job is to survive
+  re-renders, and the only question that matters is whether two strings differ.
+  Volume ramps are `setInterval`, not an `AudioContext` — 400ms of arithmetic
+  does not need a second audio graph kept alive across a hibernating tab.
+- **The round's track is constructed at the lobby, not at the countdown.** The
+  hand-off is only instant if the file is already in memory when the lead ends;
+  one that starts downloading on that event arrives well after the beat it was
+  meant to land on. `begin()` warms it while there is time to spare.
+- **A refused `play()` re-arms rather than giving up.** Creating a lobby is a
+  gesture on this very page, but a host *resuming* a room after a refresh or a
+  discarded tab arrives with no gesture on record — and that is the device the
+  room is listening to.
+
 ### The scoring reveal
 
 `HostScoring` plays a round's results as three frames — deal in, reveal line by
