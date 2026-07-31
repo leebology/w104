@@ -64,11 +64,29 @@ export default function App() {
    * they clear it, and it must never drive a render on its own.
    */
   const resuming = useRef(session !== null);
-  // Set once and never cleared by app code — only a real page refresh (which
-  // remounts this component) resets it, per the requirement that the notice
-  // survives navigating back through Landing and even rejoining.
+  /**
+   * Why this device is back at the front door.
+   *
+   * `kicked` and `host-left` are set once and never cleared by app code — a
+   * real page refresh remounts this component and resets them, and that is
+   * deliberate: they are about something that was *done to* this player, and
+   * the notice is meant to survive navigating back through Landing and even
+   * rejoining.
+   *
+   * `expired` is the exception, cleared by `newSession` below. It is not about
+   * this player at all — it says a room is no longer there — and once they are
+   * in a different room it has nothing left to say.
+   */
   const [endedNotice, setEndedNotice] =
     useState<"kicked" | "host-left" | "expired" | null>(null);
+
+  /** Bookkeeping every deliberate create or join does. */
+  const newSession = (next: Session) => {
+    resuming.current = false;
+    setEndedNotice((notice) => (notice === "expired" ? null : notice));
+    setSession(next);
+    saveSession(next);
+  };
   // A bad code or a mid-round join attempt shown inline on the Join screen
   // itself, not as a separate terminal ErrorScreen the player has to back out
   // of — see the effect below.
@@ -121,9 +139,7 @@ export default function App() {
     attempts.current = 1;
     const code = makeRoomCode();
     triedCodes.current = new Set([code]);
-    resuming.current = false;
-    setSession({ code, role: "host" });
-    saveSession({ code, role: "host" });
+    newSession({ code, role: "host" });
     roomStore.connect({
       code, playerId: getPlayerId(), role: "host", intent: "create",
     });
@@ -135,9 +151,7 @@ export default function App() {
   // default) so they show up in the roster right away.
   function joinLobby(code: string) {
     setJoinError(null);
-    resuming.current = false;
-    setSession({ code, role: "player" });
-    saveSession({ code, role: "player" });
+    newSession({ code, role: "player" });
     const saved = getProfile();
     roomStore.connect({
       code,

@@ -735,28 +735,47 @@ ul, ol { list-style: none; }
 .player-pill--kickable:focus-visible { outline: 3px solid var(--teal); outline-offset: 3px; }
 
 /* Hovered, the pill *becomes* the kick: ink, tilted off true, with the roster
-   row covered over by a boot and the word. The tilt is what stops it reading
-   as a colour change — every other dark surface in this app sits square.
-   Keyboard focus gets the same treatment, or the control is invisible to
-   anyone not using a mouse. */
+   row covered over by the words. The tilt is what stops it reading as a colour
+   change — every other dark surface in this app sits square. Keyboard focus
+   gets the same treatment, or the control is invisible to anyone not using a
+   mouse.
+
+   The pill's own fill and rule go to ink as well, and that is not belt-and-
+   braces: the label below covers the *padding* box, so the 3px rule and the
+   hairline where it meets the label stay whatever the pill was — a gold ready
+   pill showed a thin yellow outline around the dark label. Ink on ink leaves
+   nothing to catch the light. */
 .player-pill--kickable:hover,
 .player-pill--kickable:focus-visible {
   transform: rotate(-3deg) scale(1.03);
+  background: var(--ink);
+  border-color: var(--ink);
 }
 
+/* Sized to its own text and centred, rather than stretched across the pill.
+   A pill is only as wide as the name on it, and "KICK PLAYER" is wider than a
+   two-letter name — pinned to the pill's edges the label would clip, and the
+   one thing this control cannot do is show half a word. It overhangs instead,
+   which on a pill that narrow reads as a tab laid over it. */
 .player-pill__kick {
   position: absolute;
-  inset: 0;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  min-width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  border-radius: inherit;
+  padding: 0 14px;
+  border-radius: 99px;
   background: var(--ink);
   color: var(--cream);
   font-family: var(--display);
   font-size: 13px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.12em;
+  white-space: nowrap;
   text-transform: uppercase;
   opacity: 0;
   transition: opacity 120ms ease-out;
@@ -765,8 +784,6 @@ ul, ol { list-style: none; }
 
 .player-pill--kickable:hover .player-pill__kick,
 .player-pill--kickable:focus-visible .player-pill__kick { opacity: 1; }
-
-.player-pill__boot { flex: 0 0 auto; transform: rotate(-8deg); }
 
 /* A bare wrapper: the pill it holds is the button, and every pill style now
    lives on that. It exists only because `.roster-row` is a list. */

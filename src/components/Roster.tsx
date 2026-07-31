@@ -20,22 +20,6 @@ type PillProps = {
   onKick?: (id: string) => void;
 };
 
-/** The kick. A boot, because the word underneath it is "kick". */
-function BootGlyph() {
-  return (
-    <svg
-      className="player-pill__boot"
-      viewBox="0 0 24 24"
-      width="15"
-      height="15"
-      fill="currentColor"
-      aria-hidden="true"
-    >
-      {/* Leg down the left, foot out to the right, sole across the bottom. */}
-      <path d="M5 2h5v9c0 1.6 1 2.6 2.6 3.3l5.1 2.2c1.4.6 2.3 1.4 2.3 2.8V22H5V2z" />
-    </svg>
-  );
-}
 
 export function PlayerPill({ player, variant, onKick }: PillProps) {
   const classes = ["pill", "player-pill"];
@@ -88,8 +72,8 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
    * had to sit next to READY without being mistaken for part of it. Hovering
    * the pill instead gives the action the whole shape to say itself in: the
    * pill goes to ink, tilts off true, and the roster row is replaced outright
-   * by a boot and the word KICK. Nothing about it is subtle, which is the
-   * point — this removes a person from the game on a single click.
+   * by the words KICK PLAYER. Nothing about it is subtle, which is the point —
+   * this removes a person from the game on a single click.
    *
    * The label rides *over* the pill rather than replacing its children, so the
    * pill keeps the width its name gave it and the row does not reflow under
@@ -104,10 +88,7 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
         onClick={() => onKick(player.id)}
       >
         {body}
-        <span className="player-pill__kick" aria-hidden="true">
-          <BootGlyph />
-          KICK
-        </span>
+        <span className="player-pill__kick" aria-hidden="true">Kick player</span>
       </button>
     </li>
   );
