@@ -323,12 +323,33 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
     setTravel(next);
     setRankStage(1);
     setSwapGen((gen) => gen + 1);
+  }, [phase, reduced, rankStage, dealOrder, finalIds, speed]);
+
+  /**
+   * Stage 1 → 2: the cards have finished flying, so the plaques and medals land.
+   *
+   * **Its own effect, and that is the whole point.** This used to be a
+   * `setTimeout` at the end of the measuring effect above — which reads
+   * `rankStage` and therefore has it in its dependency array. Arming the timer
+   * and calling `setRankStage(1)` in the same pass meant the state change
+   * immediately invalidated those deps, React ran the cleanup, and
+   * `clearTimeout` destroyed the timer that update had just armed. The re-run
+   * then fell straight out of the `rankStage !== 0` guard without scheduling a
+   * replacement, so **stage 2 was unreachable**: no medals, no gold card, and
+   * `RANK n` still showing only because it is gated on `>= 1`.
+   *
+   * Keyed on stage 1 instead, nothing clears this until the stage it is waiting
+   * for actually arrives — or a re-rank drops the grid back to 0, which is a
+   * cancellation this *should* honour.
+   */
+  useEffect(() => {
+    if (rankStage !== 1 || reduced) return;
     const id = setTimeout(
       () => setRankStage(2),
       (SWAP_X_DELAY + SWAP_DURATION) / speed,
     );
     return () => clearTimeout(id);
-  }, [phase, reduced, rankStage, dealOrder, finalIds, speed]);
+  }, [rankStage, reduced, speed]);
 
   // The footer swaps the moment the reveal is over — whether it ran out or was
   // skipped — so FAST FORWARD is never left on screen as a control with nothing
