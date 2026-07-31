@@ -1,4 +1,6 @@
 import type { PlayerId } from "./state";
+import { seededRng } from "./rng";
+import type { Rng } from "./rng";
 
 /**
  * A player-written category pool. Every rule lives here so it tests in
@@ -104,4 +106,83 @@ export function voteBudgetFor(): number {
  */
 export function exposureFor(quota: number): number {
   return (HAND_SIZE * VOTE_BUDGET) / quota;
+}
+
+/** Fisher-Yates on a copy. The one shuffle helper this module uses. */
+function shuffled<T>(items: readonly T[], rng: Rng): T[] {
+  const out = [...items];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
+
+/**
+ * One card per slot, in seat-major order — `pool[seat * quota + slot]`.
+ * `buildDeal` relies on that layout to know which seat a card came from
+ * without the card having to carry it.
+ *
+ * **House cards do not exist before this call.** A blank slot becomes one
+ * here and nowhere earlier: the creation TV must never render one, because a
+ * house card appearing while people are still writing says "nobody wrote
+ * this" about a slot somebody may still be filling.
+ *
+ * House texts are dealt from a shuffled copy of the stock list and cycle if
+ * there are more blanks than categories. A repeat is legal — identical texts
+ * are separate cards through voting by design.
+ *
+ * Ids are assigned through a shuffle so they carry no seat information: the
+ * pool ships to every client during voting, and a positional id would hand
+ * them authorship for free.
+ */
+export function buildPool(
+  playerIds: readonly PlayerId[],
+  drafts: Record<PlayerId, string[]>,
+  quota: number,
+  houseTexts: readonly string[],
+  roll: number,
+): PoolCard[] {
+  const rng = seededRng(`pool:${roll}`);
+  const size = playerIds.length * quota;
+  const house = houseTexts.length > 0 ? shuffled(houseTexts, rng) : ["category"];
+  const ids = shuffled(
+    Array.from({ length: size }, (_, i) => `c${i}`),
+    rng,
+  );
+
+  const out: PoolCard[] = [];
+  let houseNext = 0;
+  playerIds.forEach((playerId, seat) => {
+    const mine = drafts[playerId] ?? [];
+    for (let slot = 0; slot < quota; slot++) {
+      const typed = (mine[slot] ?? "").trim().slice(0, MAX_CATEGORY_LEN);
+      const blank = typed === "";
+      out.push({
+        id: ids[seat * quota + slot],
+        text: blank ? house[houseNext++ % house.length] : typed,
+        authorId: blank ? null : playerId,
+        slot,
+      });
+    }
+  });
+  return out;
+}
+
+/**
+ * The client's copy. Sorted by id — which is random with respect to seats —
+ * so the wire order leaks nothing, and stripped of authorship until the phase
+ * closes.
+ *
+ * Authorship is withheld from *everyone*, not just from non-authors: it is the
+ * one reveal this feature exists for, and a client that had it early could
+ * render it early.
+ */
+export function publicPool(
+  pool: readonly PoolCard[],
+  revealAuthors: boolean,
+): PoolCard[] {
+  return [...pool]
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map((c) => (revealAuthors ? { ...c } : { ...c, authorId: null }));
 }
