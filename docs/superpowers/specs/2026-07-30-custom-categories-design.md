@@ -1,6 +1,6 @@
 # Custom categories — design
 
-**Status:** design settled except §3.3 (vote count), which is the one open decision.
+**Status:** settled. Ready for an implementation plan.
 **Supersedes:** nothing. Extends `2026-07-26-category-voting-design.md`, which stays
 correct for the built-in pool — that vote is untouched and remains the default.
 
@@ -145,28 +145,33 @@ rounds, where `q` hits its ceiling of 4 and yields 12 for 10. **The round count 
 clamped and the Rounds stepper is never restricted.** Earlier candidates that shortened the
 match or house-backfilled the pool were both rejected: the room writes its own match.
 
-### 3.3 Vote count — **OPEN**
+### 3.3 Vote count
 
-Constrained by two requirements that interact:
+**`B = 4`, at every room size, with no exceptions.**
 
-- **Exact equal exposure** (§4.1) requires `q` to divide `3B`. This is firm.
-- **No repeats within a player's deal** requires `3B <= q(P - 1)`. This is negotiable.
+This is not a taste call — it is forced. Exact equal exposure (§4.1) requires `q` to divide
+`3B`. `q` ranges over `{1, 2, 3, 4}`, and **12 is the smallest number divisible by all
+four**, so 4 is the only fixed vote count that works for every pool shape. `B = 6` breaks
+whenever `q = 4`; `B = 5` works only at `q ∈ {1, 3}`.
 
-`q` ranges over `{1, 2, 3, 4}`, and 12 is the smallest number divisible by all four, so
-**`B = 4` is the only fixed vote count that satisfies exact exposure at every pool shape.**
-`B = 6` works only if `q = 4` is excluded or special-cased; `B = 5` works for almost
-nothing.
+Exposure follows directly, and is exact in every case:
 
-Three candidates, all of which preserve exact exposure:
+| Cards each | Times every card is dealt |
+| --- | --- |
+| 1 | exactly 12 |
+| 2 | exactly 6 |
+| 3 | exactly 4 |
+| 4 | exactly 3 |
 
-| | Votes | Repeats | Notes |
-| --- | --- | --- | --- |
-| **A** | 4 everywhere | Only in rooms whose non-own pool is under 12 | The unique clean fixed count |
-| **B** | 6 everywhere, 4 in a 3-player long match | Mild in 11–17 player rooms | Biggest numbers on the board |
-| **C** | Scales 2–6 with room size | Never | Number changes unpredictably between room sizes |
+Six votes was asked for and rejected on two grounds. The first is the divisibility above.
+The second is harder and would survive any fix to the first: **a vote count larger than the
+pool can fill just shows people the same card repeatedly.** Six votes is eighteen dealt
+cards; an 8-player room writing one card each has only 7 cards you did not write. There is
+no rule that makes 18 slots out of 7 cards read well.
 
-Resolve before writing `shared/customCategories.ts`. `voteBudgetFor()` is written **once**
-and both counters — the TV prompt and the phone's pips — read it.
+`voteBudgetFor()` is written **once** and both counters — the TV prompt
+(`PICK ONE FROM EACH HAND — N VOTES EACH`) and the phone's pips — read it. Do not inline
+the constant next to either.
 
 ### 3.4 Rooms of 1–2 players
 
@@ -177,6 +182,10 @@ Allowed, with the rules bent rather than a fallback to the built-in pool.
 - **Own cards are dealt**, because there is nothing else to deal. See §4.2.
 - Authorship is not hidden at these sizes and cannot be. Accepted — these are test and
   couch-play rooms.
+- **Exempt from exact exposure.** `q` here can reach 10, which does not divide 12, so §4.1
+  is unsatisfiable. It is also pointless: with one or two authors every player sees
+  essentially the whole pool regardless. The deal falls back to "as even as possible", and
+  the exactness test asserts `P >= 3`.
 
 The design brief assumed 2-player rooms fell back to the built-in pool. **That is
 overridden here.**
@@ -202,7 +211,8 @@ incrementally, never sampled per hand.
 
 Total dealt slots are `P * B * 3`; the pool is `P * q`. Exposure per card is therefore
 `3B / q`, and the player count cancels out entirely. Exactness is the requirement that
-`q` divides `3B` — which is why §3.3 is a constraint problem rather than a taste call.
+`q` divides `3B` — which is what forces §3.3's answer, since 12 is the only value of `3B`
+divisible by every quota the pool rule can produce. Holds for `P >= 3`; see §3.4.
 
 This is the property that makes the vote fair, and it is why a rare collision must never be
 "fixed" with a filter. A filter breaks exposure.
@@ -220,14 +230,28 @@ is therefore "prefer non-own, allow own only when unavoidable", not a hard filte
 
 ### 4.3 Repeats
 
-No card appears twice **within one hand**, ever.
+**No card appears twice within one hand, ever.** That is absolute.
 
-Whether a card may appear in two of a player's *different* hands is decided by §3.3. Note
-that this is not a strategic move — you cannot choose to be dealt a card again, so framing
-it as "stacking votes" (as the built-in vote genuinely does) would be wrong.
+Across a player's four *different* hands, a card may repeat, and at `B = 4` this is
+unavoidable in most rooms: twelve dealt slots need twelve cards you did not write, and the
+non-own pool is smaller than that in every room under roughly thirteen players.
 
-At 4+ players with `B = 4`, the dealt slots frequently fill the available non-own pool
-exactly, with nothing spare.
+| Room | Non-own pool | Result |
+| --- | --- | --- |
+| 3 players, 3 each | 6 | every card exactly twice |
+| 5 players, 2 each | 8 | half the cards twice |
+| 5 players, 3 each | 12 | exactly once, nothing spare |
+| 7 players, 2 each | 12 | exactly once, nothing spare |
+| 8 players, 1 each | 7 | most cards twice |
+| 13+ players, 1 each | 12+ | no repeats |
+
+**Within a player's deal, repeats are spread as evenly as the pool allows** — a card must
+not appear three times while another appears once, when both could appear twice. This is a
+distinct property from §4.1's room-wide exposure and needs its own test.
+
+Do **not** describe this as "stacking votes". The built-in vote genuinely lets a player
+choose to spend several votes on one category; here you cannot choose to be dealt a card
+again, so it is luck, not a move.
 
 ### 4.4 Construction
 
@@ -238,8 +262,9 @@ recalled algorithm. The properties are the contract:
 1. No hand contains a card the hand's owner wrote (subject to §4.2).
 2. No team filter.
 3. No duplicate card within a hand.
-4. Every card appears in exactly `3B / q` hands.
-5. Each player gets exactly `B` hands of exactly 3.
+4. Every card appears in exactly `12 / q` hands, room-wide.
+5. Each player gets exactly 4 hands of exactly 3.
+6. Within one player's deal, repeat counts differ by at most one.
 
 A round-robin over the pool ordered so each author's cards are maximally spaced, taking
 each player's hands as strides starting past their own block, satisfies all five. Whatever
@@ -302,7 +327,8 @@ deal: Record<PlayerId, Hand[]>       // SERVER ONLY, stripped by toRoomState
 - **`quota` is derived, never stored** — `quotaFor(P, R)` from the live room, same
   principle as `currentRound`. A stored copy could disagree with the room it describes.
 - **`votes` reuses the existing `VoteMap` unchanged**, keyed by `PoolCard.id` instead of a
-  category name. Counts stay 0/1 per card unless §3.3 admits repeats.
+  category name. A count above 1 is legal and expected — a player dealt the same card in
+  two hands may back it twice (§4.3) — so nothing may assume a 0/1 flag.
 - **`authorId` is withheld, not absent.** The pool ships to clients with `authorId`
   nulled during voting and populated in the close payload, in rank order, so the client can
   stagger the chip pops without a second round trip.
@@ -421,4 +447,13 @@ Every number above was decided in conversation on 2026-07-30, not recovered.
 | 5 | 1–2 player rooms bend the rules and vote on own cards | Falling back to the built-in pool; blocking the start |
 | 6 | Exposure is exact, not ±1 | ±1, as the handoff had it |
 | 7 | Board text visible throughout; one reveal, authorship | Hiding text until close; flipping cards on first vote |
-| 8 | Vote count | **OPEN — §3.3** |
+| 8 | 4 votes, always | 6 — breaks exactness at quota 4, and 18 dealt cards do not fit a small pool. 2–6 scaling — the number would change between games for invisible reasons |
+| 9 | Repeats across a player's hands are accepted, spread evenly | Forbidding them, which would have capped votes at 2 in most rooms |
+
+## 13 · Still to verify against the code
+
+Assertions in this document that were read off the repo on 2026-07-30 and should be
+re-checked if it has moved: `MAX_PLAYERS` 10 and `MAX_BOTS` 20; `VOTING_MS` 60s and
+`COUNTDOWN_MS` 5s; `isWaiting` excusing bots from the ready floor; `pickCategory`'s uniform
+fallback when no voted category survives; `toRoomState` stripping exactly `entries`,
+`lastActivityAt`, `kicked` and `hostGoneAt`; `SettingSpec` being numeric-only.
