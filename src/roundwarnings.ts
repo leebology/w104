@@ -4,55 +4,36 @@ import { warningsFor } from "../shared/roundwarnings";
 /**
  * The warning mark to show right now, or null.
  *
- * Detects a new round by tracking whether `remaining` has increased beyond
- * what we've seen for the current `durationSec`. A held-then-resumed round
- * stays in the same round session since `remaining` stays frozen during pause,
- * so bands are not cut short on resume.
+ * Seeded once on mount with already-passed marks silently banked, then fires
+ * marks as `remaining` crosses them. Each mark fires exactly once per round.
  *
- * `remaining` comes from `useRemaining`, which already freezes the clock
- * during a pause, so pause/resume is implicit: when the host resumes,
- * `remaining` does not jump up (only `endsAt` changes), so we correctly stay
- * in the same round session and any displayed mark persists.
+ * **Dependency on remount:** This hook is correct only because its consumer
+ * (the HostPlaying/PlayerPlaying screens) remounts on every round boundary via
+ * `viewNonce`. Keeping the calling component mounted across a round boundary
+ * would break the hook — the fired set would never reset for a second round on
+ * the same mount.
  */
 export function useRoundWarning(
   remaining: number,
   durationSec: number,
-  /**
-   * Included in the function signature for compatibility with the broader
-   * architecture, but not used for round identity — `remaining` tracks
-   * elapsed time and is the real signal of a new round.
-   */
-  endsAt: number,
 ): number | null {
   const marks = useMemo(() => warningsFor(durationSec), [durationSec]);
   const fired = useRef<Set<number>>(new Set());
-  const durationMaxRemaining = useRef<Record<number, number>>({});
+  const seeded = useRef(false);
   const [mark, setMark] = useState<number | null>(null);
 
   useEffect(() => {
-    let isNewRound = false;
-
-    if (!(durationSec in durationMaxRemaining.current)) {
-      // First time seeing this duration: definitely a new round.
-      isNewRound = true;
-      durationMaxRemaining.current[durationSec] = remaining;
-    } else if (remaining > durationMaxRemaining.current[durationSec]) {
-      // remaining increased for this duration, so the round has reset:
-      // definitely a new round.
-      isNewRound = true;
-      durationMaxRemaining.current[durationSec] = remaining;
-    }
-
-    if (isNewRound) {
-      // New round. Bank everything already behind us without showing it: a
-      // phone joining at 45 seconds left on a three-minute round must not
-      // flash "1:30 LEFT" on arrival, which is both startling and false.
+    if (!seeded.current) {
+      // First render of this round. Bank everything already behind us without
+      // showing it: a phone joining at 45 seconds left on a three-minute round
+      // must not flash "1:30 LEFT" on arrival, which is both startling and false.
       //
       // `>=` rather than `>` so arriving exactly on a mark banks it rather
       // than warning about a moment this client did not witness. It cannot
       // suppress a warning on a round joined at the whistle: every mark is
       // strictly less than durationSec, so nothing is banked at full time.
       fired.current = new Set(marks.filter((m) => m >= remaining));
+      seeded.current = true;
       setMark(null);
       return;
     }
@@ -69,7 +50,7 @@ export function useRoundWarning(
     // it skipped would burst three bands at once; the smallest is the one
     // still closest to true.
     setMark(Math.min(...crossed));
-  }, [remaining, marks, durationSec]);
+  }, [remaining, marks]);
 
   return mark;
 }
