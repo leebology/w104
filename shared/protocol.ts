@@ -3,6 +3,7 @@ import type { RejectReason } from "./reduce";
 import type { ChoiceSettingKey, NumericSettingKey } from "./gamemodes";
 import type { TeamId } from "./teams";
 import type { ViewId } from "./views";
+import type { Hand } from "./customCategories";
 
 export type ClientMessage =
   | { type: "setProfile"; name: string; emoji: string }
@@ -78,6 +79,11 @@ export type ServerMessage =
   | { type: "state"; state: RoomState }
   | { type: "entryAck"; seq: number; accepted: boolean; reason?: RejectReason }
   | { type: "yourEntries"; entries: Entry[] }
+  /** This player's own committed slots. Never broadcast — see toRoomState. */
+  | { type: "yourDrafts"; drafts: string[] }
+  /** This player's own hands. Never broadcast: a leaked hand plus a public
+      tally lets the room deduce who voted for what. */
+  | { type: "yourHands"; hands: Hand[] }
   | { type: "error"; code: ErrorCode; message: string };
 
 export type ErrorCode =

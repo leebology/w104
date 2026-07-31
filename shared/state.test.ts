@@ -198,3 +198,34 @@ describe("the creating phase's privacy boundary", () => {
     expect(toRoomState(room, 0).slotStates).toEqual({});
   });
 });
+
+describe("the pool's authorship boundary", () => {
+  // Task 6 covers `publicPool` nulling authorship in isolation, and covers
+  // `toRoomState` stripping `drafts`/`deal` from a room whose `pool` is null.
+  // Neither exercises the two together: a real pool, with real author ids,
+  // carried through `toRoomState`. This is the gap — a leaked author id plus
+  // the public vote tally is enough to deduce who voted for what.
+  it("nulls every card's authorId until authorsRevealed, even with a real pool", () => {
+    const room = createRoom("JADE", 0);
+    room.players = [
+      { id: "p0", name: "A", emoji: "🐝", ready: false, connected: true, teamId: null },
+      { id: "p1", name: "B", emoji: "🦊", ready: false, connected: true, teamId: null },
+    ];
+    room.settings = { ...room.settings, categorySource: "custom" };
+    room.phase = { name: "voting", endsAt: 1000 };
+    room.pool = [
+      { id: "c0", text: "smells", authorId: "p0", slot: 0 },
+      { id: "c1", text: "noises", authorId: "p1", slot: 0 },
+    ];
+    room.deal = { p0: [{ cardIds: ["c0", "c1"] }] };
+    room.authorsRevealed = false;
+
+    const state = toRoomState(room, 0);
+    expect(state.pool!.map((c) => c.authorId)).toEqual([null, null]);
+
+    // Revealed only once the flag flips — the reveal this feature exists for.
+    room.authorsRevealed = true;
+    const revealed = toRoomState(room, 0);
+    expect(revealed.pool!.map((c) => c.authorId).sort()).toEqual(["p0", "p1"]);
+  });
+});

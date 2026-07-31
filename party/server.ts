@@ -7,7 +7,7 @@ import type { ClientMessage, ErrorCode, ServerMessage } from "../shared/protocol
 import { createRoom, matchComplete, toRoomState } from "../shared/state";
 import type { Entry, MatchSettings, PlayerId, Room } from "../shared/state";
 import { DEFAULT_DURATION_SEC } from "../shared/categories";
-import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes";
+import { DEFAULT_MODE, customEnabled, defaultSettings, isGameModeId } from "../shared/gamemodes";
 import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
 import type { Scorer } from "../shared/teams";
 import { isHuman } from "../shared/bots";
@@ -24,8 +24,9 @@ import {
 import {
   archiveGameStart, archiveMatchEnd, archiveRound, archiveVotes,
 } from "./archive";
-import { DEFAULT_FILL_COUNT, fillWordsFor } from "../shared/debug";
+import { DEFAULT_FILL_COUNT, fillCategoryFor, fillWordsFor } from "../shared/debug";
 import { collectUsage } from "./usage";
+import { MAX_CATEGORY_LEN, quotaFor } from "../shared/customCategories";
 
 // Bindings declared in wrangler.jsonc.
 export interface Env {
@@ -380,6 +381,7 @@ export class W104 extends Server<Env> {
     // A player rejoining mid-round gets the list they contribute to — their
     // own in free-for-all, their team's in team play.
     this.sendEntriesToTeam(playerId);
+    this.pushPrivate(playerId);
     this.broadcastState();
   }
 
@@ -442,13 +444,33 @@ export class W104 extends Server<Env> {
      */
     if (msg.type === "debugFill") {
       if (playerId !== this.room.hostId) return;
-      if (this.room.phase.name !== "playing") return;
 
+      if (this.room.phase.name === "creating") {
+        // Loops `commitDraft` rather than writing `drafts` directly, so the
+        // cap, the trim and the readiness rule all still apply — the same
+        // arrangement the round's auto-fill has with `submitEntry`.
+        const quota = quotaFor(this.room.players.length, this.room.settings.roundCount);
+        this.room.players.forEach((player, seat) => {
+          for (let slot = 0; slot < quota; slot++) {
+            this.room = reduce(this.room!, {
+              t: "commitDraft",
+              playerId: player.id,
+              slot,
+              text: fillCategoryFor(seat, slot),
+              now,
+            });
+          }
+        });
+        await this.persist();
+        this.broadcastState();
+        this.pushPrivateAll();
+        return;
+      }
+
+      if (this.room.phase.name !== "playing") return;
       const scorers = this.fillEveryList(now);
       await this.persist();
       this.pushEntriesFor(scorers);
-      // Deliberately no `broadcastState`: entry counts are not published, and
-      // nothing in `RoomState` changed.
       return;
     }
 
@@ -497,6 +519,7 @@ export class W104 extends Server<Env> {
       await this.persist();
       if (filled) this.pushEntriesFor(filled);
       this.broadcastState();
+      this.pushPrivateAll();
       return;
     }
 
@@ -653,11 +676,33 @@ export class W104 extends Server<Env> {
           now,
         });
         break;
+      case "moveCursor":
+        this.room = reduce(this.room, {
+          t: "moveCursor", playerId, slot: Number(msg.slot), now,
+        });
+        break;
+      case "commitDraft":
+        this.room = reduce(this.room, {
+          t: "commitDraft",
+          playerId,
+          slot: Number(msg.slot),
+          // Bounded again in `reduce`; bounded here so a hostile message
+          // cannot make the room object enormous before it gets there.
+          text: String(msg.text ?? "").slice(0, MAX_CATEGORY_LEN * 4),
+          now,
+        });
+        break;
+      case "clearDraft":
+        this.room = reduce(this.room, {
+          t: "clearDraft", playerId, slot: Number(msg.slot), now,
+        });
+        break;
     }
 
     this.maybeArchiveBank(before, now);
     await this.persist();
     this.broadcastState();
+    this.pushPrivateAll();
   }
 
   async onClose(conn: Connection<ConnState>): Promise<void> {
@@ -713,6 +758,7 @@ export class W104 extends Server<Env> {
         }
         await this.persist();
         this.broadcastState();
+        this.pushPrivateAll();
         return;
       }
       case "touch":
@@ -982,6 +1028,35 @@ export class W104 extends Server<Env> {
         this.sendTo(conn, msg);
       }
     }
+  }
+
+  /**
+   * Sends a player the two things `toRoomState` strips: their own committed
+   * slots and their own hands. Same arrangement `yourEntries` has, and for the
+   * same reason — these are per-socket facts, not room facts.
+   *
+   * Called after every state change rather than only on the events that alter
+   * them: it is two small messages, and a missed push leaves a phone showing
+   * an empty hand with no way to recover short of a reconnect.
+   */
+  private pushPrivate(playerId: PlayerId): void {
+    if (!this.room) return;
+    // Nothing to push in a built-in-pool match, and the common case is worth
+    // not spending two messages per player per state change on.
+    if (!customEnabled(this.room.settings)) return;
+    const drafts = this.room.drafts[playerId] ?? [];
+    const hands = this.room.deal[playerId] ?? [];
+    for (const conn of this.getConnections<ConnState>()) {
+      if (conn.state?.playerId !== playerId) continue;
+      this.sendTo(conn, { type: "yourDrafts", drafts });
+      this.sendTo(conn, { type: "yourHands", hands });
+    }
+  }
+
+  /** Every seated player's private halves. */
+  private pushPrivateAll(): void {
+    if (!this.room) return;
+    for (const player of this.room.players) this.pushPrivate(player.id);
   }
 
   private encode(msg: ServerMessage): string {

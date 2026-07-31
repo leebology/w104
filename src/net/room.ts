@@ -3,6 +3,7 @@ import { useSyncExternalStore } from "react";
 import type { ClientMessage, ErrorCode, ServerMessage } from "../../shared/protocol";
 import type { RejectReason } from "../../shared/reduce";
 import type { Entry, RoomState } from "../../shared/state";
+import type { Hand } from "../../shared/customCategories";
 import { randomUUID } from "./identity";
 
 // Set by Vercel in production; falls back to the local `wrangler dev` server.
@@ -17,6 +18,10 @@ export type ClientState = {
   connected: boolean;
   room: RoomState | null;
   entries: LocalEntry[];
+  /** This player's own committed categories. Never in `room`. */
+  drafts: string[];
+  /** This player's own hands. Never in `room`. */
+  hands: Hand[];
   /** Add to Date.now() to get the server's clock. */
   clockOffset: number;
   error: { code: ErrorCode; message: string } | null;
@@ -53,6 +58,8 @@ const EMPTY: ClientState = {
   connected: false,
   room: null,
   entries: [],
+  drafts: [],
+  hands: [],
   clockOffset: 0,
   error: null,
   rejected: null,
@@ -249,6 +256,12 @@ export class RoomStore {
             rejectedSeq: this.state.rejectedSeq + 1,
           });
         }
+        break;
+      case "yourDrafts":
+        this.set({ drafts: msg.drafts });
+        break;
+      case "yourHands":
+        this.set({ hands: msg.hands });
         break;
       case "error":
         this.set({ error: { code: msg.code, message: msg.message } });
