@@ -1008,24 +1008,26 @@ export function pickCustomCategory(
     else if (!unvoted.includes(card.text)) unvoted.push(card.text);
   }
 
-  if (weights.size > 0) return walk([...weights.entries()], roll);
-  if (unvoted.length > 0) return walk(unvoted.map((t) => [t, 1]), roll);
+  if (weights.size > 0) return weightedPick([...weights.entries()], roll).pick;
+  if (unvoted.length > 0) {
+    return weightedPick(unvoted.map((t) => [t, 1] as [string, number]), roll).pick;
+  }
   // Every text has been played. Unreachable while the pool covers the round
   // count, which `quotaFor` guarantees — a guard, not a case.
   return pool.length > 0 ? pool[0].text : "";
 }
-
-/** Walks the cumulative distribution. Mirrors `weightedPick` in voting.ts. */
-function walk(weights: Array<[string, number]>, roll: number): string {
-  const total = weights.reduce((sum, [, w]) => sum + w, 0);
-  let target = Math.min(Math.max(roll, 0), 0.999999999) * total;
-  for (const [text, weight] of weights) {
-    if (target < weight) return text;
-    target -= weight;
-  }
-  return weights[weights.length - 1][0];
-}
 ```
+
+**Reuse `weightedPick`, do not copy it.** `shared/voting.ts` already has the
+cumulative-distribution walk, complete with the roll clamp and the
+`fraction` return the built-in draw needs. Export it from there:
+
+```ts
+export function weightedPick(
+```
+
+and import it here. A second copy would be the same arithmetic in two files,
+free to drift, and the clamp is the kind of detail that drifts first.
 
 - [ ] **Step 5: Run the tests and watch them pass**
 
@@ -1684,12 +1686,26 @@ In `party/server.ts`'s `load()`, beside the existing ones:
 npx vitest run && npm run typecheck
 ```
 
-Expected: PASS. `HostView`/`PlayerView` will now fail typecheck on the unhandled `creating` phase — **that is the annotation doing its job**; Task 10 adds the screens. Add a temporary throwing case in both views to keep the build green:
+Expected: PASS. `HostView`/`PlayerView` will now fail typecheck on the unhandled `creating` phase — **that is the annotation doing its job**, and it is the repo's only guard against a missing phase, so it must not be silenced with a `default:` branch.
+
+Close it properly, with a real interim screen rather than a throw. Create `src/screens/shared/Writing.tsx`:
 
 ```tsx
-    case "creating":
-      throw new Error("creating: screen added in a later task");
+/**
+ * The writing phase before its own screens exist. Deliberately the same shape
+ * as `TimesUp` — a phase that renders one line — so it is a working screen and
+ * not a placeholder that throws. Tasks 10 and 11 replace both call sites.
+ */
+export function Writing() {
+  return (
+    <main className="screen screen--center">
+      <p className="big-word">Writing categories…</p>
+    </main>
+  );
+}
 ```
+
+and wire `case "creating": return <Writing />;` in both views.
 
 ```bash
 git add shared/state.ts shared/state.test.ts shared/customCategories.ts shared/customCategories.test.ts party/server.ts src/screens/host/HostView.tsx src/screens/player/PlayerView.tsx
@@ -2309,6 +2325,9 @@ Add beside `sendEntriesToTeam`:
    */
   private pushPrivate(playerId: PlayerId): void {
     if (!this.room) return;
+    // Nothing to push in a built-in-pool match, and the common case is worth
+    // not spending two messages per player per state change on.
+    if (!customEnabled(this.room.settings)) return;
     const drafts = this.room.drafts[playerId] ?? [];
     const hands = this.room.deal[playerId] ?? [];
     for (const conn of this.getConnections<ConnState>()) {
