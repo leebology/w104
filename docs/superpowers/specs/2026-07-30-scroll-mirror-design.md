@@ -209,8 +209,10 @@ column has an outstanding delta. Each frame `cur += (target - cur) * 0.25`, then
 snap and drop the column out when within half a pixel. At 60fps that closes ~99%
 in about 280ms — near enough one send interval, so 4Hz reads as continuous
 motion without stacking noticeable lag on top of the interval itself. Under
-`prefers-reduced-motion` the target is assigned directly and the loop never
-starts.
+`prefers-reduced-motion` the same loop runs — it is the only write path, there
+is no separate one outside it — but there is no easing to do, so it assigns
+the full delta on its first pass and then self-terminates once the column
+stops moving.
 
 A self-strike landing mid-mirror re-renders the column but does not disturb it:
 `WordList` keys rows on `${entry.text}-${i}`, so React reuses the nodes and

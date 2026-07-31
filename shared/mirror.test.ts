@@ -103,4 +103,9 @@ describe("scrollFraction", () => {
     expect(scrollFraction(12.3456, 200, 100)).toBe(0.123);
     expect(scrollFraction(12.3494, 200, 100)).toBe(0.123);
   });
+
+  test("a NaN measurement is no position at all, not a zero", () => {
+    expect(scrollFraction(0, NaN, 100)).toBeNull();
+    expect(scrollFraction(NaN, 200, 100)).toBeNull();
+  });
 });

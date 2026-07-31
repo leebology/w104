@@ -445,8 +445,17 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
           continue;
         }
         // Reduced motion has no easing to do and lands on the first frame.
+        const before = box.scrollTop;
         box.scrollTop += reduced ? delta : delta * MIRROR_EASE;
-        busy = true;
+        // Keep going only while the column is *actually moving*. `range` comes
+        // from `scrollHeight`/`clientHeight`, which the CSSOM rounds to
+        // integers, but assigning `scrollTop` clamps against the true
+        // fractional maximum — so `at * range` can name a position a pixel
+        // past anywhere the box can reach. Looping on remaining distance would
+        // then never converge: the write clamps, nothing moves, and the next
+        // frame computes the same delta forever, at 60fps, forcing a layout
+        // per column per frame with nothing on screen to show for it.
+        if (box.scrollTop !== before) busy = true;
       }
       if (busy) frame = requestAnimationFrame(advance);
     };

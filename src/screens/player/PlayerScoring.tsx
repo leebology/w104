@@ -18,7 +18,7 @@ import {
   seededRng,
   uniqueDirection,
 } from "../../../shared/reveal";
-import { scrollFraction } from "../../../shared/mirror";
+import { driverOf, scrollFraction } from "../../../shared/mirror";
 import type { SelfMarks } from "../../../shared/selfstrike";
 import { currentRound } from "../../../shared/state";
 import type { PlayerId, RoomState } from "../../../shared/state";
@@ -34,9 +34,10 @@ import type { Results } from "../../../shared/scoring";
  * The interval is chosen rather than assumed. Every message wakes the
  * hibernating Durable Object and counts against `doRequestsPerDay`, which is
  * 100,000/day *account-wide* and shared between staging and production
- * (`shared/usage.ts`). At 100ms the mirror alone would cap the account near
- * fifty matches a day; at 250ms it is about a third of that, and the host's
- * easing (see `HostScoring`) closes the visual gap.
+ * (`shared/usage.ts`). At 100ms the mirror alone would be roughly 2,000
+ * messages a match and about fifty matches a day; at 250ms it is roughly 800
+ * and about 125 matches a day, and the host's easing (see `HostScoring`)
+ * closes the visual gap.
  */
 const MIRROR_INTERVAL = 250;
 const MIRROR_SETTLE = 150;
@@ -106,8 +107,19 @@ export function PlayerScoring({
    * The TV holds what arrives and starts applying at its own later gate — see
    * `HostScoring`. That gap is deliberate and is why this side does not wait
    * for it.
+   *
+   * A team shares one column, so only one member's scroll can drive it.
+   * `party/server.ts` already enforces that and stays the security boundary,
+   * but checking `driverOf` here too means the rest of the team never sends
+   * at all: without it every teammate would tick the Durable Object at 4Hz
+   * for a message the server was always going to drop. `me` is guarded
+   * against `undefined` because the "not in this round" return happens later
+   * in this function, below where `mirroring` is used.
    */
-  const mirroring = step >= schedule.lastStep;
+  const mirroring =
+    me !== undefined &&
+    step >= schedule.lastStep &&
+    driverOf(room, me.id) === playerId;
 
   useEffect(() => {
     const box = listBox.current;
