@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (564 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (604 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -221,6 +221,17 @@ replaced wholesale on each `state` push; every client action is a *request*.
   opposite of `cancelStart`, which clears readiness precisely so the countdown
   stays down. The flag is cleared on host disconnect — otherwise a locked phone
   freezes the room until the grace reap.
+- **A half-typed word is flushed at the whistle, and its window is `timesup`.**
+  The text exists only in the browser, so the phone fires `flushEntry` on
+  learning the round ended — a round trip after the alarm that ended it, which
+  is why `flushEntry` accepts in `playing` *or* `timesup` where `submitEntry`
+  accepts only `playing`. The window closes at the tick that computes
+  `Results`; past it the scores exist. `MIN_FLUSH_LEN` is counted on the
+  trimmed text as typed, never on the `normalize()` form. Both functions share
+  `addEntry` for every other rule, so the duplicate, `MAX_ENTRIES` and
+  team-merge checks cannot come to apply on one path and not the other.
+  A flushed fragment that outscores the finished word is a known, accepted
+  consequence — see §1 of the design.
 
 ### Room codes and the connect budget
 
@@ -816,6 +827,10 @@ card ends on. Rules to keep:
 - `docs/superpowers/specs/2026-07-30-scroll-mirror-design.md` — the scroll
   mirror: the fraction unit and why not a row index, `driverOf`, the
   host-directed fast path and its request budget, the two gates. Implemented.
+- `docs/superpowers/specs/2026-07-31-timer-entry-flush-design.md` — flushing a
+  half-typed entry when the round timer expires: the 5-character floor, the
+  `timesup` grace window, and why the buffer is not staged on the server.
+  Implemented.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.
