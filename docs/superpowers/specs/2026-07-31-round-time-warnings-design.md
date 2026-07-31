@@ -202,10 +202,15 @@ is `shared/**` only — and are covered by the manual smoke test.
 
 ## Branch & PR
 
-Open question at time of writing: `timer-improvements` already carries the
-entry-flush work, complete and reviewed but not yet merged. This feature either
-joins that branch or takes its own off `staging`. Decide before implementing —
-it changes nothing about the design, only what the PR contains.
+`timer-improvements`, alongside the entry-flush work — decided 2026-07-31. Both
+timer features ship as one PR into `staging` rather than two, which is what the
+branch name says and what keeps the pair reviewable together.
+
+One consequence: `CLAUDE.md`'s stated test count moves again when the
+`warningsFor` tests land. It is currently wrong by two (says 604, suite is 606)
+from the flush work's own final fix. **Correct it once, at the end of this
+feature**, rather than twice — a number that has drifted three times on one
+branch is worth landing right on the last commit that can change it.
 
 Version bump in all three places (`package.json`, `package-lock.json`
 top-level, and under `packages: { "": ... }`). Commits stage explicit paths —
