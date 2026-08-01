@@ -1165,6 +1165,25 @@ card ends on. Rules to keep:
   would drop its scroll position and its measured rect), so it keeps the A/B
   pair.
 
+- **The scoring → standings wipe is an animation, not a phase**, the same as
+  the creating → voting beat — but with **no timestamp to hang off**, because
+  `standings` is untimed and `bankRound` broadcasts no zero for it. So it is
+  local to the host that watched the change happen, and any other way onto that
+  screen (refresh, view jump, reconnect) gets the settled board. Nothing is out
+  of step: no phone plays it. `src/scoringleave.ts` holds the timings.
+- **`HostView` arms it during render, and keeps `HostScoring` in a slot of its
+  own.** An effect runs a frame after the phase push, so the results screen
+  would unmount for that frame and come back as a *new* element — replaying its
+  deal-in on the way out. The two child positions in that Fragment are load
+  bearing: position 0 is the results screen whether it is the live phase or on
+  its way out, so React holds the DOM and the cards that leave are the cards the
+  room was looking at. `leaveUntil` is a deadline rather than a boolean for the
+  reason `Room.paused` banks milliseconds.
+- **The wipe animates the card, never the column.** The frame-3 swap holds a
+  `transform` on the column with `forwards`; a second animation on that property
+  there fights it for the position the card leaves from. It staggers on
+  `--leave-rank` (rank order — where the cards actually are by then), not
+  `--deal-rank`.
 - **Nothing is stored per row and nothing is diffed.** A rule that needs its own
   piece of state belongs in `shared/reveal.ts` as a derivation.
 - **A row is struck once any partner is already on screen.** Back-checking falls

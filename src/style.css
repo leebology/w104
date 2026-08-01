@@ -1562,6 +1562,52 @@ ul, ol { list-style: none; }
    whatever width the TV has. --cols is set per render: one row up to five
    players, two balanced rows up to the ten-player cap. `1fr` rows split the
    height evenly, so a second row simply makes every card shorter. */
+/* The round leaving for the standings.
+   ------------------------------------
+   `HostView` keeps this screen mounted through the phase change (see
+   src/scoringleave.ts), so what wipes away is the DOM the room was already
+   looking at rather than a copy of it. The layer goes transparent and
+   click-through the moment it is on its way out: the standings board is
+   underneath it from the first frame, and the cards have to be seen leaving
+   *over* it rather than over a second pink field. */
+.host-scoring--leaving {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: transparent;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+/* The furniture goes quickly and quietly — it is about to be replaced by the
+   standings screen's own, in the same corners, and two headers crossfading
+   over each other is the one thing that would read as a glitch. */
+.host-scoring--leaving .host-header,
+.host-scoring--leaving .host-scoring__footer {
+  animation: countFadeOut 160ms linear both;
+}
+
+/* The grid clips its cards at its own padding box, which is a good 26px short
+   of the screen edge — a card must not vanish into thin air with a strip of
+   pink still to its left. */
+.host-scoring--leaving .results { overflow: visible; }
+
+/* The card and not the column: the frame-3 swap holds its own `transform` on
+   the column with `forwards`, and a second animation on the same property
+   there would fight it for the position the card is leaving *from*. */
+.host-scoring--leaving .result-card {
+  animation: resultsWipeLeft 440ms cubic-bezier(0.45, 0, 0.85, 0.35)
+    calc(var(--leave-rank, 0) * 32ms) both;
+}
+
+/* Weight: the card loads up to the right before it goes, and leaves turning.
+   The same anticipation the deal-in has on the way in, played backwards. */
+@keyframes resultsWipeLeft {
+  0% { transform: none; }
+  18% { transform: translateX(46px) rotate(1.4deg); }
+  100% { transform: translateX(-170vw) rotate(-7deg); }
+}
+
 .results {
   flex: 1;
   min-height: 0;
@@ -3584,6 +3630,22 @@ ul, ol { list-style: none; }
      so without a top value here the first row sits flush under the room
      chip with no pink between them. */
   padding: 16px 26px 0;
+}
+
+/* The board arriving out of the round's results: every row rises from below the
+   bottom edge on the same overshoot curve the results cards deal in on, one
+   after another down the ranking. `both` is what holds a row off-screen through
+   its own delay — without it every row would be sitting in place for the first
+   frame and then jump down to start. See src/scoringleave.ts for the timings and
+   why this is local to the host that watched the change happen. */
+.standings-rows--entering .standings-row {
+  animation: standingsRise 560ms cubic-bezier(0.34, 1.42, 0.64, 1)
+    calc(380ms + var(--row-i, 0) * 45ms) both;
+}
+
+@keyframes standingsRise {
+  from { transform: translateY(105vh); }
+  to { transform: none; }
 }
 
 /* No `overflow: hidden`, even though the place block runs to the row's edge:
