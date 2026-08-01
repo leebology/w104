@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { computeStandings } from "../../../shared/standings";
 import { currentRound, matchComplete } from "../../../shared/state";
 import { GetReady } from "../../components/GetReady";
@@ -13,9 +14,21 @@ type Props = {
   room: RoomState;
   /** Present during an inter-round countdown; un-readying still cancels it. */
   countdown?: { endsAt: number; offset: number };
+  /**
+   * This board is arriving out of the round's results, with the cards still
+   * wiping off the left edge above it — so the rows rise from the bottom on the
+   * beat that leaves. False for every other way onto this screen (a refresh, a
+   * view jump, a reconnect), which get the settled board. See
+   * `src/scoringleave.ts`.
+   */
+  fromScoring?: boolean;
 };
 
-export function HostStandings({ room, countdown }: Props) {
+export function HostStandings({ room, countdown, fromScoring }: Props) {
+  // Captured at mount: the wipe finishes and `HostView` stops passing this
+  // while the board's own stagger is still running, and a class that vanished
+  // mid-animation would snap the remaining rows into place.
+  const [entering] = useState(fromScoring === true);
   const standings = computeStandings(rosterOf(room), room.history);
   const done = matchComplete(room);
   // On the final screen the round marker would otherwise read one past the
@@ -77,7 +90,7 @@ export function HostStandings({ room, countdown }: Props) {
         {done ? (
           <Podium room={room} standings={standings} final />
         ) : (
-          <StandingsList room={room} standings={standings} />
+          <StandingsList room={room} standings={standings} entering={entering} />
         )}
 
         {/* Centred on the final board and right-aligned between rounds. The

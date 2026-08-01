@@ -119,6 +119,14 @@ type Props = {
   skipped: boolean;
   /** Words their own scorers disowned. See shared/selfstrike.ts. */
   marks: SelfMarks;
+  /**
+   * This screen is on its way out — the room has banked the round and the
+   * standings board is already underneath it. The cards wipe off the left edge
+   * and everything else fades; see `src/scoringleave.ts`. `HostView` keeps the
+   * component mounted across the phase change to make this possible, so the
+   * props are a frozen snapshot for as long as it is set.
+   */
+  leaving?: boolean;
 };
 
 /**
@@ -130,7 +138,7 @@ type Props = {
  * and nothing is diffed — which is exactly why FAST FORWARD is a one-line
  * assignment rather than a second code path.
  */
-export function HostScoring({ room, results, startedAt, skipped, marks }: Props) {
+export function HostScoring({ room, results, startedAt, skipped, marks, leaving }: Props) {
   // Read once. A host changing their OS motion setting mid-round is not a case
   // worth a subscription, and re-deriving the phase from it would restart the
   // sequence under them.
@@ -546,7 +554,7 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
   const slots = reduced ? finalIds : dealOrder;
 
   return (
-    <main className="screen screen--host host-scoring">
+    <main className={leaving ? "screen screen--host host-scoring host-scoring--leaving" : "screen screen--host host-scoring"}>
       {/* The chip leads, as it does on every other host screen — the join
           instruction is the one thing on a TV that has to be in the same
           corner every time, so the screen's own title takes the far end. */}
@@ -625,6 +633,12 @@ export function HostScoring({ room, results, startedAt, skipped, marks }: Props)
               style={
                 {
                   "--deal-rank": slot,
+                  // The wipe out to standings staggers in *rank* order, which
+                  // is where the cards actually are by then — the frame-3 swap
+                  // moved them there while the DOM stayed in deal order, so
+                  // `--deal-rank` would stagger a board the room is not
+                  // looking at.
+                  "--leave-rank": rank - 1,
                   "--travel-x": `${flight ? flight.x : 0}px`,
                   "--travel-y": `${flight ? flight.y : 0}px`,
                   // The X travel trails the Y travel only when the card is

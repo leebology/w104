@@ -15,6 +15,12 @@ const SPLIT_ABOVE = 5;
 type Props = {
   room: RoomState;
   standings: Standing[];
+  /**
+   * Rise in from the bottom edge, one row after another, as the round's
+   * results wipe off above. Only when the board arrived that way — see
+   * `HostStandings` and `src/scoringleave.ts`.
+   */
+  entering?: boolean;
 };
 
 /**
@@ -28,7 +34,7 @@ type Props = {
  * board splits into two columns, filled *down* the first and then the second,
  * so reading order stays 1st to last.
  */
-export function StandingsList({ room, standings }: Props) {
+export function StandingsList({ room, standings, entering }: Props) {
   const split = standings.length > SPLIT_ABOVE;
   const rows = split ? Math.ceil(standings.length / 2) : standings.length;
   // The leader's row is taller than the rest, but only in one column: with two,
@@ -56,10 +62,13 @@ export function StandingsList({ room, standings }: Props) {
   return (
     <>
       <ol
-        className={split ? "standings-rows standings-rows--split" : "standings-rows"}
+        className={
+          (split ? "standings-rows standings-rows--split" : "standings-rows") +
+          (entering ? " standings-rows--entering" : "")
+        }
         style={{ "--cols": split ? 2 : 1, "--rows": rowTracks } as CSSProperties}
       >
-        {standings.map((s) => {
+        {standings.map((s, i) => {
           const members = s.members
             .map((id) => room.players.find((p) => p.id === id))
             .filter((p): p is Player => p !== undefined);
@@ -75,6 +84,10 @@ export function StandingsList({ room, standings }: Props) {
               className={lead ? "standings-row standings-row--lead" : "standings-row"}
               key={s.id}
               data-dropped={dropped ? "" : undefined}
+              // Reading order, which in the split board is *down* the first
+              // column and then the second — so the stagger follows the rank
+              // rather than the two columns racing each other.
+              style={{ "--row-i": i } as CSSProperties}
             >
               <div className="standings-row__place">
                 <span className="standings-row__ordinal">{ordinal(s.place)}</span>
