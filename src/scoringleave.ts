@@ -19,9 +19,9 @@
  */
 
 /** One card's journey off the edge. */
-export const LEAVE_CARD_MS = 440;
+export const LEAVE_CARD_MS = 620;
 /** Per column, in *rank* order — see `--leave-rank` in `HostScoring`. */
-export const LEAVE_STAGGER = 32;
+export const LEAVE_STAGGER = 46;
 
 /**
  * How long the outgoing scoring screen stays mounted, worst case.
@@ -32,7 +32,32 @@ export const LEAVE_STAGGER = 32;
  */
 export const LEAVE_MS = LEAVE_CARD_MS + 9 * LEAVE_STAGGER;
 
-/** When the board starts arriving — before the last card is gone, on purpose. */
-export const ENTER_START_MS = 380;
-export const ENTER_ROW_MS = 560;
-export const ENTER_STAGGER = 45;
+/**
+ * When the board starts arriving.
+ *
+ * Late enough that the room has watched the round actually go — the first
+ * version started it at 380ms, with the wipe still most of the way through, and
+ * the two halves read as one crowded shuffle rather than as a hand-off. The
+ * last card is still travelling when the first row starts up, which is the
+ * overlap worth keeping; what is gone is the standings appearing before the
+ * results have.
+ */
+export const ENTER_START_MS = 760;
+export const ENTER_ROW_MS = 640;
+export const ENTER_STAGGER = 60;
+
+/**
+ * The entrance timings as CSS custom properties, for the board that is
+ * arriving.
+ *
+ * Handed to the stylesheet rather than written into it twice: the keyframes and
+ * the curve are CSS's business, but *when* is this module's, and a duration
+ * living in both places is one that drifts. Both boards — the between-rounds
+ * list and the final podium — set the same pair, so they cannot fall out of
+ * step with each other either.
+ */
+export const enterVars = {
+  "--enter-start": `${ENTER_START_MS}ms`,
+  "--enter-stagger": `${ENTER_STAGGER}ms`,
+  "--enter-dur": `${ENTER_ROW_MS}ms`,
+} as const;
