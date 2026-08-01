@@ -40,7 +40,12 @@ export function HostStandings({ room, countdown }: Props) {
           right={
             <HostHeaderRight>
               {done ? (
-                <div className="host-standings__title">
+                // Centred in the header rather than parked on the right end:
+                // the match is over and there is nothing to count against it,
+                // so it takes the middle slot the round marker keeps on every
+                // other host screen — the same top-centre the lobby gives the
+                // room code.
+                <div className="host-standings__title host-standings__title--center">
                   <h1>Match over</h1>
                 </div>
               ) : (

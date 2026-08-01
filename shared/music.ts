@@ -67,7 +67,7 @@ export function loops(scene: SceneId): boolean {
  */
 const LEVELS: Partial<Record<SceneId, number>> = {
   // Mastered hotter than the rest of the set.
-  round_results: 0.4,
+  round_results: 0.3,
 };
 
 export function levelOf(scene: SceneId): number {

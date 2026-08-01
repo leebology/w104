@@ -6,7 +6,6 @@ import { GetReady } from "../../components/GetReady";
 import { roomStore } from "../../net/room";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import { rosterOf } from "../../../shared/teams";
-import { seatedPlayers } from "../../../shared/waiting";
 import { TeamBadge } from "../../components/TeamBadge";
 import { useMarquee } from "../../marquee";
 
@@ -57,10 +56,6 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
   const ready = room.players.find((p) => p.id === playerId)?.ready ?? false;
   const done = matchComplete(room);
 
-  // The denominator has to be the count that actually opens the countdown, and
-  // `everyoneReady` does not count the waiting room.
-  const here = seatedPlayers(room.players).filter((p) => p.connected);
-  const readyCount = here.filter((p) => p.ready).length;
   const tiedWith = (s: Standing) => standings.filter((o) => o.place === s.place).length > 1;
   /**
    * A player's face, or nothing at all for a team.
@@ -163,9 +158,6 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
       >
         <div className="player-standings__head">
           <h1>Standings</h1>
-          <p>
-            AFTER ROUND {room.history.length} OF {room.settings.roundCount} · HIGHEST TOTAL WINS
-          </p>
         </div>
 
         {/* One card, no gold recap above it. Your own row carries the round-by-round
@@ -200,7 +192,6 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
                       <span className="marquee">{s.name}</span>
                     )}
                   </span>
-                  {!team && isMe && <em className="standings-table__flag"> (you)</em>}
                   {dropped && <em className="standings-table__flag"> dropped</em>}
                   {/* What the round just played paid this row, immediately left
                       of the running total it went into. */}
@@ -242,7 +233,7 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
           className={ready ? "btn btn--secondary btn--block" : "btn btn--block"}
           onClick={() => roomStore.send({ type: "ready", ready: !ready })}
         >
-          {ready ? "Not ready" : `Ready up · ${readyCount}/${here.length}`}
+          {ready ? "Not ready" : "Ready up"}
         </button>
       </div>
     </main>
