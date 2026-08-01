@@ -21,10 +21,6 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Count committed cards (non-empty after trim) — feeds the "N to write"
-  // total only. Per-slot state (pips, pager chips) reads `drafts[i]` itself,
-  // since the pager lets a player jump to any slot out of order.
-  const committed = drafts.filter((d) => d.trim() !== "").length;
   // The Durable Object is the sole authority: `writeSlot` in shared/reduce.ts
   // sets `ready` once every slot is committed, so the client reads it back
   // rather than re-deriving it from `drafts`.
@@ -48,8 +44,12 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
   // same unconditional `.focus()` call `PlayerView` makes when `playing`
   // starts, and for the same reason: the transition has no user gesture
   // behind it, so iOS may decline, but every other platform still gets it.
+  // `preventScroll` matches `Landing`'s `focusBox`: a plain `focus()` asks
+  // the browser to scroll the field into view, and on a locked screen that
+  // is already fully on screen there is nothing for that scroll to reveal —
+  // it only drags the page under the player's thumb while the keyboard is up.
   useEffect(() => {
-    if (!ready) inputRef.current?.focus();
+    if (!ready) inputRef.current?.focus({ preventScroll: true });
   }, [ready]);
 
   const handleCommit = () => {
@@ -77,7 +77,7 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
     // so the only thing that can drop focus here is the button click itself
     // stealing it. Reclaim it on the next tick rather than relying on the
     // click never having blurred the field.
-    inputRef.current?.focus();
+    inputRef.current?.focus({ preventScroll: true });
   };
 
   const handleChipTap = (slot: number) => {
@@ -106,7 +106,7 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
     // Same reason `handleCommit` reclaims it: the pager is a button, and a
     // click into it would otherwise blur the field and drop the keyboard for
     // a switch that is meant to stay mid-typing.
-    inputRef.current?.focus();
+    inputRef.current?.focus({ preventScroll: true });
   };
 
   // Swipe left/right on the card moves between slots the same way the arrow
@@ -136,35 +136,18 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
     });
   };
 
-  const still = quota - committed;
-
   return (
     <main className="screen screen--mobile screen--locked player-creating">
       <p className="plaque player-creating__plaque">Write a category</p>
 
       {!ready ? (
         <>
-          <section className="card player-voting__head">
-            <span className="player-voting__count">{still}</span>
-            <span className="player-voting__head-text">
-              <span className="player-voting__head-title">to write</span>
-              <span className="player-voting__pips">
-                {Array.from({ length: quota }, (_, i) => (
-                  <span
-                    key={i}
-                    className={(drafts[i] ?? "").trim() !== "" ? "pip pip--spent" : "pip"}
-                  />
-                ))}
-              </span>
-            </span>
-          </section>
-
           <section
             className="card player-creating__card"
             // Tapping anywhere on the card — not just the input line itself —
             // opens the keyboard, since the input is centred and no longer
             // fills the card's whole tap target.
-            onClick={() => inputRef.current?.focus()}
+            onClick={() => inputRef.current?.focus({ preventScroll: true })}
             onTouchStart={handleTouchStart}
             onTouchEnd={handleTouchEnd}
           >
@@ -179,7 +162,7 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
                 .join(" ")}
             >
               <div className="player-creating__label">
-                CARD {cursor + 1} OF {quota}
+                CATEGORY {cursor + 1} OF {quota}
               </div>
               {/* Not inside a <form>: a bare input avoids Safari's AutoFill bar
                   above the keyboard. */}

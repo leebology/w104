@@ -4015,21 +4015,27 @@ ul, ol { list-style: none; }
   max-width: 100%;
 }
 
+/* A name too long for the row clips and travels, same as a team's badge —
+   see `useMarquee` — rather than ellipsing. `data-marquee` sits directly on
+   this element for a solo row (the team-badge case skips it, since the badge
+   is its own clip box), which is what makes its own `clientWidth` the room
+   the name has to travel: a nested wrapper here would be an inline span with
+   no width of its own to measure. */
 .standings-table__name {
   font-family: var(--display);
   font-size: 16px;
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.standings-table__name em {
+.standings-table__flag {
   font-family: var(--body);
   font-style: normal;
   font-size: 11px;
   color: var(--ink-dim);
+  flex: 0 0 auto;
 }
 
 /* Who has readied up — the question everyone in the room is asking between
@@ -4056,12 +4062,30 @@ ul, ol { list-style: none; }
   white-space: nowrap;
 }
 
+/* Number and unit, always both: a bare total reads as a count of something
+   unstated, and a team row's "2 pts" concatenated into the number's own span
+   used to wrap onto its own line the moment the row ran short of width — this
+   splits them so the unit can be its own short, non-wrapping word. */
+.standings-table__score {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 3px;
+  min-width: 42px;
+  flex: 0 0 auto;
+}
+
 .standings-table__points {
   font-family: var(--display);
   font-size: 22px;
-  width: 36px;
-  text-align: right;
-  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.standings-table__unit {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  white-space: nowrap;
 }
 
 .standings-table__key {
@@ -4171,18 +4195,33 @@ ul, ol { list-style: none; }
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.final-table__name em {
+.final-table__flag {
   font-family: var(--body);
   font-style: normal;
   font-size: 11px;
   color: var(--cream-dim);
+  flex: 0 0 auto;
 }
 
-.final-table__points { font-family: var(--display); font-size: 20px; flex: 0 0 auto; }
+.final-table__score {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.final-table__points { font-family: var(--display); font-size: 20px; white-space: nowrap; }
+
+.final-table__unit {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--cream-dim);
+  white-space: nowrap;
+}
 
 /* ------------------------------------------------------- player footer */
 
@@ -4847,6 +4886,16 @@ ul, ol { list-style: none; }
   top: -14px;
   left: 12px;
   max-width: calc(100% - 24px);
+  /* `inline-block`, not the bare `inline` a `<span>` defaults to: an inline
+     box always reports `clientWidth: 0` (the DOM has no concept of an
+     inline element's own rendered width), and `measureMarquee` reads that
+     width to decide how far the name has to travel. Read as 0, every badge
+     looked like it had no room at all and scrolled even a name that fit —
+     wherever `position` is reset to `relative`/`static` for a badge sitting
+     in flow (the row, the results card, the win card) rather than
+     overhanging a corner. Absolutely positioned already forced this via
+     blockification; this is what keeps it true once that's opted out of. */
+  display: inline-block;
   font-family: var(--display);
   font-size: 16px;
   line-height: 1.06;
@@ -5149,6 +5198,21 @@ ul, ol { list-style: none; }
   align-items: flex-start;
   gap: 12px;
   flex: 0 0 218px;
+  /* A flex item's default `min-width: auto` lets its content demand more
+     room than the fixed basis above — a long name would then widen the
+     pill past the column and break the row's spacing. Pinning it to 0 is
+     what makes the pill's own `max-width: 100%` (below) the real cap. */
+  min-width: 0;
+}
+
+/* The player pill sits in a fixed-width column here, unlike the lobby's
+   roster where it is free to size to its name. Capping it to the column's
+   width is what stops a long name pushing the pill past the grid — the name
+   itself already clips or travels via marquee inside that width. */
+.host-creating__column .player-pill,
+.host-creating__column .player-pill-slot {
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .host-creating__slots {
@@ -6514,6 +6578,11 @@ ul, ol { list-style: none; }
 
 .player-creating__ready-card {
   flex: 1;
+  /* Matches `.player-creating__card`'s own `min-height` — a card should not
+     shrink just because writing gave way to reading. */
+  min-height: 132px;
+  display: flex;
+  align-items: center;
   position: relative;
   font: inherit;
   background: var(--cream);

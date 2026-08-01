@@ -104,7 +104,7 @@ export function StandingsList({ room, standings }: Props) {
                     <TeamBadge
                       name={s.name}
                       colorIndex={s.colorIndex!}
-                      className="team-badge--sm"
+                      className="team-badge--lg"
                     />
                   </span>
                 ) : (

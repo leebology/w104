@@ -223,9 +223,6 @@ export function PlayerScoring({
           {me.colorIndex === null && <span className="id-card__avatar">{me.emoji}</span>}
           <div className="id-card__who">
             {me.colorIndex === null && <span className="id-card__name">{me.name}</span>}
-            <span className="id-card__meta">
-              ROOM {room.code} · ROUND {currentRound(room)}
-            </span>
           </div>
           <div className="id-card__stats">
             <div className="stat">

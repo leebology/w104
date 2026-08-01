@@ -9,7 +9,7 @@ import { MAX_LINE_MS, MIN_LINE_MS, rowKey } from "./reveal";
 import { isSelfStruck } from "./selfstrike";
 import type { SelfMarks } from "./selfstrike";
 import type { Results } from "./scoring";
-import { MAX_CATEGORY_LEN, VOTE_BUDGET, WRITE_MS, quotaFor } from "./customCategories";
+import { VOTE_BUDGET, WRITE_MS, quotaFor } from "./customCategories";
 
 /** A room with `n` joined players, none ready, plus a host. */
 function seed(n: number, now = 1000): Room {
@@ -2320,13 +2320,14 @@ describe("the creating phase", () => {
     expect(room.players[0].ready).toBe(true);
   });
 
-  it("trims, caps and rejects an out-of-range slot", () => {
+  it("trims, allows any length, and rejects an out-of-range slot", () => {
     let room = creatingRoom(3, 3);
     const me = room.players[0].id;
     room = reduce(room, { t: "commitDraft", playerId: me, slot: 0, text: "  a  ", now: 1 });
     expect(room.drafts[me][0]).toBe("a");
-    room = reduce(room, { t: "commitDraft", playerId: me, slot: 1, text: "x".repeat(40), now: 2 });
-    expect(room.drafts[me][1]).toHaveLength(MAX_CATEGORY_LEN);
+    const long = "x".repeat(40);
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 1, text: long, now: 2 });
+    expect(room.drafts[me][1]).toBe(long);
     const before = room;
     room = reduce(room, { t: "commitDraft", playerId: me, slot: 9, text: "no", now: 3 });
     expect(room).toBe(before);
