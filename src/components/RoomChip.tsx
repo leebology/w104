@@ -1,12 +1,13 @@
 import { WaitingStrip } from "./WaitingStrip";
+import { joinHost } from "../joinhost";
 import type { RoomState } from "../../shared/state";
 
 /**
  * Where to join, and the code to join with. Present on every host screen so
  * someone who walks in mid-round can still get on — which is exactly why the
- * address is read off `location.host` rather than hardcoded: in production
- * that is the real domain, and during LAN testing it is the machine's IP,
- * which is the address a phone actually needs.
+ * address is derived rather than hardcoded: in production that is the real
+ * domain, and during LAN testing it is the machine's IP, which is the address a
+ * phone actually needs. `joinHost` is what decides how it reads.
  *
  * It now carries the waiting room beside it, because that is where the people
  * who walked in mid-round actually end up. The strip lives *inside* this
@@ -19,7 +20,7 @@ import type { RoomState } from "../../shared/state";
  * thing in this corner that must never move.
  */
 export function RoomChip({ room }: { room: RoomState }) {
-  const host = typeof location === "undefined" ? "" : location.host;
+  const host = joinHost();
   return (
     <div className="room-chip-group">
       <div className="pill room-chip">

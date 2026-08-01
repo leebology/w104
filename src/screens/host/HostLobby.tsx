@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { PlayerPill } from "../../components/Roster";
 import { Wordmark } from "../../components/Wordmark";
 import { roomStore } from "../../net/room";
+import { joinHost } from "../../joinhost";
 import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
@@ -20,7 +21,7 @@ type Props = {
 type OpenDrawer = "modes" | "settings" | null;
 
 export function HostLobby({ room, countdown, onLeave }: Props) {
-  const host = typeof location === "undefined" ? "" : location.host.toUpperCase();
+  const host = joinHost().toUpperCase();
   const waiting = room.players.length === 0;
   // Almost every time this screen is up it is round one's own waiting room,
   // and a marker that only ever reads "ROUND 1 / 3" there counts nothing that
