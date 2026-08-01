@@ -1,6 +1,8 @@
 import { formatClock, useRemaining } from "../../net/clock";
 import { RoomChip } from "../../components/RoomChip";
 import { PlayerPill } from "../../components/Roster";
+import { TimeWarning } from "../../components/TimeWarning";
+import { useRoundWarning } from "../../roundwarnings";
 import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
 import { seatedPlayers } from "../../../shared/waiting";
@@ -18,6 +20,7 @@ type Props = { room: RoomState; endsAt: number; offset: number };
 export function HostPlaying({ room, endsAt, offset }: Props) {
   const remaining = useRemaining(endsAt, offset, room.paused);
   const fill = Math.max(0, Math.min(1, remaining / room.settings.durationSec));
+  const warning = useRoundWarning(remaining, room.settings.durationSec);
   // The room as this round has it. Anyone who walked in after the whistle is in
   // the waiting room, is not typing, and is already named in the header strip —
   // a pill for them here would be a player in a round they are not in, and the
@@ -54,6 +57,15 @@ export function HostPlaying({ room, endsAt, offset }: Props) {
             <PlayerPill key={p.id} player={p} variant="playing" />
           ))}
         </ul>
+        {/* Keyed on the mark alone: `.reject-banner`'s reject-fade plays once
+            on insertion and then holds at opacity 0, so a static key across
+            a round would flash only the first warning and silently update
+            the text under an already-invisible node for the rest. Marks are
+            distinct within a round by construction, and the screen remounts
+            at the next round's boundary regardless. */}
+        {warning !== null && (
+          <TimeWarning key={warning} mark={warning} variant="host" />
+        )}
       </div>
 
       {/* Counted down locally against the server's absolute deadline; the

@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (724 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (751 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -234,6 +234,43 @@ replaced wholesale on each `state` push; every client action is a *request*.
   opposite of `cancelStart`, which clears readiness precisely so the countdown
   stays down. The flag is cleared on host disconnect — otherwise a locked phone
   freezes the room until the grace reap.
+- **A half-typed word is flushed at the whistle, and its window is `timesup`.**
+  The text exists only in the browser, so the phone fires `flushEntry` on
+  learning the round ended — a round trip after the alarm that ended it, which
+  is why `flushEntry` accepts in `playing` *or* `timesup` where `submitEntry`
+  accepts only `playing`. The window closes at the tick that computes
+  `Results`; past it the scores exist. `MIN_FLUSH_LEN` is counted on the
+  trimmed text as typed, never on the `normalize()` form. Both functions share
+  `addEntry` for every other rule, so the duplicate, `MAX_ENTRIES` and
+  team-merge checks cannot come to apply on one path and not the other.
+  A flushed fragment that outscores the finished word is a known, accepted
+  consequence — see §1 of the design.
+- **The round's time warnings are derived on every client, never broadcast.**
+  `warningsFor` in `shared/roundwarnings.ts` turns the round length into its
+  marks; each client counts to them off the deadline it already has, the same
+  arrangement the round timer and the reveal schedule use. The TV and the
+  phones warn together because they read one clock, not because anything was
+  sent. **The halfway mark is a candidate, not a member of the set** — it
+  survives only when it clears the top of the tail by `WARNING_GAP_SEC`, and it
+  must be checked *against* the tail rather than merged into it, or a
+  15-second round keeps half at 7 and discards the more urgent 10. One
+  hand-written test pins that; the property tests cannot, because the buggy
+  form yields a single-element list that satisfies all of them.
+- **`useRoundWarning` has no round identity of its own, and that is deliberate.**
+  It seeds once per mount and relies on `HostView`/`PlayerView` rendering a
+  *different component type* per phase, which React unmounts on regardless of
+  key — between rounds the phase passes through `timesup`, `scoring`,
+  `standings` and `countdown`. Hoisting the band to an overlay above that
+  switch, the way the entry input is hoisted, would leave `fired` never
+  resetting and warnings dead after round one. `viewNonce` is *not* what
+  carries this; it only forces a same-screen debug refresh. Note this means a
+  paused round is not a new round — an earlier design keyed on `phase.endsAt`,
+  which resume rewrites, and cut a band short every time the host resumed.
+- **The band is keyed on its mark, and the key is load-bearing.** Every mark of
+  a round fires inside one mount, and `reject-fade` is `opacity 1 → 0` with
+  `forwards` — it plays once on insertion then holds at zero. A static key
+  would flash the first warning and silently update text under an invisible
+  node for the rest. Same reason `.reject-banner` is keyed on `rejectedSeq`.
 
 ### Room codes and the connect budget
 
@@ -1142,6 +1179,17 @@ card ends on. Rules to keep:
   room: joining past the lobby, what a waiting player is inert in, admission at
   the whistle, picking a team while waiting, the host strip and the phone
   screen. Implemented; §14 records what changed on the way.
+- `docs/superpowers/specs/2026-07-31-timer-entry-flush-design.md` — flushing a
+  half-typed entry when the round timer expires: the 5-character floor, the
+  `timesup` grace window, and why the buffer is not staged on the server.
+  Implemented.
+- `docs/superpowers/specs/2026-07-31-round-time-warnings-design.md` — the round
+  time warnings: how the mark set is derived from the round length, why nothing
+  rides on the wire, and the rules that make each mark fire exactly once.
+  Implemented. **§3 is historical on two points** — it says pause needs no code
+  and that the fired set is keyed on `endsAt`; the shipped hook keys on nothing
+  and seeds per mount, because resume rewrites `endsAt`. See the invariants
+  above for what actually ships.
 - `docs/superpowers/plans/2026-07-25-w104-mvp.md` — historical implementation
   plan. Fully executed; its code blocks and numbers are *not* current. Its
   "Deviations discovered during implementation" section is accurate and useful.

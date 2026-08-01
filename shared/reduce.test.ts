@@ -1,7 +1,7 @@
 import { describe, expect, test, it } from "vitest";
 import { createRoom, currentRound, matchComplete, preRoundPhase } from "./state";
 import type { Room } from "./state";
-import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, TIMESUP_MS, VOTING_MS, alarmOutcome, canEndGame, nextAlarmAt, reduce, submitEntry } from "./reduce";
+import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_FLUSH_LEN, TIMESUP_MS, VOTING_MS, alarmOutcome, canEndGame, flushEntry, nextAlarmAt, reduce, submitEntry } from "./reduce";
 import { voteBudget, votesSpent } from "./voting";
 import { CATEGORIES, RANDOM_CATEGORY } from "./categories";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS } from "./teams";
@@ -276,6 +276,168 @@ describe("submitEntry", () => {
   test("a rejected submission leaves the room untouched", () => {
     const room = playing();
     expect(submitEntry(room, "p0", "", 10_000).room).toBe(room);
+  });
+});
+
+/** A room one tick past the whistle — the window a flush is written for. */
+function timesUp(): Room {
+  const room = playing();
+  const endsAt = (room.phase as { endsAt: number }).endsAt;
+  const next = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+  expect(next.phase.name).toBe("timesup");
+  return next;
+}
+
+describe("flushEntry", () => {
+  test("accepts the pending buffer during the round", () => {
+    const result = flushEntry(playing(), "p0", "Adele", 10_000);
+    expect(result.accepted).toBe(true);
+    expect(result.room.entries.p0).toEqual([{ text: "Adele", at: 10_000, by: "p0" }]);
+  });
+
+  // Both of these derive their instants from the phase rather than naming
+  // them. They used to be written as absolute milliseconds, which silently
+  // stopped meaning what they said the moment COUNTDOWN_MS changed: one
+  // failed outright, and the other went on passing while its timestamp had
+  // drifted to a moment before the round it claimed to be at the end of.
+  test("accepts a flush that lands during time's up", () => {
+    const room = timesUp();
+    const at = (room.phase as { endsAt: number }).endsAt - 1_000;
+    const result = flushEntry(room, "p0", "Adele", at);
+    expect(result.accepted).toBe(true);
+    expect(result.room.entries.p0).toEqual([{ text: "Adele", at, by: "p0" }]);
+  });
+
+  test("refuses a flush once scoring has started", () => {
+    const up = timesUp();
+    const upEnd = (up.phase as { endsAt: number }).endsAt;
+    const room = reduce(up, { t: "tick", now: upEnd, roll: 0 });
+    expect(room.phase.name).toBe("scoring");
+    expect(flushEntry(room, "p0", "Adele", upEnd + 100)).toMatchObject({
+      accepted: false, reason: "not-playing",
+    });
+  });
+
+  test("refuses a flush outside a round entirely", () => {
+    expect(flushEntry(seed(2), "p0", "Adele", 10_000)).toMatchObject({
+      accepted: false, reason: "not-playing",
+    });
+  });
+
+  test("refuses a submit and a flush from the waiting room alike", () => {
+    // Joining past the lobby seats you in the waiting room: inert for the
+    // round in progress, dealt in at the next whistle.
+    let room = playing();
+    room = reduce(room, {
+      t: "join", playerId: "p2", name: "P2", emoji: "🐙", now: 10_000,
+    });
+    expect(room.players.find((p) => p.id === "p2")?.waiting).toBe(true);
+
+    expect(submitEntry(room, "p2", "Adele", 10_100)).toMatchObject({
+      accepted: false, reason: "not-playing",
+    });
+    // The same gate, on the other path onto `entries`. It lives in `addEntry`
+    // rather than in `submitEntry` for exactly this reason: a waiting player's
+    // half-typed buffer is no more theirs to submit than a finished word would
+    // be, and two copies of the rule is how one path keeps it and one loses it.
+    expect(flushEntry(room, "p2", "Adele", 10_100)).toMatchObject({
+      accepted: false, reason: "not-playing",
+    });
+  });
+
+  test("refuses a flush during the countdown", () => {
+    const room = readyAll(seed(2), 2000);
+    expect(room.phase.name).toBe("countdown");
+    expect(flushEntry(room, "p0", "Adele", 2100)).toMatchObject({
+      accepted: false, reason: "not-playing",
+    });
+  });
+
+  test("refuses a flush on the standings screen", () => {
+    const room = reduce(scored(), { t: "showStandings", playerId: "host", now: 50_000 });
+    expect(room.phase.name).toBe("standings");
+    expect(flushEntry(room, "p0", "Adele", 50_100)).toMatchObject({
+      accepted: false, reason: "not-playing",
+    });
+  });
+
+  test("refuses four characters and accepts five", () => {
+    expect(flushEntry(playing(), "p0", "Adel", 10_000)).toMatchObject({
+      accepted: false, reason: "too-short",
+    });
+    expect(flushEntry(playing(), "p0", "Adele", 10_000).accepted).toBe(true);
+    expect(MIN_FLUSH_LEN).toBe(5);
+  });
+
+  test("the floor counts the trimmed text, not the normalized form", () => {
+    // Five characters as typed. normalize() would leave "mr t" — four — so a
+    // floor measured after normalizing would wrongly refuse this.
+    expect(flushEntry(playing(), "p0", "Mr. T", 10_000).accepted).toBe(true);
+    // Four trimmed; normalize() leaves "jlo" — three. Under the floor either
+    // way, so this case can't distinguish trimmed from normalized the way
+    // "Mr. T" above does — it only proves the tail still refuses.
+    expect(flushEntry(playing(), "p0", "J.Lo", 10_000)).toMatchObject({
+      accepted: false, reason: "too-short",
+    });
+  });
+
+  test("counts the buffer after trimming, not before", () => {
+    expect(flushEntry(playing(), "p0", "  Ada  ", 10_000)).toMatchObject({
+      accepted: false, reason: "too-short",
+    });
+  });
+
+  test("refuses a whitespace-only buffer", () => {
+    expect(flushEntry(playing(), "p0", "        ", 10_000)).toMatchObject({
+      accepted: false, reason: "too-short",
+    });
+  });
+
+  test("refuses punctuation that clears the floor but normalizes to nothing", () => {
+    // Five characters, so it passes MIN_FLUSH_LEN and is caught by the shared
+    // tail instead. This is the test that proves the tail still runs.
+    expect(flushEntry(playing(), "p0", "!!!!!", 10_000)).toMatchObject({
+      accepted: false, reason: "empty",
+    });
+  });
+
+  test("refuses a duplicate of the player's own word", () => {
+    const room = submitEntry(playing(), "p0", "Adele", 10_000).room;
+    expect(flushEntry(room, "p0", "adele", 10_100)).toMatchObject({
+      accepted: false, reason: "duplicate",
+    });
+  });
+
+  test("refuses a word over MAX_ENTRY_LEN", () => {
+    const long = "a".repeat(MAX_ENTRY_LEN + 1);
+    expect(flushEntry(playing(), "p0", long, 10_000)).toMatchObject({
+      accepted: false, reason: "too-long",
+    });
+  });
+
+  test("refuses once the scorer is at MAX_ENTRIES", () => {
+    let room = playing();
+    for (let i = 0; i < MAX_ENTRIES; i++) {
+      room = submitEntry(room, "p0", `word${i}`, 10_000 + i).room;
+    }
+    expect(flushEntry(room, "p0", "Adele", 20_000)).toMatchObject({
+      accepted: false, reason: "limit",
+    });
+  });
+
+  test("every refusal returns the room it was given", () => {
+    const room = playing();
+    const refused = ["Adel", "        ", "!!!!!", "a".repeat(MAX_ENTRY_LEN + 1)];
+    for (const text of refused) {
+      expect(flushEntry(room, "p0", text, 10_000).room).toBe(room);
+    }
+  });
+
+  test("refuses a duplicate of a teammate's word", () => {
+    const room = submitEntry(playingInTeams(), "p0", "Adele", 10_000).room;
+    expect(flushEntry(room, "p1", "adele", 10_100)).toMatchObject({
+      accepted: false, reason: "duplicate",
+    });
   });
 });
 

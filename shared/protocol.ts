@@ -18,6 +18,12 @@ export type ClientMessage =
    */
   | { type: "leaveRoom" }
   | { type: "submitEntry"; text: string; seq: number }
+  /**
+   * The buffer left in the box when the round ended. No `seq`, and answered by
+   * no `entryAck`: the optimistic path exists because a 30-second round cannot
+   * wait on a round trip, and a flush has nothing left to wait for.
+   */
+  | { type: "flushEntry"; text: string }
   | {
       type: "setSettings";
       values: Partial<Record<NumericSettingKey, number>>;

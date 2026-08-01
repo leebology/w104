@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
 import { TeamBadge } from "../../components/TeamBadge";
+import { TimeWarning } from "../../components/TimeWarning";
 import { useRemaining } from "../../net/clock";
+import { useRoundWarning } from "../../roundwarnings";
 import { teamsEnabled, teamOf } from "../../../shared/teams";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import type { LocalEntry } from "../../net/room";
@@ -19,19 +21,21 @@ type Props = {
  * not a second thing to read. A conic-gradient slice draws itself with no
  * SVG geometry to keep in sync with a ring's radius. Teal rather than a new
  * colour — the same fill the "OK," plaque and the host timer bar use.
+ *
+ * Takes `remaining` rather than reading the clock itself: the screen also
+ * needs it for the time warnings, and two `useRemaining` calls would mean two
+ * intervals that can land a tick apart.
  */
-function TimerWheel({ endsAt, offset, durationSec, pausedMs }: {
-  endsAt: number;
-  offset: number;
+function TimerWheel({ remaining, durationSec, paused }: {
+  remaining: number;
   durationSec: number;
   /** `RoomState.paused` — the wheel holds its slice rather than draining. */
-  pausedMs: number | null;
+  paused: number | null;
 }) {
-  const remaining = useRemaining(endsAt, offset, pausedMs);
   const frac = durationSec > 0 ? Math.max(0, Math.min(1, remaining / durationSec)) : 0;
   return (
     <div
-      className={`playing__timer${pausedMs !== null ? " playing__timer--paused" : ""}`}
+      className={`playing__timer${paused !== null ? " playing__timer--paused" : ""}`}
       style={{ "--frac": frac } as CSSProperties}
       aria-hidden="true"
     />
@@ -44,6 +48,12 @@ export function PlayerPlaying({ room, playerId, entries, offset }: Props) {
   const team = teamOf(room, playerId);
   const emojiOf = (id: PlayerId) =>
     room.players.find((p) => p.id === id)?.emoji ?? "";
+
+  // Narrowed once here rather than at each use: hooks cannot be called
+  // conditionally, and the round screen renders under other phases briefly.
+  const round = room.phase.name === "playing" ? room.phase : null;
+  const remaining = useRemaining(round?.endsAt ?? 0, offset, room.paused);
+  const warning = useRoundWarning(remaining, room.settings.durationSec);
 
   // Scrolls the list by its own `scrollTop`, never `scrollIntoView` on a
   // trailing sentinel. `block: "end"` aligns the sentinel with the scrollport's
@@ -65,13 +75,21 @@ export function PlayerPlaying({ room, playerId, entries, offset }: Props) {
   // across phase changes.
   return (
     <main className="screen screen--mobile screen--locked playing">
-      {room.phase.name === "playing" && (
+      {round && (
         <TimerWheel
-          endsAt={room.phase.endsAt}
-          offset={offset}
+          remaining={remaining}
           durationSec={room.settings.durationSec}
-          pausedMs={room.paused}
+          paused={room.paused}
         />
+      )}
+      {/* Keyed on the mark alone, not on the round: `.reject-banner`'s
+          reject-fade plays once on insertion and then holds at opacity 0, so
+          a static key across a round would flash only the first warning and
+          silently update the text under an already-invisible node for the
+          rest. Marks are distinct within a round by construction, and the
+          screen remounts at the next round's boundary regardless. */}
+      {round && warning !== null && (
+        <TimeWarning key={warning} mark={warning} variant="player" />
       )}
       <div className="playing__head">
         <span className="playing__name-a">NAME A:</span>

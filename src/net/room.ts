@@ -53,6 +53,12 @@ const REJECTIONS: Record<RejectReason, string> = {
   // In a team match the list is shared, so it may well have been a teammate.
   duplicate: "That's already on the list.",
   limit: "That's enough words!",
+  // Dead code, permanently — not just not-yet-wired. "too-short" is
+  // flushEntry's alone, and a flush gets no `entryAck` to carry it: this map
+  // is read only in the entryAck rejected branch, so the key can never be
+  // looked up. Kept solely so this stays exhaustive over RejectReason for
+  // tsc; do not wire it up or delete it as unused.
+  "too-short": "That's too short.",
 };
 
 const EMPTY: ClientState = {
@@ -209,6 +215,21 @@ export class RoomStore {
       rejected: null,
     });
     this.send({ type: "submitEntry", text: trimmed, seq });
+  }
+
+  /**
+   * The buffer still in the box when the round ended. Fire-and-forget: no
+   * `seq` and no optimistic copy, unlike `submit`. Nothing renders `entries`
+   * once `playing` is over — `PlayerScoring` reads `room.phase.results` — so
+   * an optimistic copy would only sit unacked in client state until the
+   * standings transition swept it up.
+   *
+   * Length, phase and every other entry rule are the server's. This end knows
+   * only that the box was not empty.
+   */
+  flush(text: string): void {
+    if (text.trim() === "") return;
+    this.send({ type: "flushEntry", text });
   }
 
   now(): number {

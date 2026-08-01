@@ -34,14 +34,28 @@ export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: ()
   const playing = room.phase.name === "playing" && !waiting;
   const [text, setText] = useState("");
   const input = useRef<HTMLInputElement>(null);
+  // Mirrors `text` so the effect below can read the pending buffer without
+  // listing it as a dependency. With `text` in the deps that effect re-runs on
+  // every keystroke — and worse, its own setText("") re-triggers it with an
+  // empty box, so the flush would race its own cleanup.
+  const pending = useRef("");
+  pending.current = text;
 
   // This input outlives the round it was typed in, so anything left over
   // when the round ends (timesup, scoring, back to lobby) must not bleed
   // into the next one. Blurring is part of that cleanup: the input only moves
   // offstage with CSS, so without this it keeps focus — and the keyboard stays
   // up over the results the player is trying to read.
+  //
+  // Anything still in the box is submitted on the way out, before the clear.
+  // Firing on the phase push rather than on a local deadline is deliberate:
+  // the phone never has to guess when the round ended, it is told, so a skewed
+  // device clock cannot fire this early. Everything about whether it counts is
+  // the server's call — including the phase it lands in, which is why a host
+  // `debugSkip` needs no special case here and a `backToLobby` needs no guard.
   useEffect(() => {
     if (playing) return;
+    roomStore.flush(pending.current);
     setText("");
     input.current?.blur();
   }, [playing]);
