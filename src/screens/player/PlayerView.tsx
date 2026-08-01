@@ -18,7 +18,20 @@ import { inWaitingRoom } from "../../../shared/waiting";
 
 export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
-  const playing = room.phase.name === "playing";
+  const me = room.players.find((p) => p.id === getPlayerId());
+  const waiting = me !== undefined && inWaitingRoom(me);
+  /**
+   * Whether **this player** is in the round, not merely whether a round is on.
+   *
+   * Everything below hangs off this one boolean — the input's onstage class,
+   * the focus effects, the tap-to-reclaim listener and the reject banner — so a
+   * waiting player must not be caught by any of it. `offstage` is only
+   * `opacity: 0`, so a phase-only test left a latecomer with a live, focused
+   * field over their waiting screen: the keyboard up, and the reclaim handler
+   * stealing focus back on every tap, which is every tap they need to pick a
+   * team with.
+   */
+  const playing = room.phase.name === "playing" && !waiting;
   const [text, setText] = useState("");
   const input = useRef<HTMLInputElement>(null);
 
@@ -60,7 +73,9 @@ export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: ()
           Deliberately around `renderPhase` alone and not around this whole
           component: the entry input below must survive it, or a refresh would
           drop the field iOS only opens a keyboard for on a real gesture. */}
-      <Fragment key={room.viewNonce}>{renderPhase(room, state, onLeave)}</Fragment>
+      <Fragment key={room.viewNonce}>
+        {renderPhase(room, state, onLeave, waiting)}
+      </Fragment>
       {/* Keyed on the sequence, not the text, so the same rejection twice in
           a row replays the fade instead of leaving the first one to finish
           expiring. Lives out here beside the input rather than inside the
@@ -105,13 +120,19 @@ export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: ()
   );
 }
 
-function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): ReactElement {
+function renderPhase(
+  room: RoomState,
+  state: ClientState,
+  onLeave: () => void,
+  /** Decided once by the caller, which also gates the entry input on it. */
+  waiting: boolean,
+): ReactElement {
   // Ahead of the phase switch, because a player in the waiting room is not on
   // the room's screen at all — they joined past the lobby and are sitting out
   // whatever is running until the next whistle deals them in. The one screen
   // they get carries its own countdown, so the switch below never sees them.
   const me = room.players.find((p) => p.id === getPlayerId());
-  if (me && inWaitingRoom(me)) {
+  if (me && waiting) {
     // Only a countdown that will actually admit them gets a card. `to:
     // "voting"` admits nobody — see `admitWaiting` — so it is not one.
     const admitting =

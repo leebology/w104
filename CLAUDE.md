@@ -892,6 +892,17 @@ only chance to have a keyboard up when `playing` begins off a timer. Do not
 move that input into a phase-specific screen, and keep it out of a `<form>`
 (triggers Safari's AutoFill bar).
 
+**What puts it onstage is "am *I* in this round", never "is a round on".**
+`PlayerView`'s `playing` is `phase === "playing" && !waiting`, and the overlay
+class, both focus effects, the tap-to-reclaim listener, the reject banner and
+the input's own `tabIndex`/`aria-hidden` all hang off that one boolean. The
+distinction is invisible until somebody is in the waiting room and then it is
+the whole screen: `offstage` is only `opacity: 0`, so a phase-only test leaves a
+latecomer with a live focused field over their waiting screen — keyboard up, and
+the reclaim handler taking focus back on every tap, which is every tap they need
+to pick a team with. `submitEntry` would refuse the words anyway; that is the
+back stop, not the fix.
+
 ### Music
 
 One track per **scene** — `sceneFor(room)` in `shared/music.ts` is the only
