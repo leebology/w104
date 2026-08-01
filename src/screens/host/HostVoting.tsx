@@ -126,16 +126,16 @@ export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props)
   }
 
   const totals = tallyVotes(room.votes);
-  // One hook, one deadline: the voting window while it runs, the round
-  // countdown once it has closed. `useRemaining` returns whole seconds.
+  // The voting window only. The countdown that follows it is not a second
+  // clock this screen has to keep — `GetReady` counts itself off the deadline,
+  // because its numerals are not seconds (see shared/countdown.ts).
   const remaining = useRemaining(
-    countdown?.endsAt ?? (room.phase.name === "voting" ? room.phase.endsAt : 0),
-    countdown?.offset ?? offset,
+    room.phase.name === "voting" ? room.phase.endsAt : 0,
+    offset,
     // The debug menu can hold the voting window like it holds a round, and a
     // held phase's `endsAt` is stale by design — without the banked figure this
-    // clock would run to 0:00 under a vote that is merely stopped. Never during
-    // the countdown, which cannot be held.
-    countdown ? null : room.paused,
+    // clock would run to 0:00 under a vote that is merely stopped.
+    room.paused,
   );
   const budget = voteBudget(room.settings);
   const cast = Object.values(totals).reduce((a, b) => a + b, 0);
@@ -150,7 +150,7 @@ export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props)
   const ready = voters.filter((p) => p.connected && isWaiting(p)).length;
 
   if (countdown) {
-    return <HostVotingClosed room={room} totals={totals} remaining={remaining} cast={cast} />;
+    return <HostVotingClosed room={room} totals={totals} countdown={countdown} cast={cast} />;
   }
 
   return (
@@ -201,12 +201,12 @@ export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props)
 }
 
 function HostVotingClosed({
-  room, totals, remaining, cast,
+  room, totals, countdown, cast,
 }: {
   room: RoomState;
   totals: Record<string, number>;
-  /** Whole seconds — `useRemaining` returns a number, not a formatted string. */
-  remaining: number;
+  /** The round countdown's deadline; the card counts itself against it. */
+  countdown: { endsAt: number; offset: number };
   cast: number;
 }) {
   const shares = voteShares(room.votes);
@@ -302,7 +302,11 @@ function HostVotingClosed({
             same escape to anyone watching. One way out per screen, in the corner
             every other host screen keeps it in. */}
         <div className="host-voting__countdown">
-          <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
+          <GetReady
+            endsAt={countdown.endsAt}
+            offset={countdown.offset}
+            label={`ROUND ${currentRound(room)}`}
+          />
         </div>
       </div>
     </main>

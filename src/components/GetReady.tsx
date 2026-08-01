@@ -1,8 +1,11 @@
 import type { ReactNode } from "react";
+import { useCountdownNumber } from "../net/clock";
 
 type Props = {
-  /** Whole seconds left, already counted locally against `clockOffset`. */
-  remaining: number;
+  /** The countdown phase's deadline on the server's clock. */
+  endsAt: number;
+  /** `state.clockOffset` — the card counts against it locally, like every timer. */
+  offset: number;
   /**
    * The turquoise tab overhanging the card's top-left corner — "ROUND 3", or
    * "CATEGORY VOTE" for the one countdown that does not lead to a round. It is
@@ -33,8 +36,16 @@ type Props = {
  * It carries no category. Nothing here can name one: the draw happens at the
  * whistle (see `tick` in shared/reduce.ts), so there is nothing to name until
  * the round is already running.
+ *
+ * **It takes the deadline, not a number**, and counts itself. The count is
+ * five numbers over however long the audio makes the phase — not one a second
+ * — so a screen that did its own arithmetic would be a screen that could get
+ * it wrong, and there are eleven of them. `useRemaining` is whole seconds and
+ * is deliberately not what feeds this; see `shared/countdown.ts`.
  */
-export function GetReady({ remaining, label, onStop, children }: Props) {
+export function GetReady({ endsAt, offset, label, onStop, children }: Props) {
+  const remaining = useCountdownNumber(endsAt, offset);
+
   return (
     <div className="get-ready-pose">
       <div className="get-ready-card">

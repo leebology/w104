@@ -2743,11 +2743,16 @@ ul, ol { list-style: none; }
   animation: reject-fade 2s linear forwards;
 }
 
-/* High on the phone, never centre — .reject-banner owns the centre, and both
-   can be on screen at the same moment. */
+/* Centred on the phone and big: this is the one thing mid-round that has to
+   land in the corner of the eye of somebody typing head-down. It shares the
+   centre with .reject-banner, which is why it keeps its own z-index above it
+   and still fades out on its own timer. */
 .time-warning--player {
-  top: calc(var(--vv-top, 0px) + 96px);
-  font-size: 15px;
+  top: calc(var(--vv-top, 0px) + var(--vv-height, 100dvh) / 2);
+  transform: translateY(-50%) rotate(-2.5deg);
+  font-size: 34px;
+  padding: 14px 20px 16px;
+  z-index: 16;
 }
 
 /* The TV is read across a room, so this is the one that gets big. Absolute
@@ -2959,6 +2964,22 @@ ul, ol { list-style: none; }
   font-family: var(--display);
   font-size: clamp(20px, 2.4vw, 30px);
   line-height: 1.2;
+  margin: 0;
+}
+
+/* The final board's title, on the stage under the header — the slot the lobby
+   gives the room code. Centred on the screen rather than on what is left over
+   beside the room chip, which is what a header slot would have given it. */
+.host-standings__over {
+  flex: 0 0 auto;
+  text-align: center;
+  padding: 6px 34px 0;
+}
+
+.host-standings__over h1 {
+  font-family: var(--display);
+  font-size: clamp(26px, 3.2vw, 44px);
+  line-height: 1.1;
   margin: 0;
 }
 
@@ -3780,7 +3801,10 @@ ul, ol { list-style: none; }
    the total and its PTS unit stay on one baseline. */
 .standings-row__delta {
   font-family: var(--display);
-  font-size: clamp(17px, 1.8vw, 24px);
+  font-size: clamp(19px, 2vw, 26px);
+  /* The round's payout and the running total are two different numbers; the
+     gap is what stops them reading as one figure across the room. */
+  margin-right: 20px;
   line-height: 1;
   color: var(--teal);
   white-space: nowrap;

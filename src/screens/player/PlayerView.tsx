@@ -15,6 +15,7 @@ import { PlayerVoting } from "./PlayerVoting";
 import { PlayerCreating } from "./PlayerCreating";
 import { PlayerWaiting } from "./PlayerWaiting";
 import { inWaitingRoom } from "../../../shared/waiting";
+import { useExperiment } from "../../components/DebugPanel";
 
 export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
@@ -47,15 +48,30 @@ export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: ()
   // offstage with CSS, so without this it keeps focus — and the keyboard stays
   // up over the results the player is trying to read.
   //
-  // Anything still in the box is submitted on the way out, before the clear.
+  // Anything still in the box *can* be submitted on the way out, before the
+  // clear — but that is off by default now, behind the `flush-on-timeout`
+  // debug switch. A word the timer caught you halfway through is a word you
+  // did not finish, and scoring it anyway surprised people more often than it
+  // saved them. The whole path is still here and still tested, server side
+  // included (`flushEntry`, `MIN_FLUSH_LEN`); only the client's decision to
+  // walk down it has moved behind a flag.
+  //
   // Firing on the phase push rather than on a local deadline is deliberate:
   // the phone never has to guess when the round ended, it is told, so a skewed
   // device clock cannot fire this early. Everything about whether it counts is
   // the server's call — including the phase it lands in, which is why a host
   // `debugSkip` needs no special case here and a `backToLobby` needs no guard.
+  //
+  // Read into a ref for the same reason `text` is: with the flag in the deps,
+  // toggling it mid-round would re-run the effect and flush a box the round
+  // has not finished with.
+  const flushOnTimeout = useExperiment("flush-on-timeout");
+  const flushEnabled = useRef(flushOnTimeout);
+  flushEnabled.current = flushOnTimeout;
+
   useEffect(() => {
     if (playing) return;
-    roomStore.flush(pending.current);
+    if (flushEnabled.current) roomStore.flush(pending.current);
     setText("");
     input.current?.blur();
   }, [playing]);

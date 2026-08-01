@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
-import { useRemaining } from "../../net/clock";
 import { roomStore } from "../../net/room";
 import { GetReady } from "../../components/GetReady";
 import { TeamGrid } from "../../components/TeamGrid";
@@ -59,7 +58,6 @@ function PenGlyph() {
  */
 export function PlayerTeams({ room, playerId, countdown }: Props) {
   const mine = teamOf(room, playerId);
-  const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
 
   // Mirrors the server's name while not being edited, exactly as Stepper's
   // draft mirrors its value — committing on every keystroke would fight the
@@ -125,7 +123,7 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
           grid and not over the Leave button below it. */}
       {countdown && (
         <div className="countdown-pose">
-          <GetReady remaining={remaining} label="CATEGORY VOTE" />
+          <GetReady endsAt={countdown.endsAt} offset={countdown.offset} label="CATEGORY VOTE" />
         </div>
       )}
 

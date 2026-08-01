@@ -61,12 +61,14 @@ export function PlayerVoting({ room, playerId, hands, offset, countdown, drafts 
   const shares = closed ? voteShares(room.votes) : {};
 
   const votingEndsAt = room.phase.name === "voting" ? room.phase.endsAt : 0;
+  // The voting window only. The countdown card counts itself off its own
+  // deadline, in numerals that are not seconds — see shared/countdown.ts.
   const remaining = useRemaining(
-    closed ? countdown.endsAt : votingEndsAt,
-    closed ? countdown.offset : offset,
+    votingEndsAt,
+    offset,
     // Held from the debug menu, the voting deadline stops being maintained —
-    // see HostVoting. The countdown that follows it cannot be held.
-    closed ? null : room.paused,
+    // see HostVoting.
+    room.paused,
   );
 
   // The numeral is the loudest thing on the screen and it changes on every
@@ -160,11 +162,15 @@ export function PlayerVoting({ room, playerId, hands, offset, countdown, drafts 
         })}
       </ul>
 
-      {closed ? (
+      {closed && countdown ? (
         // The same card the TV is showing, over the same dimmed screen. There
         // is no Stop on this one on either device — see HostVoting.
         <div className="countdown-pose">
-          <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
+          <GetReady
+            endsAt={countdown.endsAt}
+            offset={countdown.offset}
+            label={`ROUND ${currentRound(room)}`}
+          />
         </div>
       ) : (
         <>

@@ -1,4 +1,3 @@
-import { useRemaining } from "../../net/clock";
 import { computeStandings } from "../../../shared/standings";
 import { currentRound, matchComplete } from "../../../shared/state";
 import { GetReady } from "../../components/GetReady";
@@ -18,7 +17,6 @@ type Props = {
 
 export function HostStandings({ room, countdown }: Props) {
   const standings = computeStandings(rosterOf(room), room.history);
-  const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   const done = matchComplete(room);
   // On the final screen the round marker would otherwise read one past the
   // last round played, because `currentRound` names the round about to start.
@@ -40,33 +38,35 @@ export function HostStandings({ room, countdown }: Props) {
         <HostHeader
           left={<RoomChip room={room} />}
           right={
-            <HostHeaderRight>
-              {done ? (
+            done ? null : (
+              <HostHeaderRight>
                 <div className="host-standings__title">
-                  <h1>Match over</h1>
+                  <h1>Standings</h1>
+                  {/* The list states the scoring direction in its own
+                      explainer row, so the subtitle counts rounds instead of
+                      saying it twice. */}
+                  <p>
+                    ROUND {played} OF {room.settings.roundCount}
+                  </p>
                 </div>
-              ) : (
-                <>
-                  <div className="host-standings__title">
-                    <h1>Standings</h1>
-                    {/* The list states the scoring direction in its own
-                        explainer row, so the subtitle counts rounds instead of
-                        saying it twice. */}
-                    <p>
-                      AFTER ROUND {played} OF {room.settings.roundCount} ·{" "}
-                      {room.settings.roundCount - played} TO GO
-                    </p>
-                  </div>
-                  {/* The match has no other exit between rounds — see the
-                      standings brief. Absent on the final screen, where the
-                      gold button already does exactly this and ends nothing
-                      that is still running. */}
-                  <HostBackToRoom />
-                </>
-              )}
-            </HostHeaderRight>
+                {/* The match has no other exit between rounds — see the
+                    standings brief. Absent on the final screen, where the
+                    gold button already does exactly this and ends nothing
+                    that is still running. */}
+                <HostBackToRoom />
+              </HostHeaderRight>
+            )
           }
         />
+
+        {/* Below the header rather than inside it, which is where the lobby
+            puts the room code: the title of the last screen of a match is the
+            first thing on the stage, not a label riding the bar. */}
+        {done && (
+          <div className="host-standings__over">
+            <h1>Match over</h1>
+          </div>
+        )}
 
         {/* Each shape does the job it is best at, and which one is up is fixed
             by the state rather than chosen: between rounds the room wants
@@ -119,7 +119,8 @@ export function HostStandings({ room, countdown }: Props) {
       {countdown && (
         <div className="host-standings__countdown">
           <GetReady
-            remaining={remaining}
+            endsAt={countdown.endsAt}
+            offset={countdown.offset}
             label={`ROUND ${currentRound(room)}`}
             onStop={() => roomStore.send({ type: "cancelStart" })}
           />

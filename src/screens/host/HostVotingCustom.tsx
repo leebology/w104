@@ -40,10 +40,12 @@ type Props = {
 export function HostVotingCustom({ room, offset, countdown, creatingSnapshot }: Props) {
   const pool = room.pool ?? [];
   const totals = tallyVotes(room.votes);
+  // The voting window only — the countdown card counts itself, in numerals
+  // that are not seconds. Same as the stock screen; see shared/countdown.ts.
   const remaining = useRemaining(
-    countdown?.endsAt ?? (room.phase.name === "voting" ? room.phase.endsAt : 0),
-    countdown?.offset ?? offset,
-    countdown ? null : room.paused,
+    room.phase.name === "voting" ? room.phase.endsAt : 0,
+    offset,
+    room.paused,
   );
   const budget = voteBudgetFor();
   const cast = Object.values(totals).reduce((a, b) => a + b, 0);
@@ -90,7 +92,7 @@ export function HostVotingCustom({ room, offset, countdown, creatingSnapshot }: 
         room={room}
         pool={pool}
         totals={totals}
-        remaining={remaining}
+        countdown={countdown}
         cast={cast}
       />
     );
@@ -192,13 +194,13 @@ export function HostVotingCustom({ room, offset, countdown, creatingSnapshot }: 
  * beat is played out from scratch here rather than inherited from it.
  */
 function HostVotingCustomClosed({
-  room, pool, totals, remaining, cast,
+  room, pool, totals, countdown, cast,
 }: {
   room: RoomState;
   pool: PoolCard[];
   totals: Record<string, number>;
-  /** Whole seconds — `useRemaining` returns a number, not a formatted string. */
-  remaining: number;
+  /** The round countdown's deadline; the card counts itself against it. */
+  countdown: { endsAt: number; offset: number };
   cast: number;
 }) {
   const shares = customShares(pool, room.votes);
@@ -350,7 +352,11 @@ function HostVotingCustomClosed({
         {/* Nothing here names the drawn category — the draw happens at the
             whistle. No Stop button, same reasoning as the stock reveal. */}
         <div className="host-voting__countdown">
-          <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
+          <GetReady
+            endsAt={countdown.endsAt}
+            offset={countdown.offset}
+            label={`ROUND ${currentRound(room)}`}
+          />
         </div>
       </div>
     </main>
