@@ -1188,22 +1188,6 @@ ul, ol { list-style: none; }
 
 .host-voting__row { display: flex; gap: 12px; flex: 1; min-height: 0; }
 .host-voting__result { justify-content: center; }
-.host-voting__row--top { flex: 0 0 206px; }
-
-/* Survivors below the top three can number up to 7 (10 categories, one vote
-   each). A fixed-height, non-wrapping row clips them off both edges past
-   ~5 cards, so this row sizes to its own content instead of a magic number,
-   and wraps rather than overflow — `.host-voting__result`'s `justify-content:
-   center` above then centres however tall that content turns out to be.
-   `flex-wrap` also means `justify-content: center` here re-centres each
-   individual line, including a short last line. */
-.host-voting__row--rest {
-  flex: 0 1 auto;
-  min-height: 0;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-content: center;
-}
 
 /* Nobody voted at all — the deadline can force this shut with zero votes
    cast. The category itself is drawn later, at the whistle, so this says
@@ -1261,7 +1245,39 @@ ul, ol { list-style: none; }
 
 /* Content height on the stage, not a share of it — see above. */
 .host-voting--closed .host-voting__result { flex: 0 1 auto; }
-.host-voting--closed .host-voting__row--top { flex: 0 1 206px; }
+
+/* **One row, one height — width is the only thing that carries the share.**
+   The board used to split at rank 3: three tall cards on top and every other
+   survivor demoted to a `--small` pill underneath, which meant four categories
+   tied at 25% were drawn at two different sizes and the room read a difference
+   that was not in the votes. Rank is not a fact about a category; the share is,
+   and `flex-grow` already says it. So every survivor is the same card on one
+   wrapping row, and two cards the same width are the same card.
+
+   `min-height` rather than a row basis is what makes that true *across* lines:
+   within a line `align-items: stretch` equalises heights for free, but a
+   wrapped second line sizes itself, so eleven survivors over two lines would
+   otherwise stand at two heights again. 150px is the tallest that keeps two
+   lines plus the countdown card inside a 720p stage. */
+.host-voting--closed .host-voting__row--all {
+  flex: 0 1 auto;
+  min-height: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-content: center;
+}
+
+/* Type is set as the two ceiling variables, never as a raw `font-size`: an
+   inline `font-size` replaces the whole `min(…, 17cqw)` declaration, so the
+   container-query ceiling that stops a narrow card's name overflowing cannot
+   engage at exactly the moment it is needed. One size for every card here,
+   because the cards are one size — a narrow one is then scaled down by `cqw`
+   on its own, which is the same information the width already carries. */
+.host-voting--closed .host-voting__row--all .vote-card {
+  min-height: 150px;
+  --name-size: 40px;
+  --total-size: 34px;
+}
 
 /* Width is the odds: flex-grow carries the vote count, so a vote visibly
    grows its card with no measurement and no JS layout pass. */
@@ -1285,15 +1301,6 @@ ul, ol { list-style: none; }
   overflow: hidden;
   transition: flex-grow 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-
-/* Equal-width, but no longer rigid: a fixed 210px card times up to 13
-   survivors cannot fit (or wrap) in ~1140px. `flex-basis` keeps cards near
-   their old width when there is room; `flex-shrink` (inherited from
-   `.vote-card`) and wrapping let a crowded row give way instead of clipping.
-   `max-width` stops a lone survivor from stretching to the full row. */
-.vote-card--small { flex: 1 1 150px; max-width: 220px; min-height: 86px; }
-.vote-card--small .vote-card__name { font-size: 19px; }
-.vote-card--small .vote-card__total { font-size: 20px; }
 
 /* A category nobody wanted: sunken, flat, name only. */
 .vote-card--zero {
@@ -1349,9 +1356,13 @@ ul, ol { list-style: none; }
   margin-left: 1px;
 }
 
+/* Same two-ceiling arrangement as `.vote-card__name`, and for the same reason:
+   `--total-size` is the figure the board asks for and knows nothing about the
+   width flex-grow actually left the card. `30cqw` is what a three-glyph share
+   ("25%") can afford inside the card's 12px side padding. */
 .vote-card__total {
   font-family: var(--display);
-  font-size: 22px;
+  font-size: min(var(--total-size, 22px), 30cqw);
   color: var(--pink);
   flex: 0 0 auto;
 }
@@ -1408,12 +1419,6 @@ ul, ol { list-style: none; }
    every custom card, open board and closed reveal alike, so the promise is
    uniform across the whole screen. */
 .vote-card--custom { min-width: 132px; }
-
-/* The closed reveal's runners-up keep the stock `.vote-card--small` sizing
-   (150px basis, 220px cap, 19px name, 20px total) but stand taller — 110px
-   rather than 86px — a number the design brief calls out for this board
-   specifically, not a mistaken re-derivation of the stock one. */
-.vote-card--custom.vote-card--small { min-height: 110px; }
 
 /* No voter trail on this board — hands stay private until the reveal — so
    the lone total has nothing to sit opposite. `.vote-card__foot`'s own
