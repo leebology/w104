@@ -102,6 +102,21 @@ states most plainly. Nothing about this feature touches `shared/reduce.ts`,
 
 ## 3. Firing once
 
+> **This section is historical on two points; implementation found it wrong.**
+> The round identity described below does not survive a pause: `debugPause`
+> banks the remaining milliseconds and resume recomputes
+> `endsAt = now + paused` (`shared/reduce.ts`), so keying on `endsAt` reads a
+> resume as a new round and cuts short a band that is on screen. The claim
+> further down that "pause needs no code at all" is false for the same reason.
+>
+> What shipped: `useRoundWarning` holds **no round identity at all**. It seeds
+> once per mount and relies on `HostView`/`PlayerView` rendering a different
+> component type per phase, which React unmounts on — between rounds the phase
+> passes through `timesup`, `scoring`, `standings` and `countdown`. The three
+> behavioural rules below are unchanged and shipped as written.
+>
+> The rest of this document is accurate.
+
 A hook in `src/` holds the set of milestones already fired, keyed on `endsAt`
 so a new round resets it with nothing watching for it.
 
