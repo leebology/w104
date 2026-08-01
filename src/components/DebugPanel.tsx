@@ -62,6 +62,11 @@ const EXPERIMENTS_KEY = "w104:debug:experiments";
  */
 const EXPERIMENTS = [
   { id: "sound-effects", label: "Sound effects", note: "Not wired up yet." },
+  {
+    id: "flush-on-timeout",
+    label: "Submit half-typed word at time's up",
+    note: "Off. Whatever is in the box when the round ends is thrown away instead of submitted.",
+  },
 ] as const;
 
 type ExperimentId = (typeof EXPERIMENTS)[number]["id"];

@@ -91,7 +91,10 @@ Two subsystems hang off the Worker:
   game is not allowed to notice.** The game never reads it back.
 - **The debug menu** (`src/components/DebugPanel.tsx`) — five sections. Two of
   them, experiment flags and free-tier usage (`party/usage.ts` behind
-  `/debug/usage`), touch nothing. The other three **deliberately mutate a live
+  `/debug/usage`), mutate no room: a flag is local to one device and the worst
+  it does is change what that device sends (`flush-on-timeout` gates whether a
+  half-typed word is submitted at the whistle, and is off by default). The other
+  three **deliberately mutate a live
   room** — the round controls (pause, skip, auto-fill), the view jumper, and the
   bot bench — and are therefore host-only and enforced server-side. See "Debug
   menu" below.
