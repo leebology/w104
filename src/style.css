@@ -3478,7 +3478,10 @@ ul, ol { list-style: none; }
   grid-template-rows: var(--rows);
   grid-auto-flow: column;
   gap: 8px;
-  padding: 0 26px;
+  /* The header's own bottom padding is 0 (`.host-standings .host-header`),
+     so without a top value here the first row sits flush under the room
+     chip with no pink between them. */
+  padding: 16px 26px 0;
 }
 
 /* No `overflow: hidden`, even though the place block runs to the row's edge:
@@ -4073,8 +4076,20 @@ ul, ol { list-style: none; }
   font-size: 16px;
   flex: 1;
   min-width: 0;
-  overflow: hidden;
   white-space: nowrap;
+}
+
+/* `overflow: hidden` only belongs here for the marquee's own sake — it is
+   what lets a solo name's `clientWidth` stand in for the room it has to
+   travel. A team row carries no `data-marquee`, and scoping the clip to the
+   attribute rather than the class is what stops it from also clipping the
+   team badge: the badge's rotate and box-shadow render a few px taller than
+   this row's own line box, and clipping to that box shaved its top off no
+   matter how far the badge itself was shrunk — the row was the wrong thing
+   to shrink. The badge still clips and ellipses its own text via its own
+   `overflow: hidden`, so nothing about long team names regresses. */
+.standings-table__name[data-marquee] {
+  overflow: hidden;
 }
 
 .standings-table__flag {

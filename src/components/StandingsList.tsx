@@ -33,10 +33,25 @@ export function StandingsList({ room, standings }: Props) {
   const rows = split ? Math.ceil(standings.length / 2) : standings.length;
   // The leader's row is taller than the rest, but only in one column: with two,
   // row one is shared with whoever is mid-table at the top of column two, and
-  // there is no honest way to give the height to just one of them.
+  // there is no honest way to give the height to just one of them. Within one
+  // column, a tie for first is several rows all at place 1 — every one of them
+  // gets the tall track, not just the first, or a tied leader reads shorter
+  // than the scorer standing at the exact same rank above it.
+  // `minmax(0, …)` on every track, lead included — a bare `Nfr` track's
+  // automatic minimum is its content's max-content size, so two rows on an
+  // equal `1.35fr` share still come out unequal the moment one team's roster
+  // wraps to a second line and the other's doesn't: the wrapping row's own
+  // content forces its track past its fair share, and the fixed total height
+  // squeezes the other one to make room. `minmax(0, …)` drops that
+  // content-based floor so equal `fr` values mean equal pixels regardless of
+  // what either row's content needs.
+  const leadRows = split ? 0 : standings.filter((s) => s.place === 1).length;
   const rowTracks = split
     ? `repeat(${rows}, minmax(0, 1fr))`
-    : ["1.35fr", ...Array(Math.max(0, rows - 1)).fill("minmax(0, 1fr)")].join(" ");
+    : [
+        ...Array(leadRows).fill("minmax(0, 1.35fr)"),
+        ...Array(Math.max(0, rows - leadRows)).fill("minmax(0, 1fr)"),
+      ].join(" ");
 
   return (
     <>
