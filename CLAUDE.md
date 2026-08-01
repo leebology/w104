@@ -251,9 +251,16 @@ replaced wholesale on each `state` push; every client action is a *request*.
 - **The round's time warnings are derived on every client, never broadcast.**
   `warningsFor` in `shared/roundwarnings.ts` turns the round length into its
   marks; each client counts to them off the deadline it already has, the same
-  arrangement the round timer and the reveal schedule use. The TV and the
-  phones warn together because they read one clock, not because anything was
-  sent. **The halfway mark is a candidate, not a member of the set** — it
+  arrangement the round timer and the reveal schedule use — nothing is sent.
+  **They are a phone thing only.** `HostPlaying` renders no band: the TV has
+  the clock and the draining bar up for the whole round, so a warning there
+  tells the room something it can already see, and it lands over the category
+  banner — the one thing that screen exists to show. The phone is where it
+  earns its place, head-down with no clock in view, which is also why the
+  phone's band holds a second at full opacity before fading
+  (`.time-warning--player`) where `.reject-banner` does not. `variant: "host"`
+  and `.time-warning--host` are kept but unrendered, so putting it back is one
+  line. **The halfway mark is a candidate, not a member of the set** — it
   survives only when it clears the top of the tail by `WARNING_GAP_SEC`, and it
   must be checked *against* the tail rather than merged into it, or a
   15-second round keeps half at 7 and discards the more urgent 10. One
@@ -510,9 +517,20 @@ slots, those become a pool of **author-blind** cards, and each player is dealt
 - **The rules bend at 1–2 players rather than falling back to the stock pool.**
   A room that small cannot satisfy never-own-card, so it does not try. See the
   spec's §3.4 — the design brief's "2 players" row is superseded.
-- **Identical texts merge at the draw and nowhere else.** Two people writing the
-  same category get two cards, two tallies on the board, and one summed entry in
-  the weighted draw. Merging earlier would hide that two people wrote it.
+- **Identical texts merge at the draw and at the close — never while voting is
+  open.** Two people writing the same category get two cards in the deal, two
+  tiles to vote on and two tallies on the open board: the hands are dealt per
+  card, and a board that had already merged them would tell the room two people
+  matched before anyone had voted, which is an authorship leak. At the close
+  they become one card (`mergeBoard`) carrying the summed votes and **a chip per
+  author**, so nothing is hidden — the reveal is already up by then, and the room
+  learns the more interesting fact that two of them wrote it. The share is
+  therefore keyed by text (`customTextShares`), on the TV *and* on the phone's
+  recap: `pickCustomCategory` sums by text, so a per-card figure reported a
+  certainty as two halves of itself. `sharesOf` in `shared/voting.ts` is the
+  largest-remainder arithmetic both keyings share — two roundings of the same
+  votes that disagreed by a point would put the TV and the phones on different
+  numbers.
 - **The transition is an animation, not a phase.** `closeCreating` opens `voting`
   directly, so the 1120ms beat is owned by the *entering* screens and clocked off
   `phase.endsAt - VOTING_MS` (`src/transition.ts`). A client mounting mid-beat
@@ -788,18 +806,25 @@ Ready button lit through the count, because un-readying is the room's brake on
 it, and team select dims its panels on both devices but not the Leave button or
 the host's Auto sort, which stay legal through the count.
 
-**The card is five numbers long and its step is not a second**
-(`shared/countdown.ts`). `COUNTDOWN_MS` is set by the lead-in clip, not by the
-design — so a card counting whole seconds opened on whatever that file's length
-rounded up to (8, at 7.4s) and would change what the room chants every time
-somebody swapped the music. `countdownNumber` divides the phase into
-`COUNTDOWN_TICKS` instead: always 5 down to 1, each held ~1.48s, clamped at both
-ends so clock skew can flash neither a 6 nor a 0. **`GetReady` therefore takes
-the deadline, not a number**, and counts itself through `useCountdownNumber` —
-eleven screens render it, and a screen doing its own arithmetic is a screen that
-can get it wrong. `useRemaining` is whole seconds and is deliberately not what
-feeds it; the voting screens still use it for their own clock, which is a real
-seconds clock.
+**The card counts five real seconds and then says START** (`shared/countdown.ts`).
+`COUNTDOWN_MS` is set by the lead-in clip, not by the design, so the phase is
+longer than the count — and the two ways of reconciling that are both wrong. A
+card counting whole seconds of the phase opens on whatever the file's length
+rounds up to (8, at 7.4s) and changes what the room chants every time somebody
+swaps the music; a card stretching five steps across the phase holds each for
+~1.48s, which is what shipped first and which a room chanting along falls out of
+step with by about two numerals. So the count is five seconds, exactly, and
+`START_HOLD_MS` — the tail the count does not cover — is held on **START**, with
+the caption hidden rather than unmounted so the card keeps its height. The count
+runs first and the whistle lands on START: the numbers are the part a room needs
+warning from. `countdownFace` returns `number | "start"`, clamped at the top so
+clock skew cannot flash a 6, and the card never shows 0 because past the count
+there is START. **`GetReady` therefore takes the deadline, not a number**, and
+works its own face out through `useCountdownFace` — eleven screens render it, and
+a screen doing its own arithmetic is a screen that can get it wrong.
+`useRemaining` is whole seconds of the phase and is deliberately not what feeds
+it; the voting screens still use it for their own clock, which is a real seconds
+clock.
 
 **The closed category vote is the one screen the card is laid out on rather than
 posed over** (`.host-voting__countdown`), and it is the exception that states the

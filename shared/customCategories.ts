@@ -4,7 +4,7 @@ import { seededRng } from "./rng";
 import type { Rng } from "./rng";
 import { tallyVotes } from "./voting";
 import type { VoteMap } from "./voting";
-import { voteShares } from "./voting";
+import { sharesOf, voteShares } from "./voting";
 import { weightedPick } from "./voting";
 
 /**
@@ -408,6 +408,76 @@ export function customShares(
   votes: VoteMap,
 ): Record<string, number> {
   return voteShares(votes, pool.map((c) => c.id));
+}
+
+/**
+ * One card per *text*, with the tallies of every card carrying it added up.
+ *
+ * **The board merges identical texts at the close, and only at the close.**
+ * While voting is open they are separate cards and must stay that way: the
+ * hands are dealt per card, a player picks the one in front of them, and a
+ * board that had already merged them would be telling the room that two people
+ * wrote the same thing before anyone had voted — an authorship leak. By the
+ * closed reveal the authorship is public (`authorsRevealed` flips on the way
+ * out of `voting`), so the merged card can carry every author who wrote it and
+ * nothing is hidden by adding the votes up.
+ *
+ * And adding them up is what the draw already does: `pickCustomCategory` sums
+ * by text, so two cards reading "smells" are one entry with the summed weight.
+ * Left unmerged the board showed that one chance as two halves of itself —
+ * 50/50 for a text that was certain to be drawn.
+ *
+ * Order in is order out, first appearance winning the slot, so a caller that
+ * hands this a ranked board gets a ranked result with no second sort.
+ */
+export type BoardEntry = {
+  /** What merged. The key to `customTextShares` and to the draw alike. */
+  text: string;
+  /** Every card carrying it, in the order they arrived. Never empty. */
+  cards: PoolCard[];
+  /** The summed tally. */
+  votes: number;
+};
+
+export function mergeBoard(
+  cards: readonly PoolCard[],
+  tally: Record<string, number>,
+): BoardEntry[] {
+  const out: BoardEntry[] = [];
+  const byText = new Map<string, BoardEntry>();
+  for (const card of cards) {
+    const found = byText.get(card.text);
+    if (found) {
+      found.cards.push(card);
+      found.votes += tally[card.id] ?? 0;
+      continue;
+    }
+    const entry: BoardEntry = { text: card.text, cards: [card], votes: tally[card.id] ?? 0 };
+    byText.set(card.text, entry);
+    out.push(entry);
+  }
+  return out;
+}
+
+/**
+ * Closing percentages keyed by text rather than by card id — the odds the draw
+ * actually runs, since it merges by text. Same denominator as `customShares`:
+ * voted cards only, because the unvoted ones leave the board.
+ */
+export function customTextShares(
+  pool: readonly PoolCard[],
+  votes: VoteMap,
+): Record<string, number> {
+  const byId = tallyVotes(votes);
+  const totals: Record<string, number> = {};
+  const order: string[] = [];
+  for (const card of pool) {
+    const n = byId[card.id] ?? 0;
+    if (n === 0) continue;
+    if (!(card.text in totals)) order.push(card.text);
+    totals[card.text] = (totals[card.text] ?? 0) + n;
+  }
+  return sharesOf(totals, order);
 }
 
 /**

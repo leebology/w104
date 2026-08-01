@@ -55,7 +55,23 @@ export function voteShares(
    */
   order: readonly string[] = BALLOT,
 ): Record<string, number> {
-  const totals = tallyVotes(votes);
+  return sharesOf(tallyVotes(votes), order);
+}
+
+/**
+ * `voteShares` over a tally that has already been taken.
+ *
+ * Split out because the custom pool needs percentages keyed by a card's *text*
+ * rather than by its id — two cards reading "smells" are one thing to the draw
+ * (see `pickCustomCategory`), so they are one chance — and that tally cannot be
+ * expressed as a `VoteMap`. The largest-remainder arithmetic is the part that
+ * must not be written twice: two roundings of the same votes that disagree by a
+ * point would put the TV and the phones on different numbers.
+ */
+export function sharesOf(
+  totals: Record<string, number>,
+  order: readonly string[] = BALLOT,
+): Record<string, number> {
   const entries = Object.entries(totals);
   const sum = entries.reduce((a, [, n]) => a + n, 0);
   if (sum === 0) return {};

@@ -1,13 +1,18 @@
 import { useEffect, useState } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
 import { prefersReducedMotion } from "../../reveal";
-import { boardCards, customShares, voteBudgetFor } from "../../../shared/customCategories";
-import type { PoolCard } from "../../../shared/customCategories";
+import {
+  boardCards,
+  customTextShares,
+  mergeBoard,
+  voteBudgetFor,
+} from "../../../shared/customCategories";
+import type { BoardEntry, PoolCard } from "../../../shared/customCategories";
 import { tallyVotes } from "../../../shared/voting";
 import { isWaiting } from "../../../shared/bots";
 import { seatedPlayers } from "../../../shared/waiting";
 import { currentRound } from "../../../shared/state";
-import type { RoomState } from "../../../shared/state";
+import type { PlayerId, RoomState } from "../../../shared/state";
 import { VOTING_MS } from "../../../shared/reduce";
 import { RoomChip } from "../../components/RoomChip";
 import { GetReady } from "../../components/GetReady";
@@ -203,14 +208,21 @@ function HostVotingCustomClosed({
   countdown: { endsAt: number; offset: number };
   cast: number;
 }) {
-  const shares = customShares(pool, room.votes);
+  // Keyed by text, not by card id: identical texts are one card from here on
+  // (see `mergeBoard`) and one chance in the draw, so a per-card share would
+  // report a certainty as two halves of itself.
+  const shares = customTextShares(pool, room.votes);
   // The same ten (or fewer) cards the open board just had on it, so the
-  // "leave" beat has a shape to leave from.
+  // "leave" beat has a shape to leave from — merged, which is the one thing
+  // that changes about the board at the close.
   const { shown } = boardCards(pool, totals);
-  const survivors = shown
-    .filter((c) => (shares[c.id] ?? 0) > 0)
-    .sort((a, b) => (shares[b.id] ?? 0) - (shares[a.id] ?? 0));
-  const zeroCards = shown.filter((c) => (shares[c.id] ?? 0) === 0);
+  const merged = mergeBoard(shown, totals);
+  // `mergeBoard` preserves `boardCards`' ranking and `sort` is stable, so ties
+  // keep the board order they arrived in rather than needing a second key.
+  const survivors = merged
+    .filter((e) => (shares[e.text] ?? 0) > 0)
+    .sort((a, b) => (shares[b.text] ?? 0) - (shares[a.text] ?? 0));
+  const zeroCards = merged.filter((e) => (shares[e.text] ?? 0) === 0);
 
   // Computed once at mount, matching `PlayerScoring`'s own reveal — this
   // component is a fresh mount every time voting closes, so there is never a
@@ -310,17 +322,16 @@ function HostVotingCustomClosed({
                 // cards on the same chance are drawn the same however far down
                 // the order they sit; only the width says anything.
                 <div className="host-voting__row host-voting__row--all">
-                  {survivors.map((card, i) => (
+                  {survivors.map((entry, i) => (
                     <ResultCard
-                      key={card.id}
-                      card={card}
+                      key={entry.text}
+                      entry={entry}
                       room={room}
-                      votes={totals[card.id] ?? 0}
-                      share={shares[card.id] ?? 0}
+                      share={shares[entry.text] ?? 0}
                       // Equal share before the reflow, never 0 — see the same
                       // line in `HostVoting.tsx`: `.vote-card` is `flex: 1 1 0`,
                       // so a grow of 0 collapses the card onto its `min-width`.
-                      flexGrow={grown ? shares[card.id] ?? 0 : 1}
+                      flexGrow={grown ? shares[entry.text] ?? 0 : 1}
                       chipIndex={i}
                       stagger={stagger}
                     />
@@ -332,15 +343,15 @@ function HostVotingCustomClosed({
                 // The pack pill goes with them — it never renders here at all,
                 // since this is a fresh mount and it was never part of it.
                 <div className="host-voting__row host-voting__row--leaving">
-                  {zeroCards.map((card) => (
+                  {zeroCards.map((entry) => (
                     <div
-                      key={card.id}
+                      key={entry.text}
                       className={
                         "vote-card vote-card--custom vote-card--zero" +
                         (leaving ? " vote-card--leaving" : "")
                       }
                     >
-                      <span className="vote-card__name">{card.text}</span>
+                      <span className="vote-card__name">{entry.text}</span>
                     </div>
                   ))}
                 </div>
@@ -366,25 +377,31 @@ function HostVotingCustomClosed({
 /**
  * One card of the closed reveal: name, the count-to-chance crossfade, and —
  * gated on `room.authorsRevealed`, never on `authorId !== null` alone — the
- * author chip. `authorId` is only genuinely non-null post-reveal; pre-reveal
+ * author chips. `authorId` is only genuinely non-null post-reveal; pre-reveal
  * every card's is nulled by `publicPool`, which is why the gate is the flag
  * and not the field.
+ *
+ * **Chips, plural, because a card can be several cards.** A merged entry (see
+ * `mergeBoard`) carries everyone who wrote that text, so the merge costs the
+ * authorship reveal nothing: the room still learns exactly who wrote what, and
+ * learns the more interesting fact that two of them wrote the same thing.
  */
 function ResultCard({
-  card, room, votes, share, flexGrow, chipIndex, stagger,
+  entry, room, share, flexGrow, chipIndex, stagger,
 }: {
-  card: PoolCard;
+  entry: BoardEntry;
   room: RoomState;
-  votes: number;
   share: number;
   flexGrow: number;
   chipIndex: number;
   stagger: number;
 }) {
-  const house = card.authorId === null;
-  const author = card.authorId !== null
-    ? room.players.find((p) => p.id === card.authorId)
-    : undefined;
+  // Distinct authors, in board order. `null` is the house, and one house card
+  // is as much as the room needs telling — nothing distinguishes a second.
+  const authorIds: Array<PlayerId | null> = [];
+  for (const card of entry.cards) {
+    if (!authorIds.includes(card.authorId)) authorIds.push(card.authorId);
+  }
 
   return (
     <div className="vote-card vote-card--custom" style={{ flexGrow }}>
@@ -394,25 +411,36 @@ function ResultCard({
             so the box is in flow (and the name below it does not move) long
             before the chip actually pops. */}
         {room.authorsRevealed && (
-          <span
-            className={house ? "author-chip author-chip--house" : "author-chip"}
-            style={{ animationDelay: `${420 + chipIndex * stagger}ms` }}
-          >
-            {house ? (
-              "HOUSE CARD"
-            ) : (
-              <>
-                <span className="author-chip__emoji">{author?.emoji}</span>
-                <span className="author-chip__name">{author?.name}</span>
-              </>
-            )}
+          <span className="vote-card__authors">
+            {authorIds.map((id, i) => {
+              const author = id !== null ? room.players.find((p) => p.id === id) : undefined;
+              return (
+                <span
+                  key={id ?? "house"}
+                  className={id === null ? "author-chip author-chip--house" : "author-chip"}
+                  // Staggered within the card as well as across the board, so a
+                  // merged pair pops one after the other rather than as one
+                  // wider chip nobody saw arrive.
+                  style={{ animationDelay: `${420 + (chipIndex + i) * stagger}ms` }}
+                >
+                  {id === null ? (
+                    "HOUSE CARD"
+                  ) : (
+                    <>
+                      <span className="author-chip__emoji">{author?.emoji}</span>
+                      <span className="author-chip__name">{author?.name}</span>
+                    </>
+                  )}
+                </span>
+              );
+            })}
           </span>
         )}
-        <span className="vote-card__name">{card.text}</span>
+        <span className="vote-card__name">{entry.text}</span>
       </div>
       <span className="vote-card__foot vote-card__foot--solo">
         <span className="vote-card__crossfade">
-          <span className="vote-card__total vote-card__total--out">{votes}</span>
+          <span className="vote-card__total vote-card__total--out">{entry.votes}</span>
           <span className="vote-card__total vote-card__total--in">{share}%</span>
         </span>
       </span>

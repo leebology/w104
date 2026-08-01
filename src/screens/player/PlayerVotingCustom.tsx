@@ -5,7 +5,7 @@ import { parity } from "../../reveal";
 import { VOTING_MS } from "../../../shared/reduce";
 import { quotaOfRoom, voteBudgetFor, writersOf } from "../../../shared/customCategories";
 import type { Hand, PoolCard } from "../../../shared/customCategories";
-import { customShares } from "../../../shared/customCategories";
+import { customTextShares } from "../../../shared/customCategories";
 import { votesSpent } from "../../../shared/voting";
 import { isWaiting } from "../../../shared/bots";
 import { currentRound } from "../../../shared/state";
@@ -63,7 +63,11 @@ export function PlayerVotingCustom({ room, playerId, hands, offset, countdown, d
   const waitingOn = writersOf(room.players).filter(
     (p) => p.connected && !isWaiting(p),
   ).length;
-  const shares = closed ? customShares(pool, room.votes) : {};
+  // Keyed by text, so this reads the same chance the TV shows and the same one
+  // the draw runs: identical texts merge at the close (`mergeBoard`) and in
+  // `pickCustomCategory`, so a per-card figure would tell a player their pick
+  // had half the odds it really has.
+  const shares = closed ? customTextShares(pool, room.votes) : {};
 
   const votingEndsAt = room.phase.name === "voting" ? room.phase.endsAt : 0;
   // The voting window only — the countdown card counts itself, in numerals
@@ -242,7 +246,7 @@ export function PlayerVotingCustom({ room, playerId, hands, offset, countdown, d
                   {closed && (
                     <div className="vote-tile__pick-foot">
                       <span className="vote-tile__chance">
-                        <span className="vote-tile__pct">{shares[card.id] ?? 0}%</span>
+                        <span className="vote-tile__pct">{shares[card.text] ?? 0}%</span>
                         <span className="vote-tile__chance-label">CHANCE</span>
                       </span>
                       {room.authorsRevealed && (

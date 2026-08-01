@@ -277,7 +277,14 @@ describe("buildDeal", () => {
   });
 });
 
-import { BOARD_CAP, boardCards, customShares, pickCustomCategory } from "./customCategories";
+import {
+  BOARD_CAP,
+  boardCards,
+  customShares,
+  customTextShares,
+  mergeBoard,
+  pickCustomCategory,
+} from "./customCategories";
 
 const card = (id: string, text: string, authorId: string | null = "p0") =>
   ({ id, text, authorId, slot: 0 });
@@ -312,6 +319,61 @@ describe("customShares", () => {
     const shares = customShares(pool, { p0: { c0: 1 }, p1: { c1: 2 } });
     expect(shares.c2).toBeUndefined();
     expect(shares.c0 + shares.c1).toBe(100);
+  });
+});
+
+describe("mergeBoard", () => {
+  it("adds the tallies of identical texts into one entry", () => {
+    const pool = [card("c0", "a", "p0"), card("c1", "a", "p1"), card("c2", "b")];
+    const merged = mergeBoard(pool, { c0: 2, c1: 3, c2: 1 });
+    expect(merged).toHaveLength(2);
+    expect(merged[0].text).toBe("a");
+    expect(merged[0].votes).toBe(5);
+    expect(merged[0].cards.map((c) => c.id)).toEqual(["c0", "c1"]);
+    expect(merged[1].votes).toBe(1);
+  });
+
+  it("keeps everyone who wrote the text, so the reveal loses nobody", () => {
+    const pool = [card("c0", "a", "p0"), card("c1", "a", null), card("c2", "a", "p1")];
+    const merged = mergeBoard(pool, {});
+    expect(merged[0].cards.map((c) => c.authorId)).toEqual(["p0", null, "p1"]);
+  });
+
+  it("holds the order it was given, first appearance winning the slot", () => {
+    const pool = [card("c0", "b"), card("c1", "a"), card("c2", "b")];
+    expect(mergeBoard(pool, {}).map((e) => e.text)).toEqual(["b", "a"]);
+  });
+
+  it("leaves distinct texts alone", () => {
+    const pool = [card("c0", "a"), card("c1", "b")];
+    const merged = mergeBoard(pool, { c0: 1, c1: 1 });
+    expect(merged.map((e) => e.cards.length)).toEqual([1, 1]);
+  });
+});
+
+describe("customTextShares", () => {
+  it("gives a merged text one share, not two halves of one", () => {
+    // The bug this exists for: both cards read "a", so "a" is certain to be
+    // drawn — and the board used to say 50% twice.
+    const pool = [card("c0", "a", "p0"), card("c1", "a", "p1")];
+    const shares = customTextShares(pool, { p0: { c0: 1 }, p1: { c1: 1 } });
+    expect(shares.a).toBe(100);
+  });
+
+  it("agrees with the weight the draw actually uses", () => {
+    // Two "a" cards at one vote each against one "b" at two: the draw sums by
+    // text, so "a" and "b" are even, and the board must say so.
+    const pool = [card("c0", "a", "p0"), card("c1", "a", "p1"), card("c2", "b")];
+    const shares = customTextShares(pool, { p0: { c0: 1, c2: 2 }, p1: { c1: 1 } });
+    expect(shares.a).toBe(50);
+    expect(shares.b).toBe(50);
+  });
+
+  it("is computed over voted cards only and sums to 100", () => {
+    const pool = [card("c0", "a"), card("c1", "b"), card("c2", "c")];
+    const shares = customTextShares(pool, { p0: { c0: 1 }, p1: { c1: 2 } });
+    expect(shares.c).toBeUndefined();
+    expect(shares.a + shares.b).toBe(100);
   });
 });
 

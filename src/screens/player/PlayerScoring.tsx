@@ -154,6 +154,12 @@ export function PlayerScoring({
   // Re-measured on a manual mark as well: a word losing its bold weight is a
   // word that may now fit.
   const list = useMarquee<HTMLDivElement>([me?.entries, step, marks]);
+  // The identity card is its own root: it is a sibling of the list card, not
+  // inside it, so the list's measurement never reaches the name. A phone is the
+  // narrowest place a name is drawn and the stat pair takes a fixed slice of
+  // the row, so this is where a name is most likely to overrun — it travels
+  // here for the same reason it travels in the TV's column.
+  const idCard = useMarquee<HTMLDivElement>([me?.name, me?.colorIndex]);
   const emojiOf = (id: string) => room.players.find((p) => p.id === id)?.emoji ?? "";
   // Exactly the trail the TV draws — a face, or the team's swatch. The two must
   // agree: the room is looking at both copies of the same word.
@@ -200,6 +206,7 @@ export function PlayerScoring({
   return (
     <main className="screen screen--mobile screen--locked player-scoring">
       <div
+        ref={idCard}
         className={
           `card id-card${me.colorIndex !== null ? " id-card--team" : ""}` +
           selfMarkCardClass(card)
@@ -222,7 +229,13 @@ export function PlayerScoring({
         <div className="id-card__row">
           {me.colorIndex === null && <span className="id-card__avatar">{me.emoji}</span>}
           <div className="id-card__who">
-            {me.colorIndex === null && <span className="id-card__name">{me.name}</span>}
+            {/* A clip box with one run inside it, the arrangement `measureMarquee`
+                looks for — the name travels rather than ellipsing. */}
+            {me.colorIndex === null && (
+              <span className="id-card__name" data-marquee="">
+                <span className="marquee">{me.name}</span>
+              </span>
+            )}
           </div>
           <div className="id-card__stats">
             <div className="stat">
