@@ -4354,9 +4354,15 @@ ul, ol { list-style: none; }
    different angles stacked an inch apart read as a printing error rather than
    as swagger. The plaque keeps the tilt because it is a tab; the card is the
    result, and the result sits straight. */
+/* Cream, not gold. Gold in this app means "go forward" — every primary button
+   wears it — and on the one screen where there is nothing left to press, a
+   full gold slab read as the largest button in the game. Cream makes it what
+   it is: a result, printed. The round boxes inside are cream on cream now and
+   read by their ink outline alone, which is the same way they read on the
+   mid-match table — one object, one appearance, on both screens. */
 .win-card {
-  background: var(--gold);
-  color: var(--ink-gold);
+  background: var(--cream);
+  color: var(--ink);
   border: 5px solid var(--ink);
   border-radius: 16px;
   box-shadow: 7px 7px 0 var(--ink);
@@ -4365,31 +4371,76 @@ ul, ol { list-style: none; }
   flex-direction: column;
   gap: 6px;
   flex: 0 0 auto;
+  /* One size for the name and the face beside it — see `__avatar`. */
+  --win-name-size: 40px;
+}
+
+/* The result at the left, the score pinned right, on one line. `baseline`
+   rather than `center`: the caption and the points are type of very different
+   sizes, and sitting them on a shared baseline is what stops the small one
+   floating in the middle of the tall one. */
+.win-card__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .win-card__label {
   font-family: var(--display);
   font-size: 15px;
   letter-spacing: 0.18em;
-  color: var(--gold-dim);
+  color: var(--ink-dim);
+  min-width: 0;
+}
+
+/* The place itself, at the size the caption around it is not. Full ink, since
+   this is the sentence's subject and the words either side of it are framing. */
+.win-card__rank {
+  font-size: 28px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
 }
 
 .win-card__who { display: flex; align-items: center; gap: 14px; min-width: 0; }
-.win-card__avatar { font-size: 54px; line-height: 1; flex: 0 0 auto; }
+
+/* Set from the name's own size rather than a number of its own: the two sit on
+   one line and should stand the same height, and neither can drift when the
+   other is retuned. Same arrangement as the scoring card's identity row. */
+.win-card__avatar { font-size: var(--win-name-size); line-height: 1; flex: 0 0 auto; }
 
 .win-card__name {
   font-family: var(--display);
-  font-size: 40px;
+  font-size: var(--win-name-size);
   line-height: 1.05;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.win-card__score { display: flex; align-items: baseline; gap: 8px; }
+/* Right-aligned column in the head, so the number and its unit stack against
+   the card's edge instead of running back toward the caption. */
+.win-card__score {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+}
+
 .win-card__points { font-family: var(--display); font-size: 34px; line-height: 1; }
-.win-card__unit { font-size: 12px; letter-spacing: 0.1em; color: var(--gold-dim); }
+.win-card__unit { font-size: 12px; letter-spacing: 0.1em; color: var(--ink-dim); }
 .win-card .round-boxes { margin-top: 6px; }
+
+/* **Five to a row, always** — a fixed track count rather than `flex: 1`, which
+   sized every box against how many there happened to be. A three-round match
+   drew three fat boxes and a ten-round match ten thin ones, so the same object
+   meant a different shape in every match; here a box is one width and a longer
+   match is more rows of it. Five is what a 390px phone fits without the
+   category under the numeral setting smaller than it already does. */
+.win-card .round-boxes {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+}
 
 /* --------------------------------------------------------- final table */
 
@@ -4421,9 +4472,22 @@ ul, ol { list-style: none; }
   align-items: center;
   gap: 10px;
   color: var(--cream);
+  /* Held whether or not the row is boxed, so your own line does not sit a few
+     pixels wider than everyone else's. */
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 4px 6px;
 }
 
-.final-table li.is-you { font-weight: 700; }
+/* Your own row, outlined. This replaces the `(you)` flag: that was a word
+   competing for the same strip as the name, and it had to be *read* — the one
+   question this table answers at a glance is which line is yours, so the
+   answer should be visible before anything on the row is. */
+.final-table li.is-you {
+  font-weight: 700;
+  border-color: var(--cream);
+  background: rgba(255, 255, 255, 0.08);
+}
 
 .final-table__place {
   font-family: var(--display);
@@ -4432,9 +4496,6 @@ ul, ol { list-style: none; }
   flex: 0 0 auto;
   color: var(--cream-dim);
 }
-
-/* Gold for the win, keyed off the place — a shared 1st golds both rows. */
-.final-table li[data-first] .final-table__place { color: var(--gold); }
 
 .final-table__avatar { font-size: 22px; line-height: 1; flex: 0 0 auto; }
 
@@ -4445,14 +4506,6 @@ ul, ol { list-style: none; }
   min-width: 0;
   overflow: hidden;
   white-space: nowrap;
-}
-
-.final-table__flag {
-  font-family: var(--body);
-  font-style: normal;
-  font-size: 11px;
-  color: var(--cream-dim);
-  flex: 0 0 auto;
 }
 
 .final-table__score {
