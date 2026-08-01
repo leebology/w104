@@ -7,9 +7,11 @@ import type { PoolCard } from "../../../shared/customCategories";
 import { tallyVotes } from "../../../shared/voting";
 import { isWaiting } from "../../../shared/bots";
 import { seatedPlayers } from "../../../shared/waiting";
+import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
 import { VOTING_MS } from "../../../shared/reduce";
 import { RoomChip } from "../../components/RoomChip";
+import { GetReady } from "../../components/GetReady";
 import { roomStore } from "../../net/room";
 import { TIMING, useCreatingTransition } from "../../transition";
 import { CreatingLeaveBoard } from "./HostCreating";
@@ -291,31 +293,37 @@ function HostVotingCustomClosed({
   // stale reading to worry about.
   const [reduced] = useState(prefersReducedMotion);
 
+  // The board sits still for a beat before it starts moving at all — long
+  // enough for the room to look up from their phones at the TV before the
+  // cards they didn't vote for vanish out from under them.
+  const LOOK_UP_MS = 1000;
+
   // The 260ms reflow: survivors mount at flex-grow 0 and are pushed to their
-  // final share on the next frame, so `.host-voting--closed .vote-card`'s
+  // final share after the look-up beat, so `.host-voting--closed .vote-card`'s
   // transition has something to animate from. Skipped under reduced motion —
   // cards land at their settled share on the very first frame instead.
   const [grown, setGrown] = useState(reduced);
   useEffect(() => {
     if (reduced) return;
-    const raf = requestAnimationFrame(() => setGrown(true));
-    return () => cancelAnimationFrame(raf);
+    const t = setTimeout(() => setGrown(true), LOOK_UP_MS);
+    return () => clearTimeout(t);
   }, [reduced]);
 
-  // Zero-vote cards leave 200ms after the reveal mounts. Reduced motion cuts
+  // Zero-vote cards leave 200ms after the look-up beat. Reduced motion cuts
   // straight to the settled state — they are simply never shown.
   const [zeroGone, setZeroGone] = useState(reduced);
   useEffect(() => {
     if (reduced || zeroCards.length === 0) return;
-    const t = setTimeout(() => setZeroGone(true), 200);
+    const t = setTimeout(() => setZeroGone(true), LOOK_UP_MS + 200);
     return () => clearTimeout(t);
     // Runs once per mount: this is a fresh component every time voting
     // closes, so there is exactly one "leave" beat to play.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // S = min(140ms, 2200 / cards), so the whole reveal lands inside 2.6s —
-  // comfortably inside the 5-second countdown already running.
+  // S = min(140ms, 2200 / cards), so the whole reveal — the look-up beat plus
+  // the stagger — lands inside ~3.8s, comfortably inside the 5-second
+  // countdown already running.
   const stagger = Math.min(140, 2200 / Math.max(1, survivors.length));
 
   // The deadline force-closes voting regardless of readiness, so a board of
@@ -340,70 +348,75 @@ function HostVotingCustomClosed({
         }
       />
 
-      <div className="host-voting__result">
-        {showNoVotes ? (
-          // Say nothing about which category — the draw itself hasn't
-          // happened yet.
-          <p className="host-voting__no-votes">
-            No one voted — the room gets a random category.
-          </p>
-        ) : (
-          <>
-            {top.length > 0 && (
-              <div className="host-voting__row host-voting__row--top">
-                {top.map((card, i) => (
-                  <ResultCard
-                    key={card.id}
-                    card={card}
-                    room={room}
-                    votes={totals[card.id] ?? 0}
-                    share={shares[card.id] ?? 0}
-                    flexGrow={grown ? shares[card.id] ?? 0 : 0}
-                    nameSize={rankNameSize[i]}
-                    chanceSize={rankChanceSize[i]}
-                    chipIndex={i}
-                    stagger={stagger}
-                  />
-                ))}
-              </div>
-            )}
+      {/* Same wrapper the stock closed reveal uses: the reveal and the
+          countdown card share one stage rather than the reveal absorbing the
+          slack and pinning the card to the bottom edge. */}
+      <div className="host-voting__stage">
+        <div className="host-voting__result">
+          {showNoVotes ? (
+            // Say nothing about which category — the draw itself hasn't
+            // happened yet.
+            <p className="host-voting__no-votes">
+              No one voted — the room gets a random category.
+            </p>
+          ) : (
+            <>
+              {top.length > 0 && (
+                <div className="host-voting__row host-voting__row--top">
+                  {top.map((card, i) => (
+                    <ResultCard
+                      key={card.id}
+                      card={card}
+                      room={room}
+                      votes={totals[card.id] ?? 0}
+                      share={shares[card.id] ?? 0}
+                      flexGrow={grown ? shares[card.id] ?? 0 : 0}
+                      nameSize={rankNameSize[i]}
+                      chanceSize={rankChanceSize[i]}
+                      chipIndex={i}
+                      stagger={stagger}
+                    />
+                  ))}
+                </div>
+              )}
 
-            {rest.length > 0 && (
-              <div className="host-voting__row host-voting__row--rest">
-                {rest.map((card, i) => (
-                  <ResultCard
-                    key={card.id}
-                    card={card}
-                    room={room}
-                    votes={totals[card.id] ?? 0}
-                    share={shares[card.id] ?? 0}
-                    small
-                    chipIndex={3 + i}
-                    stagger={stagger}
-                  />
-                ))}
-              </div>
-            )}
+              {rest.length > 0 && (
+                <div className="host-voting__row host-voting__row--rest">
+                  {rest.map((card, i) => (
+                    <ResultCard
+                      key={card.id}
+                      card={card}
+                      room={room}
+                      votes={totals[card.id] ?? 0}
+                      share={shares[card.id] ?? 0}
+                      small
+                      chipIndex={3 + i}
+                      stagger={stagger}
+                    />
+                  ))}
+                </div>
+              )}
 
-            {!zeroGone && zeroCards.length > 0 && (
-              // The pack pill goes with them — it never renders here at all,
-              // since this is a fresh mount and it was never part of it.
-              <div className="host-voting__row host-voting__row--leaving">
-                {zeroCards.map((card) => (
-                  <div key={card.id} className="vote-card vote-card--custom vote-card--zero vote-card--leaving">
-                    <span className="vote-card__name">{card.text}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
-        )}
-      </div>
+              {!zeroGone && zeroCards.length > 0 && (
+                // The pack pill goes with them — it never renders here at all,
+                // since this is a fresh mount and it was never part of it.
+                <div className="host-voting__row host-voting__row--leaving">
+                  {zeroCards.map((card) => (
+                    <div key={card.id} className="vote-card vote-card--custom vote-card--zero vote-card--leaving">
+                      <span className="vote-card__name">{card.text}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
-      {/* Nothing here names the drawn category — the draw happens at the
-          whistle. No Stop button, same reasoning as the stock reveal. */}
-      <div className="host-voting__closed-footer">
-        <p className="get-ready get-ready--tv">Get ready… {remaining}</p>
+        {/* Nothing here names the drawn category — the draw happens at the
+            whistle. No Stop button, same reasoning as the stock reveal. */}
+        <div className="host-voting__countdown">
+          <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
+        </div>
       </div>
     </main>
   );

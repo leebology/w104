@@ -1787,12 +1787,23 @@ export function nextAlarmAt(room: Room): number {
   // The `paused` check sits inside the condition rather than in a named
   // boolean above it, because tsc only narrows `phase` through the test it
   // can see here.
+  //
+  // `creating` was missing from this list until it caused a real, visible bug:
+  // without it, the writing phase's alarm was scheduled off the 15s idle-touch
+  // horizon instead of its own 60s deadline, and a room with any activity kept
+  // resetting `lastActivityAt` and re-arming 15s out. The alarm still fired and
+  // still checked the real clock each time — `tick` doesn't trust `nextAlarmAt`,
+  // it re-checks `now >= phase.endsAt` — so the phase never hung forever, but it
+  // could sit up to ~15s past its own deadline waiting for the next touch-cycle
+  // alarm to happen to notice, which read on screen as the writing timer idling
+  // at 0:00 before the room moved on to voting.
   const base =
     room.paused === null &&
     (phase.name === "countdown" ||
       phase.name === "voting" ||
       phase.name === "playing" ||
-      phase.name === "timesup")
+      phase.name === "timesup" ||
+      phase.name === "creating")
       ? phase.endsAt
       : room.lastActivityAt + IDLE_REAP_MS;
   if (room.hostGoneAt === null) return base;

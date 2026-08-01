@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { formatClock, useRemaining } from "../../net/clock";
 import { roomStore } from "../../net/room";
-import { quotaOfRoom, WRITE_MS, MAX_CATEGORY_LEN, writersOf } from "../../../shared/customCategories";
+import { quotaOfRoom, MAX_CATEGORY_LEN, writersOf } from "../../../shared/customCategories";
 import type { RoomState } from "../../../shared/state";
 import type { PlayerId } from "../../../shared/state";
 
@@ -12,7 +11,7 @@ type Props = {
   offset: number;
 };
 
-export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
+export function PlayerCreating({ room, playerId, drafts }: Props) {
   const me = room.players.find((p) => p.id === playerId);
   const quota = quotaOfRoom(room);
 
@@ -30,9 +29,6 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
   // rather than re-deriving it from `drafts`.
   const ready = me?.ready === true;
 
-  const endsAt = room.phase.name === "creating" ? room.phase.endsAt : 0;
-  const remaining = useRemaining(endsAt, offset, room.paused);
-
   // Alternates on every commit-driven advance so the slide animation
   // restarts — reapplying an identical class in the same tick does not
   // retrigger a CSS animation.
@@ -46,6 +42,14 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
       if (moveCursorTimer.current) clearTimeout(moveCursorTimer.current);
     };
   }, []);
+
+  // Opens the keyboard the moment the writing phase reaches this phone — the
+  // same unconditional `.focus()` call `PlayerView` makes when `playing`
+  // starts, and for the same reason: the transition has no user gesture
+  // behind it, so iOS may decline, but every other platform still gets it.
+  useEffect(() => {
+    if (!ready) inputRef.current?.focus();
+  }, [ready]);
 
   const handleCommit = () => {
     const trimmed = text.trim();
@@ -68,6 +72,11 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
       // Last slot committed — server will mark ready
       setText("");
     }
+    // The card advances in place — same input node, same keyboard session —
+    // so the only thing that can drop focus here is the button click itself
+    // stealing it. Reclaim it on the next tick rather than relying on the
+    // click never having blurred the field.
+    inputRef.current?.focus();
   };
 
   const handleChipTap = (slot: number) => {
@@ -88,6 +97,10 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
     moveCursorTimer.current = setTimeout(() => {
       roomStore.send({ type: "moveCursor", slot });
     }, 150);
+    // Same reason `handleCommit` reclaims it: the pager is a button, and a
+    // click into it would otherwise blur the field and drop the keyboard for
+    // a switch that is meant to stay mid-typing.
+    inputRef.current?.focus();
   };
 
   const handleRewriteCard = (slot: number) => {
@@ -103,9 +116,7 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
 
   return (
     <main className="screen screen--mobile screen--locked player-creating">
-      <div className="player-creating__meta">
-        ROOM {room.code} · WRITE {quota}
-      </div>
+      <p className="plaque player-creating__plaque">Write a category</p>
 
       {!ready ? (
         <>
@@ -124,7 +135,13 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
             </span>
           </section>
 
-          <section className="card player-creating__card">
+          <section
+            className="card player-creating__card"
+            // Tapping anywhere on the card — not just the input line itself —
+            // opens the keyboard, since the input is centred and no longer
+            // fills the card's whole tap target.
+            onClick={() => inputRef.current?.focus()}
+          >
             {/* The card frame (border, shadow, padding) never moves — only
                 its contents do, on a commit-driven advance. */}
             <div
@@ -177,6 +194,9 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
                   ]
                     .filter(Boolean)
                     .join(" ")}
+                  // Same reason the commit button holds one: a mousedown into
+                  // the pager would blur the input before its click fires.
+                  onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleChipTap(i)}
                 >
                   {i + 1}
@@ -188,25 +208,15 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
           <button
             type="button"
             className="btn btn--block player-creating__commit"
+            // A mousedown on the button fires before its click and would
+            // blur the input first — preventing the default here is what
+            // keeps the keyboard up across the advance.
+            onMouseDown={(e) => e.preventDefault()}
             onClick={handleCommit}
+            disabled={text.trim() === ""}
           >
             {cursor === quota - 1 ? "DONE" : "NEXT"}
           </button>
-
-          <div className="timer-bar player-voting__bar">
-            <span className="timer-bar__num">{formatClock(remaining)}</span>
-            <span className="timer-track">
-              <span
-                className="timer-track__fill"
-                style={{
-                  width: `${Math.min(
-                    100,
-                    (remaining / (WRITE_MS / 1000)) * 100
-                  )}%`,
-                }}
-              />
-            </span>
-          </div>
         </>
       ) : (
         <>
@@ -251,21 +261,6 @@ export function PlayerCreating({ room, playerId, drafts, offset }: Props) {
           <p className="player-creating__ready-hint">
             Tap a card to rewrite it — that un-readies you.
           </p>
-
-          <div className="timer-bar player-voting__bar">
-            <span className="timer-bar__num">{formatClock(remaining)}</span>
-            <span className="timer-track">
-              <span
-                className="timer-track__fill"
-                style={{
-                  width: `${Math.min(
-                    100,
-                    (remaining / (WRITE_MS / 1000)) * 100
-                  )}%`,
-                }}
-              />
-            </span>
-          </div>
         </>
       )}
     </main>
