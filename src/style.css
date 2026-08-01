@@ -6583,6 +6583,7 @@ ul, ol { list-style: none; }
   min-height: 132px;
   display: flex;
   align-items: center;
+  justify-content: center;
   position: relative;
   font: inherit;
   background: var(--cream);
@@ -6598,7 +6599,7 @@ ul, ol { list-style: none; }
   font-size: 26px;
   line-height: 1.06;
   overflow-wrap: anywhere;
-  text-align: left;
+  text-align: center;
 }
 
 .player-creating__ready-card:active {

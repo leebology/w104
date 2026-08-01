@@ -21,10 +21,33 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
   const [cursor, setCursor] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // The ready screen below reads from here rather than from the `drafts`
+  // prop directly. `drafts` is server state, one `yourDrafts` round-trip
+  // behind — and `ready` (also server state) can flip true and re-render
+  // the moment the *other* message, `state`, arrives, which can beat
+  // `yourDrafts` to the socket. Mirroring every local commit here means the
+  // ready view is always correct the instant it appears; `drafts` only has
+  // to seed it for a player who reconnects mid-phase.
+  const [myDrafts, setMyDrafts] = useState<string[]>(drafts);
+  useEffect(() => {
+    setMyDrafts(drafts);
+  }, [drafts]);
+
   // The Durable Object is the sole authority: `writeSlot` in shared/reduce.ts
   // sets `ready` once every slot is committed, so the client reads it back
-  // rather than re-deriving it from `drafts`.
-  const ready = me?.ready === true;
+  // rather than re-deriving it from `drafts`. `localUnready` is the same
+  // optimism `myDrafts` uses, for the same reason: tapping a ready card to
+  // rewrite it sends `clearDraft`, but nothing switches this screen off the
+  // ready view until the server round-trips `ready: false` back — by which
+  // point the tap's user gesture has expired, so the write view's focus()
+  // below gets silently ignored on iOS. Flipping this synchronously with the
+  // tap keeps the whole thing inside one gesture. Cleared once the server
+  // actually reports not-ready, so a later real ready-up is not masked by it.
+  const [localUnready, setLocalUnready] = useState(false);
+  const ready = me?.ready === true && !localUnready;
+  useEffect(() => {
+    if (me?.ready !== true) setLocalUnready(false);
+  }, [me?.ready]);
 
   // Alternates on every commit-driven advance so the slide animation
   // restarts — reapplying an identical class in the same tick does not
@@ -61,6 +84,12 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
       slot: cursor,
       text: trimmed,
     });
+    setMyDrafts((prev) => {
+      const next = [...prev];
+      while (next.length < quota) next.push("");
+      next[cursor] = trimmed;
+      return next;
+    });
 
     if (cursor < quota - 1) {
       // Move to next slot
@@ -84,16 +113,23 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
     if (slot < 0 || slot >= quota || slot === cursor) return;
     // Commit current slot if it has text
     if (text.trim() !== "") {
+      const trimmed = text.trim();
       roomStore.send({
         type: "commitDraft",
         slot: cursor,
-        text: text.trim(),
+        text: trimmed,
+      });
+      setMyDrafts((prev) => {
+        const next = [...prev];
+        while (next.length < quota) next.push("");
+        next[cursor] = trimmed;
+        return next;
       });
     }
     setText("");
     setCursor(slot);
     // Load the slot's text
-    setText(drafts[slot] ?? "");
+    setText(myDrafts[slot] ?? "");
     // Debounced ~150ms move
     if (moveCursorTimer.current) clearTimeout(moveCursorTimer.current);
     moveCursorTimer.current = setTimeout(() => {
@@ -127,13 +163,19 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
   };
 
   const handleRewriteCard = (slot: number) => {
-    setText(drafts[slot] ?? "");
+    setText(myDrafts[slot] ?? "");
     setCursor(slot);
     roomStore.send({ type: "moveCursor", slot });
     roomStore.send({
       type: "clearDraft",
       slot,
     });
+    setMyDrafts((prev) => {
+      const next = [...prev];
+      next[slot] = "";
+      return next;
+    });
+    setLocalUnready(true);
   };
 
   return (
@@ -181,7 +223,6 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
                 autoCapitalize="off"
                 spellCheck={false}
                 className="player-creating__input"
-                autoFocus={cursor === 0}
               />
             </div>
           </section>
@@ -245,7 +286,7 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
           </section>
 
           <div className="player-creating__ready-cards">
-            {drafts.map((draft, i) => (
+            {myDrafts.map((draft, i) => (
               <button
                 key={i}
                 type="button"
