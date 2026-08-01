@@ -44,7 +44,17 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
   // tap keeps the whole thing inside one gesture. Cleared once the server
   // actually reports not-ready, so a later real ready-up is not masked by it.
   const [localUnready, setLocalUnready] = useState(false);
-  const ready = me?.ready === true && !localUnready;
+  // Navigating with the pager or a swipe commits the slot being left, and on
+  // the last slot that commit is what completes the quota — the server marks
+  // `ready` the instant every slot is written, whichever action wrote the
+  // last one. That is correct for the DONE button, which means "I'm finished
+  // navigating", but a `<`/`>` tap or a swipe means the opposite: the player
+  // is still moving between cards and the ready view swapping in under them
+  // exits the pager they're mid-use of. `forceEditing` keeps the write view
+  // up through that kind of navigation; only a genuine DONE commit — the last
+  // slot, finished via `handleCommit` rather than a chip tap — clears it.
+  const [forceEditing, setForceEditing] = useState(false);
+  const ready = me?.ready === true && !localUnready && !forceEditing;
   useEffect(() => {
     if (me?.ready !== true) setLocalUnready(false);
   }, [me?.ready]);
@@ -99,8 +109,10 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
       roomStore.send({ type: "moveCursor", slot: next });
       setAdvanceParity((prev) => (prev === "a" ? "b" : "a"));
     } else {
-      // Last slot committed — server will mark ready
+      // Last slot committed via DONE — server will mark ready, and this is
+      // the one path that is allowed to let the ready view take over.
       setText("");
+      setForceEditing(false);
     }
     // The card advances in place — same input node, same keyboard session —
     // so the only thing that can drop focus here is the button click itself
@@ -111,6 +123,8 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
 
   const handleChipTap = (slot: number) => {
     if (slot < 0 || slot >= quota || slot === cursor) return;
+    // A pager/swipe move is navigation, not a finish — see `forceEditing`.
+    setForceEditing(true);
     // Commit current slot if it has text
     if (text.trim() !== "") {
       const trimmed = text.trim();
@@ -176,6 +190,7 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
       return next;
     });
     setLocalUnready(true);
+    setForceEditing(false);
   };
 
   return (
