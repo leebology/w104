@@ -483,7 +483,98 @@ ul, ol { list-style: none; }
   flex: 0 0 auto;
 }
 
-.room-chip { gap: 14px; padding: 7px 18px; }
+/* The chip and the waiting room beside it. The chip never gives — the join
+   instruction is the one thing on a TV that has to be in the same place every
+   time — so it is fixed and the strip is what shrinks when the header is
+   tight. */
+.room-chip-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.room-chip {
+  gap: 14px;
+  padding: 7px 18px;
+  flex: 0 0 auto;
+}
+
+/* ------------------------------------------------------- waiting room strip */
+
+/* Who is joining next round, beside the code they joined with. Draws nothing
+   at all when the waiting room is empty — see WaitingStrip.tsx. */
+.waiting-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.waiting-strip__label {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  line-height: 1.1;
+  color: var(--cream-dim);
+  white-space: nowrap;
+}
+
+/* Overlapped rather than spaced: this is a count the room reads as a clump,
+   and six separated faces would be as wide as the chip they sit beside. The
+   first child cancels the pull so the clump starts where the label ends. */
+.waiting-strip__faces {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.waiting-face {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: -8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--cream);
+  /* The accent when the player has picked a team; cream when there is no team
+     to have — `--accent` is set inline only by WaitingStrip, so the fallback
+     is what every free-for-all badge wears. */
+  box-shadow: 0 0 0 3px var(--accent, var(--cream)), 2px 2px 0 var(--ink);
+  white-space: nowrap;
+}
+
+.waiting-face:first-child { margin-left: 0; }
+
+/* Teams on, no team picked. Hollow is the signal: it is the only thing
+   standing between this player and the next round. */
+.waiting-face--unpicked {
+  background: transparent;
+  box-shadow: 0 0 0 2px var(--cream-dim);
+}
+
+.waiting-face--gone { opacity: 0.45; }
+
+.waiting-face--more {
+  font-family: var(--display);
+  font-size: 14px;
+  color: var(--ink);
+  padding: 4px 9px;
+}
+
+.waiting-face__avatar { font-size: 17px; line-height: 1; }
+
+/* Only ever drawn for a lone arrival — one person is somebody the room can
+   greet by name, and five are a number. */
+.waiting-face__name {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .room-chip__label {
   font-size: 14px;
@@ -2740,6 +2831,12 @@ ul, ol { list-style: none; }
 @media (max-width: 900px) {
   .host-header { padding: 14px 18px; }
   .room-chip { gap: 8px; padding: 6px 12px; }
+  .room-chip-group { gap: 9px; }
+  /* The label goes first when the header is tight: the faces still say a
+     waiting room exists, and the room code has to stay where it is. */
+  .waiting-strip__label { display: none; }
+  .waiting-face__avatar { font-size: 15px; }
+  .waiting-face__name { font-size: 12px; max-width: 9ch; }
   .room-chip__label { font-size: 10px; letter-spacing: 0.1em; }
   .room-chip__code { font-size: 20px; }
   .host-header__round { font-size: 13px; }
@@ -5527,6 +5624,97 @@ ul, ol { list-style: none; }
 .player-teams__leave {
   width: 100%;
   min-height: 52px;
+}
+
+/* ---------------------------------------------------- player: waiting room */
+
+/* The screen a latecomer sits on until the next whistle. Shaped like team
+   select rather than like the lobby, because with teams on it *is* team
+   select with different copy around it — and the grid must not move under a
+   thumb here either. */
+.player-waiting {
+  padding-top: 22px;
+  gap: 14px;
+}
+
+/* Everything the countdown card steps in front of. The footer stays outside
+   it, as team select's does: changing your mind is the one thing that is still
+   legal while the count is running. */
+.player-waiting__stage {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.player-waiting__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.player-waiting__head h1 {
+  font-family: var(--display);
+  font-size: clamp(24px, 7vw, 32px);
+  line-height: 1.05;
+  color: var(--cream);
+}
+
+/* The only line on this screen that changes on its own. Without it the screen
+   is a spinner. */
+.player-waiting__status {
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+
+.player-waiting__note {
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--cream-dim);
+  padding: 0 18px;
+}
+
+/* The same fixed-height swap team select makes: the instruction and the badge
+   that replaces it take one slot, so picking a team moves nothing below. */
+.player-waiting__title-slot {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* `.team-badge` is `position: absolute`, which is right for a badge dropped on
+   a card with other content in flow. Here the tab *is* the content of its
+   slot, so it opts back in — the same exception `.player-teams__title` makes. */
+.player-waiting__title-slot .team-badge {
+  position: static;
+  align-self: center;
+  max-width: 100%;
+}
+
+.player-waiting__countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.player-waiting__footer {
+  margin-top: auto;
+  width: 100%;
+  /* Holds the button's height whether or not there is one, so the grid above
+     does not resize the moment a team is picked. */
+  min-height: 52px;
+  padding-top: 10px;
 }
 
 /* ------------------------------------------------------------ debug panel */

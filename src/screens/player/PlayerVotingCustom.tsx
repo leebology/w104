@@ -3,7 +3,7 @@ import type { CSSProperties } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
 import { parity } from "../../reveal";
 import { VOTING_MS } from "../../../shared/reduce";
-import { quotaFor, voteBudgetFor } from "../../../shared/customCategories";
+import { quotaOfRoom, voteBudgetFor, writersOf } from "../../../shared/customCategories";
 import type { Hand, PoolCard } from "../../../shared/customCategories";
 import { customShares } from "../../../shared/customCategories";
 import { votesSpent } from "../../../shared/voting";
@@ -56,7 +56,11 @@ export function PlayerVotingCustom({ room, playerId, hands, offset, countdown, d
   const left = budget - spent;
   const closed = countdown !== undefined;
   const locked = left === 0 || closed;
-  const waitingOn = room.players.filter((p) => p.connected && !isWaiting(p)).length;
+  // Seated players only: the waiting room is not in the deal and holds no
+  // hand, and `everyoneReady` does not count them either.
+  const waitingOn = writersOf(room.players).filter(
+    (p) => p.connected && !isWaiting(p),
+  ).length;
   const shares = closed ? customShares(pool, room.votes) : {};
 
   const votingEndsAt = room.phase.name === "voting" ? room.phase.endsAt : 0;
@@ -74,7 +78,7 @@ export function PlayerVotingCustom({ room, playerId, hands, offset, countdown, d
   // a player who wrote nothing at all also reads as "no snapshot" (the
   // server has nothing non-blank to have pushed, either), and quietly skips
   // straight to the entering hand — a graceful miss, not a wrong render.
-  const writeQuota = quotaFor(room.players.length, room.settings.roundCount);
+  const writeQuota = quotaOfRoom(room);
   const hasSnapshot = drafts.length > 0;
   const votingOpenedAt = room.phase.name === "voting" ? room.phase.endsAt - VOTING_MS : 0;
   const transition = useCreatingTransition(votingOpenedAt, hasSnapshot);

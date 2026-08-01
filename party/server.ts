@@ -11,6 +11,7 @@ import { DEFAULT_MODE, customEnabled, defaultSettings, isGameModeId } from "../s
 import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
 import type { Scorer } from "../shared/teams";
 import { isHuman } from "../shared/bots";
+import { inWaitingRoom, seatedPlayers } from "../shared/waiting";
 import { driverOf } from "../shared/mirror";
 import { isViewId } from "../shared/views";
 import type { ViewId } from "../shared/views";
@@ -27,7 +28,7 @@ import {
 } from "./archive";
 import { DEFAULT_FILL_COUNT, fillCategoryFor, fillWordsFor } from "../shared/debug";
 import { collectUsage } from "./usage";
-import { MAX_CATEGORY_LEN, quotaFor } from "../shared/customCategories";
+import { MAX_CATEGORY_LEN, quotaOfRoom, writersOf } from "../shared/customCategories";
 
 // Bindings declared in wrangler.jsonc.
 export interface Env {
@@ -350,15 +351,21 @@ export class W104 extends Server<Env> {
 
     const existing = this.room.players.find((p) => p.id === playerId);
     const known = this.room.hostId === playerId || existing !== undefined;
-    if (!known && this.room.phase.name !== "lobby") {
-      return this.reject(conn, "game-in-progress", "That game is already running.");
-    }
+
+    // There used to be a phase gate here, refusing any newcomer past the
+    // lobby with `game-in-progress`. A latecomer is now seated into the
+    // waiting room by `join` instead and dealt in at the next whistle — see
+    // `shared/waiting.ts`. The error code stays in the protocol: staging and
+    // production run independently deployed Workers, so a new client pointed
+    // at an older one must still handle the answer it gets.
 
     // Only newcomers are capped. Someone already seated — including the tenth
     // player reconnecting after their phone locked — is `known` and skips
     // this, so the cap can never lock a player out of their own room. The
     // host holds no player slot, hence the role check. Debug bots hold none
     // either — a room dressed with twenty of them must still take real phones.
+    // Waiting players are counted: they hold a real seat, and a room of ten
+    // plus three waiting is a thirteen-column results screen one round later.
     if (
       !known &&
       role === "player" &&
@@ -454,8 +461,11 @@ export class W104 extends Server<Env> {
         // Loops `commitDraft` rather than writing `drafts` directly, so the
         // cap, the trim and the readiness rule all still apply — the same
         // arrangement the round's auto-fill has with `submitEntry`.
-        const quota = quotaFor(this.room.players.length, this.room.settings.roundCount);
-        this.room.players.forEach((player, seat) => {
+        const quota = quotaOfRoom(this.room);
+        // Writers only, matching the quota just computed. `commitDraft` would
+        // refuse a waiting player anyway, so this is the loop agreeing with the
+        // rule rather than a second copy of it.
+        writersOf(this.room.players).forEach((player, seat) => {
           for (let slot = 0; slot < quota; slot++) {
             this.room = reduce(this.room!, {
               t: "commitDraft",
@@ -991,6 +1001,36 @@ export class W104 extends Server<Env> {
     const results = withSelfStrikes(banked.phase.results, banked.phase.selfMarks);
 
     this.archiveInBackground((async () => {
+      // The game-start rows again, before the round's. `player` rows are
+      // written once at match start, but the roster can now *grow* mid-match —
+      // a latecomer admitted in round three writes word rows against a
+      // `player_id` with no parent, and D1 enforces foreign keys, so the whole
+      // 50-statement chunk carrying them would fail and the round's words would
+      // be lost silently. Re-emitting is free rather than clever: every
+      // statement in `archiveGameStart` is already idempotent by construction —
+      // `player` upserts `last_seen_at`, `game` and `participation` are DO
+      // NOTHING — which is the property being spent here.
+      await archiveGameStart(
+        this.env.DB,
+        // Seated players only. `participation` is DO NOTHING, so whatever lands
+        // first stands forever — and a waiting player archived at the bank
+        // *before* they were admitted would freeze a `team_id` of null against
+        // somebody who plays every remaining round in a team. Waiting for the
+        // first bank they are actually in costs nothing: that is the same bank
+        // their first words are written by, and the parent row still lands
+        // ahead of them.
+        gameStartRows({ ...banked, players: seatedPlayers(banked.players) }, {
+          gameId: state.gameId!,
+          lobbyCreatedAt: state.lobbyCreatedAt,
+          // The match's own start time is not recorded past `gameId`, and
+          // these rows only ever *insert* — `game` is DO NOTHING, so the real
+          // one written at `startGame` stands. This value reaches disk only as
+          // a newcomer's `first_seen_at`, where the bank they arrived for is
+          // the honest answer anyway.
+          startedAt: now,
+          scoringVersion: SCORING_VERSION,
+        }),
+      );
       await archiveRound(
         this.env.DB,
         roundRows(banked, results, placeRound(results), {
@@ -1079,6 +1119,13 @@ export class W104 extends Server<Env> {
    */
   private sendEntriesToTeam(playerId: PlayerId): void {
     if (!this.room) return;
+    // A waiting player is in no scorer, and the fallback below would hand them
+    // their own (empty) list — harmless in itself, but the guard is a privacy
+    // boundary rather than a tidy-up: it is what stops a latecomer being
+    // pushed their future team's live word list mid-round, which is secret
+    // from everybody not writing it.
+    const me = this.room.players.find((p) => p.id === playerId);
+    if (me && inWaitingRoom(me)) return;
     const scorer = rosterOf(this.room).find((s) => s.members.includes(playerId));
     const members = scorer?.members ?? [playerId];
     const entries = members

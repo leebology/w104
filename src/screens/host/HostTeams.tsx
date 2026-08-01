@@ -6,6 +6,7 @@ import { TeamBadge } from "../../components/TeamBadge";
 import { pulseInterval } from "../../components/Roster";
 import { roomStore } from "../../net/room";
 import { TEAM_COLORS, membersOf } from "../../../shared/teams";
+import { seatedPlayers } from "../../../shared/waiting";
 import type { RoomState } from "../../../shared/state";
 import { HostBackToRoom, HostHeader } from "./HostHeader";
 
@@ -28,7 +29,12 @@ type Props = {
  */
 export function HostTeams({ room, countdown }: Props) {
   const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
-  const unassigned = room.players.filter((p) => p.teamId === null);
+  // Seated players only. A latecomer without a team is not a straggler this
+  // screen can do anything about — the host's Continue does not place them and
+  // Auto sort does not deal them — so listing them here would say Continue is
+  // about to fix something it will not touch. The header strip is where they
+  // are named, hollow until they pick.
+  const unassigned = seatedPlayers(room.players).filter((p) => p.teamId === null);
   // What steps back behind the card: the picking is over, so the panels and the
   // stragglers dim. The footer does not — Auto sort stays legal through the
   // count, and it is the only lever the TV has left while it runs.
@@ -39,7 +45,7 @@ export function HostTeams({ room, countdown }: Props) {
       {/* No round marker: team selection only ever happens before round one,
           so the number could not change while this screen is up. */}
       <HostHeader
-        left={<RoomChip code={room.code} />}
+        left={<RoomChip room={room} />}
         right={<HostBackToRoom />}
       />
 

@@ -41,7 +41,7 @@ export function HostStandings({ room, countdown }: Props) {
             done ? (
               <span className="plaque plaque--over">MATCH OVER</span>
             ) : (
-              <RoomChip code={room.code} />
+              <RoomChip room={room} />
             )
           }
           right={

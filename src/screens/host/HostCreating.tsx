@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
-import { quotaFor } from "../../../shared/customCategories";
+import { quotaOfRoom, writersOf } from "../../../shared/customCategories";
 import type { SlotState } from "../../../shared/customCategories";
 import { teamsEnabled } from "../../../shared/teams";
 import { isWaiting } from "../../../shared/bots";
@@ -30,14 +30,15 @@ type Props = {
  * shape rather than keeping two copies of the same arithmetic in sync.
  */
 export function creatingLayout(room: RoomState) {
-  const quota = quotaFor(room.players.length, room.settings.roundCount);
-  const slotCount = room.players.length * quota;
+  const writers = writersOf(room.players);
+  const quota = quotaOfRoom(room);
+  const slotCount = writers.length * quota;
 
   // Slot count, not player count: the constraint is horizontal, and only column
   // count can break it. Five authors × 3 cards is 15 slots and still fits as
   // columns; 13 authors × 1 does not. The quota arm is the third trip — a column
   // of four 96px slots does not fit a 720p stage.
-  const useWall = room.players.length > 12 || slotCount > 15 || quota >= 4;
+  const useWall = writers.length > 12 || slotCount > 15 || quota >= 4;
 
   // Wall columns escalate with slot count (§1b): 6 up to 24 slots, 7 to 35, 8
   // to 48. The plan's flat `repeat(6, 1fr)` was superseded by the brief.
@@ -67,15 +68,21 @@ export function creatingLayout(room: RoomState) {
 export function HostCreating({ room, offset }: Props) {
   const remaining = useRemaining(room.phase.name === "creating" ? room.phase.endsAt : 0, offset, room.paused);
   const { slotCount, useWall, wallCols, smallWallCells } = creatingLayout(room);
+  // The people actually writing. Somebody who walked in after the match started
+  // owns no slots — the quota is computed without them — so a column of theirs
+  // would be a column that can never fill, and the "n PLAYERS · r READY" beside
+  // it would never reach its own total. They are named in the header strip
+  // instead, which is where the waiting room belongs.
+  const writers = writersOf(room.players);
 
   // Count how many slots are done (for the plaque subtitle on Layout B)
   let written = 0;
-  for (const playerId of room.players.map((p) => p.id)) {
+  for (const playerId of writers.map((p) => p.id)) {
     const states = room.slotStates[playerId] ?? [];
     written += states.filter((s) => s === "done").length;
   }
 
-  const ready = room.players.filter((p) => p.connected && p.ready).length;
+  const ready = writers.filter((p) => p.connected && p.ready).length;
 
   // The cardLandA/cardLandB alternation, frozen the moment a slot is first
   // seen as "done" and never recomputed after — an already-stamped slot must
@@ -99,11 +106,11 @@ export function HostCreating({ room, offset }: Props) {
   return (
     <main className="screen screen--host host-creating">
       <HostHeader
-        left={<RoomChip code={room.code} />}
+        left={<RoomChip room={room} />}
         right={
           <HostHeaderRight>
             <span className="host-header__count">
-              {room.players.length} {room.players.length === 1 ? "PLAYER" : "PLAYERS"} · {ready} READY
+              {writers.length} {writers.length === 1 ? "PLAYER" : "PLAYERS"} · {ready} READY
             </span>
             <HostExit
               label={teamsEnabled(room.settings) ? "Back to teams" : "Back to room"}
@@ -125,7 +132,7 @@ export function HostCreating({ room, offset }: Props) {
 
         {useWall ? (
           <div className="host-creating__wall" style={{ "--wall-cols": wallCols } as CSSProperties}>
-            {room.players.map((player) => {
+            {writers.map((player) => {
               const states = room.slotStates[player.id] ?? [];
               return states.map((state, slotIdx) => (
                 <div key={`${player.id}-${slotIdx}`} className="host-creating__cell">
@@ -137,7 +144,7 @@ export function HostCreating({ room, offset }: Props) {
           </div>
         ) : (
           <div className="host-creating__columns">
-            {room.players.map((player) => {
+            {writers.map((player) => {
               const states = room.slotStates[player.id] ?? [];
               return (
                 <div key={player.id} className="host-creating__column">
@@ -300,6 +307,9 @@ export function CreatingLeaveBoard({
   delay: (targetMs: number) => string;
 }) {
   const { useWall, wallCols, smallWallCells } = creatingLayout(room);
+  // The same set the board was drawn from, so the leave animation takes away
+  // exactly the columns that were there — see `HostCreating`.
+  const writers = writersOf(room.players);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const doneEls = useRef<(HTMLDivElement | null)[]>([]);
@@ -373,7 +383,7 @@ export function CreatingLeaveBoard({
     <div className="host-stage" ref={stageRef}>
       {useWall ? (
         <div className="host-creating__wall" style={{ "--wall-cols": wallCols } as CSSProperties}>
-          {room.players.map((player, playerIndex) => {
+          {writers.map((player, playerIndex) => {
             const states = room.slotStates[player.id] ?? [];
             return states.map((state, slotIdx) => (
               <div key={`${player.id}-${slotIdx}`} className="host-creating__cell">
@@ -393,7 +403,7 @@ export function CreatingLeaveBoard({
         </div>
       ) : (
         <div className="host-creating__columns">
-          {room.players.map((player, playerIndex) => {
+          {writers.map((player, playerIndex) => {
             const states = room.slotStates[player.id] ?? [];
             return (
               <div key={player.id} className="host-creating__column">

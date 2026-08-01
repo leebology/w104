@@ -2580,3 +2580,388 @@ describe("the readiness floor", () => {
     expect(room.phase.name).toBe("standings");
   });
 });
+
+// ---------------------------------------------------------- the waiting room
+
+/** A latecomer joining the room as it stands. */
+function walkIn(room: Room, id = "late", now = 10_500): Room {
+  return reduce(room, { t: "join", playerId: id, name: "Late", emoji: "🚪", now });
+}
+
+const seatOf = (room: Room, id: string) => room.players.find((p) => p.id === id)!;
+
+describe("joining past the lobby", () => {
+  test("the lobby still seats people into the match", () => {
+    const room = walkIn(seed(2), "late", 1500);
+    expect(seatOf(room, "late").waiting).toBe(false);
+  });
+
+  test("every other phase seats them into the waiting room", () => {
+    // One rule rather than a list of phases, so this is the list of phases
+    // that rule has to be right about.
+    expect(seatOf(walkIn(playing()), "late").waiting).toBe(true);
+    expect(seatOf(walkIn(scored()), "late").waiting).toBe(true);
+    expect(seatOf(walkIn(inTeams(2)), "late").waiting).toBe(true);
+    const voting = reduce(readyAll(seed(2), 2000), {
+      t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0,
+    });
+    expect(voting.phase.name).toBe("voting");
+    expect(seatOf(walkIn(voting), "late").waiting).toBe(true);
+    expect(seatOf(walkIn(readyAll(seed(2), 2000)), "late").waiting).toBe(true);
+  });
+
+  test("they no longer bounce off a running game", () => {
+    const room = walkIn(playing());
+    expect(room.players.map((p) => p.id)).toEqual(["p0", "p1", "late"]);
+  });
+
+  test("a reconnect keeps them waiting", () => {
+    // The player spread carries the flag across, or a reconnect would smuggle
+    // them into the round in progress.
+    let room = walkIn(playing());
+    room = reduce(room, { t: "disconnect", playerId: "late", now: 10_600 });
+    room = walkIn(room, "late", 10_700);
+    expect(seatOf(room, "late").waiting).toBe(true);
+    expect(seatOf(room, "late").connected).toBe(true);
+  });
+
+  test("they still count against MAX_PLAYERS", () => {
+    let room = playing();
+    for (let i = 2; i < MAX_PLAYERS; i++) room = walkIn(room, `late${i}`, 10_500 + i);
+    expect(room.players).toHaveLength(MAX_PLAYERS);
+    room = walkIn(room, "overflow", 10_600);
+    expect(room.players).toHaveLength(MAX_PLAYERS);
+  });
+});
+
+describe("the waiting room is inert", () => {
+  test("it cannot hold a countdown down", () => {
+    let room = reduce(scored(3), { t: "showStandings", playerId: "host", now: 11_000 });
+    room = walkIn(room, "late", 11_050);
+    room = readyAll(room, 11_100);
+    // readyAll includes the latecomer, whose ready event is rejected — and the
+    // countdown opens anyway, because they are not counted.
+    expect(seatOf(room, "late").ready).toBe(false);
+    expect(room.phase.name).toBe("countdown");
+  });
+
+  test("it cannot make a room startable", () => {
+    // One seated player and a latecomer is still one player, so the lobby
+    // floor of MIN_PLAYERS is not met.
+    let room = reduce(scored(3), { t: "showStandings", playerId: "host", now: 11_000 });
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 11_050 });
+    room = reduce(room, { t: "disconnect", playerId: "p1", now: 11_100 });
+    room = reduce(room, { t: "ready", playerId: "p0", ready: true, now: 11_200 });
+    expect(room.phase.name).toBe("lobby");
+  });
+
+  test("the ready event is rejected", () => {
+    const room = walkIn(scored(3));
+    expect(reduce(room, { t: "ready", playerId: "late", ready: true, now: 11_000 })).toBe(room);
+  });
+
+  test("castVote is rejected", () => {
+    let room = reduce(readyAll(seed(2), 2000), { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
+    room = walkIn(room, "late", 3000);
+    const next = reduce(room, {
+      t: "castVote", playerId: "late", category: CATEGORIES[0], now: 3100,
+    });
+    expect(next).toBe(room);
+  });
+
+  test("submitEntry is rejected", () => {
+    const room = walkIn(playing());
+    const result = submitEntry(room, "late", "Adele", 10_600);
+    expect(result.accepted).toBe(false);
+    expect(result.reason).toBe("not-playing");
+    expect(result.room).toBe(room);
+  });
+
+  test("they are not a scorer, so the round is priced without them", () => {
+    const room = walkIn(scored(3));
+    const results = (room.phase as { results: Results }).results;
+    expect(results.scorers.map((s) => s.id)).toEqual(["p0", "p1"]);
+  });
+
+  test("they can still give up the seat, mid-match", () => {
+    // The rule that keeps leaveRoom in the lobby is about the damage of
+    // leaving a match in progress, and a latecomer is not in one.
+    let room = walkIn(playing());
+    room = reduce(room, { t: "leaveRoom", playerId: "late", now: 10_600 });
+    expect(room.players.map((p) => p.id)).toEqual(["p0", "p1"]);
+    // A seated player still cannot.
+    expect(reduce(room, { t: "leaveRoom", playerId: "p0", now: 10_700 })).toBe(room);
+  });
+});
+
+describe("admission at the whistle", () => {
+  /** A room one tick away from round two, with a latecomer in the waiting room. */
+  function atTheWhistle(): { room: Room; endsAt: number } {
+    let room = reduce(scored(3), { t: "showStandings", playerId: "host", now: 11_000 });
+    room = walkIn(room, "late", 11_050);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 11_100 });
+    expect(room.phase.name).toBe("countdown");
+    return { room, endsAt: (room.phase as { endsAt: number }).endsAt };
+  }
+
+  test("the whistle deals them in", () => {
+    const { room, endsAt } = atTheWhistle();
+    const next = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(next.phase.name).toBe("playing");
+    expect(seatOf(next, "late").waiting).toBe(false);
+  });
+
+  test("and only then — the countdown itself does not", () => {
+    const { room } = atTheWhistle();
+    expect(seatOf(room, "late").waiting).toBe(true);
+  });
+
+  test("a cancelled countdown costs nothing to undo", () => {
+    const { room } = atTheWhistle();
+    const back = reduce(room, { t: "cancelStart", playerId: "host", now: 11_200 });
+    expect(back.phase.name).toBe("standings");
+    expect(seatOf(back, "late").waiting).toBe(true);
+  });
+
+  test("a disconnected latecomer is not dealt in", () => {
+    // They would arrive as an empty column and a last place for somebody who
+    // is not there, and the next whistle costs them nothing.
+    const { room, endsAt } = atTheWhistle();
+    const gone = reduce(room, { t: "disconnect", playerId: "late", now: endsAt - 1 });
+    const next = reduce(gone, { t: "tick", now: endsAt, roll: 0 });
+    expect(next.phase.name).toBe("playing");
+    expect(seatOf(next, "late").waiting).toBe(true);
+  });
+
+  test("they play from the round they were admitted for", () => {
+    const { room, endsAt } = atTheWhistle();
+    const next = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(submitEntry(next, "late", "Adele", endsAt + 10).accepted).toBe(true);
+  });
+
+  test("the round-one whistle admits too, so a straggler misses only the ballot", () => {
+    // Someone who arrives during the category vote is in round one.
+    let room = reduce(readyAll(seed(2), 2000), { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
+    expect(room.phase.name).toBe("voting");
+    room = walkIn(room, "late", 3000);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 3100 });
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(room.phase.name).toBe("playing");
+    expect(seatOf(room, "late").waiting).toBe(false);
+  });
+});
+
+/** A team room parked on the scoring screen, as `scored` is for free-for-all. */
+function scoredInTeams(roundCount = 3): Room {
+  let room = playingInTeams();
+  room = { ...room, settings: { ...room.settings, roundCount } };
+  room = submitEntry(room, "p0", "Adele", 10_000).room;
+  const playEnd = (room.phase as { endsAt: number }).endsAt;
+  room = reduce(room, { t: "tick", now: playEnd, roll: 0 });
+  const upEnd = (room.phase as { endsAt: number }).endsAt;
+  return reduce(room, { t: "tick", now: upEnd, roll: 0 });
+}
+
+describe("admission with teams on", () => {
+  /** A team match at standings with a latecomer waiting. */
+  function waitingInTeams(): Room {
+    const room = reduce(scoredInTeams(), {
+      t: "showStandings", playerId: "host", now: 20_000,
+    });
+    return walkIn(room, "late", 20_100);
+  }
+
+  test("no team, no admission", () => {
+    let room = reduce(waitingInTeams(), { t: "startGame", playerId: "host", now: 20_200 });
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(room.phase.name).toBe("playing");
+    expect(seatOf(room, "late").waiting).toBe(true);
+  });
+
+  test("picking one gets them in", () => {
+    let room = reduce(waitingInTeams(), {
+      t: "joinTeam", playerId: "late", teamId: "t1", now: 20_150,
+    });
+    room = reduce(room, { t: "startGame", playerId: "host", now: 20_200 });
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(seatOf(room, "late").waiting).toBe(false);
+    expect(seatOf(room, "late").teamId).toBe("t1");
+  });
+
+  test("a pick landing during the count still gets them in", () => {
+    // The card is not the deadline; the whistle is.
+    let room = reduce(waitingInTeams(), { t: "startGame", playerId: "host", now: 20_200 });
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "joinTeam", playerId: "late", teamId: "t1", now: endsAt - 1 });
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(seatOf(room, "late").waiting).toBe(false);
+  });
+
+  test("their pick does not ready them and does not extend the count", () => {
+    // A latecomer able to re-stamp the countdown — repeatedly — is a latecomer
+    // able to stop the match.
+    let room = reduce(waitingInTeams(), { t: "startGame", playerId: "host", now: 20_200 });
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "joinTeam", playerId: "late", teamId: "t1", now: 20_300 });
+    expect((room.phase as { endsAt: number }).endsAt).toBe(endsAt);
+    expect(seatOf(room, "late").ready).toBe(false);
+  });
+
+  test("they may change their mind right up to the whistle", () => {
+    let room = reduce(waitingInTeams(), {
+      t: "joinTeam", playerId: "late", teamId: "t1", now: 20_150,
+    });
+    room = reduce(room, { t: "leaveTeam", playerId: "late", now: 20_160 });
+    expect(seatOf(room, "late").teamId).toBeNull();
+  });
+
+  test("a waiting player cannot rename a team that is playing", () => {
+    const room = reduce(waitingInTeams(), {
+      t: "joinTeam", playerId: "late", teamId: "t1", now: 20_150,
+    });
+    const next = reduce(room, {
+      t: "setTeamName", playerId: "late", teamId: "t1", name: "Ours", now: 20_200,
+    });
+    expect(next).toBe(room);
+  });
+
+  test("Auto sort does not place them", () => {
+    const room = reduce(waitingInTeams(), {
+      t: "balanceTeams", playerId: "host", roll: 0.4, now: 20_200,
+    });
+    expect(seatOf(room, "late").teamId).toBeNull();
+  });
+});
+
+describe("emptying the waiting room", () => {
+  test("backToLobby seats everybody", () => {
+    let room = walkIn(playing());
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 10_600 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.players.every((p) => p.waiting === false)).toBe(true);
+  });
+
+  test("a view jump to the lobby seats everybody", () => {
+    let room = walkIn(playing());
+    room = reduce(room, { t: "debugJump", playerId: "host", to: "lobby", roll: 0, now: 10_600 });
+    expect(seatOf(room, "late").waiting).toBe(false);
+  });
+
+  test("a view jump anywhere else admits them", () => {
+    // A jump is a teleport, not a promise: the panel shows the screen as the
+    // room would really have it.
+    let room = walkIn(playing());
+    room = reduce(room, {
+      t: "debugJump", playerId: "host", to: "playing", roll: 0, now: 10_600,
+    });
+    expect(seatOf(room, "late").waiting).toBe(false);
+    expect(room.phase.name).toBe("playing");
+  });
+
+  test("stepping back to team select does not — the match is still on", () => {
+    // The one back-out that steps rather than going home. Nothing has ended,
+    // so the latecomer is still waiting for the next whistle.
+    let room = walkIn(inTeams(2), "late", 2500);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2600 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2700 });
+    room = reduce(room, { t: "tick", now: 2700 + COUNTDOWN_MS, roll: 0 });
+    expect(room.phase.name).toBe("voting");
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 9000 });
+    expect(room.phase.name).toBe("teams");
+    expect(seatOf(room, "late").waiting).toBe(true);
+  });
+});
+
+describe("the waiting room and the writing phase", () => {
+  test("somebody walking in mid-write does not move the quota", () => {
+    // The quota is a function of how many people are writing. Counting a
+    // latecomer would add or remove slots under everybody's thumb mid-word,
+    // and `hasWrittenAll` would silently un-ready whoever had finished.
+    const before = creatingRoom(4, 3);
+    const quota = quotaFor(4, 3);
+    const after = walkIn(before, "late", 2000);
+    // The room really did grow — this is not a no-op being mistaken for one.
+    expect(after.players).toHaveLength(5);
+    expect(quotaFor(5, 3)).not.toBe(quota);
+    // ...and the writers' quota is unchanged, which is what the slot guard
+    // below is measured against.
+    expect(
+      reduce(after, {
+        t: "commitDraft", playerId: "p0", slot: quota - 1, text: "still mine", now: 2100,
+      }).drafts["p0"]?.[quota - 1],
+    ).toBe("still mine");
+  });
+
+  test("a latecomer cannot write, point, or clear", () => {
+    const room = walkIn(creatingRoom(4, 3), "late", 2000);
+    expect(reduce(room, {
+      t: "commitDraft", playerId: "late", slot: 0, text: "mine", now: 2100,
+    })).toBe(room);
+    expect(reduce(room, { t: "moveCursor", playerId: "late", slot: 0, now: 2100 })).toBe(room);
+    expect(reduce(room, {
+      t: "clearDraft", playerId: "late", slot: 0, now: 2100,
+    })).toBe(room);
+  });
+
+  test("they cannot hold the writing window open either", () => {
+    // `everyoneReady` excludes them, so the last writer committing still closes
+    // the phase — a latecomer who can never write must not be able to stall it.
+    let room = walkIn(creatingRoom(2, 1), "late", 2000);
+    const quota = quotaFor(2, 1);
+    room.players.filter((p) => p.id !== "late").forEach((p, i) => {
+      for (let slot = 0; slot < quota; slot++) {
+        room = reduce(room, {
+          t: "commitDraft", playerId: p.id, slot, text: `${p.id}-${slot}`,
+          now: 2100 + i * quota + slot,
+        });
+      }
+    });
+    expect(room.phase.name).toBe("voting");
+  });
+
+  test("they author no card and are dealt no hand", () => {
+    // Including them would fill their share of the pool with house cards
+    // attributed to somebody who never wrote one — a lie the authorship reveal
+    // would tell on the TV — and a hand nobody can spend costs every card in it
+    // its exposure.
+    let room = walkIn(creatingRoom(3, 1), "late", 2000);
+    const quota = quotaFor(3, 1);
+    room.players.filter((p) => p.id !== "late").forEach((p, i) => {
+      for (let slot = 0; slot < quota; slot++) {
+        room = reduce(room, {
+          t: "commitDraft", playerId: p.id, slot, text: `${p.id}-${slot}`,
+          now: 2100 + i * quota + slot,
+        });
+      }
+    });
+    expect(room.phase.name).toBe("voting");
+    const pool = room.pool ?? [];
+    expect(pool).toHaveLength(3 * quota);
+    expect(pool.every((c) => c.authorId !== "late")).toBe(true);
+    expect(room.deal?.["late"]).toBeUndefined();
+  });
+
+  test("and they cannot vote in the custom ballot", () => {
+    const room = walkIn(votingRoom(3, 1), "late", 9000);
+    const card = (room.pool ?? [])[0];
+    expect(reduce(room, {
+      t: "castVote", playerId: "late", category: card.id, now: 9100,
+    })).toBe(room);
+  });
+
+  test("but the whistle still deals them into round one", () => {
+    // The waiting room's one door is the same in a custom match as in a stock
+    // one: `countdown -> playing`, and nothing about the pool changes that.
+    let room = walkIn(votingRoom(3, 1), "late", 9000);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 9100 });
+    expect(room.phase.name).toBe("countdown");
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0.5 });
+    expect(room.phase.name).toBe("playing");
+    expect(seatOf(room, "late").waiting).toBe(false);
+    expect(submitEntry(room, "late", "Adele", endsAt + 10).accepted).toBe(true);
+  });
+});

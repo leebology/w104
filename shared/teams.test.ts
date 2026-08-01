@@ -270,3 +270,73 @@ describe("rosterOf", () => {
     expect(rosterOf(room).map((s) => s.id)).toEqual(["t0"]);
   });
 });
+
+// ---------------------------------------------------------- the waiting room
+
+/** `roster`, with the given indices sitting in the waiting room. */
+function withWaiting(players: Player[], ...waitingIndices: number[]): Player[] {
+  const set = new Set(waitingIndices);
+  return players.map((p, i) => (set.has(i) ? { ...p, waiting: true } : p));
+}
+
+describe("rosterOf and the waiting room", () => {
+  test("with teams off, a waiting player is not a scorer", () => {
+    const room = withTeams(0, [null, null, null]);
+    const scorers = rosterOf({ ...room, players: withWaiting(room.players, 2) });
+    expect(scorers.map((s) => s.id)).toEqual(["p0", "p1"]);
+  });
+
+  test("with teams on, they are not in their team's member list", () => {
+    // They have picked — that is what makes them admissible — but the list
+    // being scored this round is not theirs to be on yet.
+    const room = withTeams(2, ["t0", "t1", "t0"]);
+    const scorers = rosterOf({ ...room, players: withWaiting(room.players, 2) });
+    expect(scorers.find((s) => s.id === "t0")!.members).toEqual(["p0"]);
+  });
+
+  test("a team whose only member is waiting does not score", () => {
+    // The empty-teams rule and this one meet in the same filter.
+    const room = withTeams(2, ["t0", "t1"]);
+    const scorers = rosterOf({ ...room, players: withWaiting(room.players, 1) });
+    expect(scorers.map((s) => s.id)).toEqual(["t0"]);
+  });
+
+  test("membersOf still lists them — it is display truth", () => {
+    const room = withTeams(2, ["t0", "t1", "t0"]);
+    const players = withWaiting(room.players, 2);
+    expect(membersOf({ ...room, players }, "t0").map((p) => p.id)).toEqual(["p0", "p2"]);
+  });
+});
+
+describe("the dealers leave the waiting room alone", () => {
+  test("assignStragglers does not place a waiting player", () => {
+    const out = assignStragglers(withWaiting(roster("t0", null, null), 2), makeTeams(2));
+    expect(out[1].teamId).toBe("t1");
+    expect(out[2].teamId).toBeNull();
+  });
+
+  test("a room whose only straggler is waiting is a no-op", () => {
+    const players = withWaiting(roster("t0", "t1", null), 2);
+    expect(assignStragglers(players, makeTeams(2))).toBe(players);
+  });
+
+  test("but a waiting player who has picked still counts toward team size", () => {
+    // They will be on that team next round, and the point of the split is that
+    // it comes out even.
+    const out = assignStragglers(withWaiting(roster("t0", "t1", "t1", null), 2), makeTeams(2));
+    expect(out[3].teamId).toBe("t0");
+  });
+
+  test("balanceTeams does not deal a waiting player", () => {
+    const players = withWaiting(roster("t0", "t0", "t0", null), 3);
+    const out = balanceTeams(players, makeTeams(2), 0.7);
+    expect(out[3].teamId).toBeNull();
+    // And the three seated players still come out split across both teams.
+    expect(new Set(out.slice(0, 3).map((p) => p.teamId)).size).toBe(2);
+  });
+
+  test("a room of nothing but waiting players is a no-op", () => {
+    const players = withWaiting(roster(null, null), 0, 1);
+    expect(balanceTeams(players, makeTeams(2), 0.3)).toBe(players);
+  });
+});

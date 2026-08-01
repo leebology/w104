@@ -1,4 +1,5 @@
-import type { PlayerId } from "./state";
+import type { MatchSettings, Player, PlayerId } from "./state";
+import { seatedPlayers } from "./waiting";
 import { seededRng } from "./rng";
 import type { Rng } from "./rng";
 import { tallyVotes } from "./voting";
@@ -91,6 +92,36 @@ export function quotaFor(playerCount: number, roundCount: number): number {
   const band = players <= 4 ? 3 : players <= 7 ? 2 : 1;
   const covering = Math.ceil((POOL_EXCESS * rounds) / players);
   return Math.min(MAX_QUOTA, Math.max(band, covering));
+}
+
+/**
+ * Who writes this match's pool: everyone seated, never the waiting room.
+ *
+ * A latecomer is not writing — `writeSlot` refuses them — and they are not in
+ * the deal, so they are not one of the `P` the arithmetic above is about. It is
+ * a function rather than a filter repeated at five call sites because **the
+ * server and every screen must agree on it exactly**: the quota decides how
+ * many slots a phone draws and how many the server will accept, and a phone
+ * counting one more person than the server does draws a slot that cannot be
+ * written. See `quotaOfRoom`.
+ */
+export function writersOf(players: readonly Player[]): Player[] {
+  return seatedPlayers([...players]);
+}
+
+/**
+ * This room's quota. **The only way to ask** — the server's `quotaOf` and the
+ * three screens that size themselves to it all come through here, so there is
+ * one answer rather than four that agree until somebody walks in mid-phase.
+ *
+ * A subset type, so it works on a server-side `Room` and a client-side
+ * `RoomState` alike.
+ */
+export function quotaOfRoom(view: {
+  players: Player[];
+  settings: Pick<MatchSettings, "roundCount">;
+}): number {
+  return quotaFor(writersOf(view.players).length, view.settings.roundCount);
 }
 
 /**

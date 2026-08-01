@@ -9,7 +9,7 @@ import type { Player, Room } from "./state";
  * A room of seats. `team: null` with `count: 0` is teams-off, where every
  * player is their own scorer.
  */
-type Seat = { team: string | null; connected?: boolean; bot?: boolean };
+type Seat = { team: string | null; connected?: boolean; bot?: boolean; waiting?: boolean };
 
 function room(count: number, seats: Seat[]): Room {
   const base = createRoom("PLUM", 1000);
@@ -25,9 +25,24 @@ function room(count: number, seats: Seat[]): Room {
       connected: seat.connected ?? true,
       teamId: seat.team,
       ...(seat.bot === true ? { isBot: true as const } : {}),
+      ...(seat.waiting === true ? { waiting: true } : {}),
     })),
   };
 }
+
+describe("driverOf and the waiting room", () => {
+  test("a waiting teammate does not lead the roster", () => {
+    // They are not in `scorer.members` at all — `rosterOf` filters them — so
+    // the column is driven by the first member who is actually in the round.
+    const r = room(2, [{ team: "t0", waiting: true }, { team: "t0" }]);
+    expect(driverOf(r, "t0")).toBe("p1");
+  });
+
+  test("a scorer made only of waiting players does not exist to drive", () => {
+    const r = room(2, [{ team: "t0", waiting: true }, { team: "t1" }]);
+    expect(driverOf(r, "t0")).toBeNull();
+  });
+});
 
 describe("driverOf, teams off", () => {
   test("a player drives their own column", () => {

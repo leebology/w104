@@ -7,6 +7,7 @@ import { GetReady } from "../../components/GetReady";
 import { roomStore } from "../../net/room";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import { rosterOf } from "../../../shared/teams";
+import { seatedPlayers } from "../../../shared/waiting";
 
 type Props = {
   room: RoomState;
@@ -56,7 +57,9 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
   const ready = room.players.find((p) => p.id === playerId)?.ready ?? false;
   const done = matchComplete(room);
 
-  const here = room.players.filter((p) => p.connected);
+  // The denominator has to be the count that actually opens the countdown, and
+  // `everyoneReady` does not count the waiting room.
+  const here = seatedPlayers(room.players).filter((p) => p.connected);
   const readyCount = here.filter((p) => p.ready).length;
   const tiedWith = (s: Standing) => standings.filter((o) => o.place === s.place).length > 1;
   /**

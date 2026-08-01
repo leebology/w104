@@ -13,6 +13,8 @@ import { PlayerStandings } from "./PlayerStandings";
 import { PlayerTeams } from "./PlayerTeams";
 import { PlayerVoting } from "./PlayerVoting";
 import { PlayerCreating } from "./PlayerCreating";
+import { PlayerWaiting } from "./PlayerWaiting";
+import { inWaitingRoom } from "../../../shared/waiting";
 
 export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
@@ -104,6 +106,21 @@ export function PlayerView({ state, onLeave }: { state: ClientState; onLeave: ()
 }
 
 function renderPhase(room: RoomState, state: ClientState, onLeave: () => void): ReactElement {
+  // Ahead of the phase switch, because a player in the waiting room is not on
+  // the room's screen at all — they joined past the lobby and are sitting out
+  // whatever is running until the next whistle deals them in. The one screen
+  // they get carries its own countdown, so the switch below never sees them.
+  const me = room.players.find((p) => p.id === getPlayerId());
+  if (me && inWaitingRoom(me)) {
+    // Only a countdown that will actually admit them gets a card. `to:
+    // "voting"` admits nobody — see `admitWaiting` — so it is not one.
+    const admitting =
+      room.phase.name === "countdown" && room.phase.to === "playing"
+        ? { endsAt: room.phase.endsAt, offset: state.clockOffset }
+        : undefined;
+    return <PlayerWaiting room={room} playerId={me.id} countdown={admitting} />;
+  }
+
   switch (room.phase.name) {
     case "lobby":
       return <PlayerLobby room={room} playerId={getPlayerId()} onLeave={onLeave} />;

@@ -6,6 +6,7 @@ import { customEnabled } from "../../../shared/gamemodes";
 import type { Hand } from "../../../shared/customCategories";
 import { voteBudget, voteShares, votesSpent } from "../../../shared/voting";
 import { isWaiting } from "../../../shared/bots";
+import { seatedPlayers } from "../../../shared/waiting";
 import { currentRound } from "../../../shared/state";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import { GetReady } from "../../components/GetReady";
@@ -48,7 +49,11 @@ export function PlayerVoting({ room, playerId, hands, offset, countdown, drafts 
   // a player who never spent their votes before the 60s expired locks too,
   // rather than being handed a live grid during the countdown.
   const locked = left === 0 || closed;
-  const waitingOn = room.players.filter((p) => p.connected && !isWaiting(p)).length;
+  // Seated players only: a latecomer has no vote to spend, and the count that
+  // actually closes voting does not include them.
+  const waitingOn = seatedPlayers(room.players).filter(
+    (p) => p.connected && !isWaiting(p),
+  ).length;
   // Only once voting has closed. While it is open the tally is still moving,
   // and a percentage that ticks under the player's thumb reads as a score
   // rather than as the odds it is. Any badged category holds at least this
