@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import type { Player, RoomState } from "../../shared/state";
 import type { Standing } from "../../shared/standings";
 import { ordinal } from "../ordinal";
+import { enterVars } from "../scoringleave";
 import { ReadyMark } from "./ReadyMark";
 import { TeamBadge } from "./TeamBadge";
 
@@ -66,7 +67,15 @@ export function StandingsList({ room, standings, entering }: Props) {
           (split ? "standings-rows standings-rows--split" : "standings-rows") +
           (entering ? " standings-rows--entering" : "")
         }
-        style={{ "--cols": split ? 2 : 1, "--rows": rowTracks } as CSSProperties}
+        style={
+          {
+            "--cols": split ? 2 : 1,
+            "--rows": rowTracks,
+            // Only while it is arriving: the timings are this feature's and
+            // nothing else on the board reads them.
+            ...(entering ? enterVars : null),
+          } as CSSProperties
+        }
       >
         {standings.map((s, i) => {
           const members = s.members

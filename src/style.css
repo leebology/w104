@@ -1614,8 +1614,8 @@ ul, ol { list-style: none; }
    the same trick `.result-col--swapped-a > .result-card` itself plays on
    `.result-card--hit-*` twenty lines further down. */
 .host-scoring--leaving .result-col > .result-card {
-  animation: resultsWipeLeft 440ms cubic-bezier(0.45, 0, 0.85, 0.35)
-    calc(var(--leave-rank, 0) * 32ms) both;
+  animation: resultsWipeLeft 620ms cubic-bezier(0.45, 0, 0.85, 0.35)
+    calc(var(--leave-rank, 0) * 46ms) both;
 }
 
 /* Weight: the card loads up to the right before it goes, and leaves turning —
@@ -3689,13 +3689,27 @@ ul, ol { list-style: none; }
    frame and then jump down to start. See src/scoringleave.ts for the timings and
    why this is local to the host that watched the change happen. */
 .standings-rows--entering .standings-row {
-  animation: standingsRise 560ms cubic-bezier(0.34, 1.42, 0.64, 1)
-    calc(380ms + var(--row-i, 0) * 45ms) both;
+  animation: standingsRise var(--enter-dur, 640ms) cubic-bezier(0.34, 1.42, 0.64, 1)
+    calc(var(--enter-start, 760ms) + var(--row-i, 0) * var(--enter-stagger, 60ms)) both;
 }
 
+/* Weight on the way up as well as the way out: the curve overshoots and settles
+   rather than easing to a stop, which is the same arrival the results cards
+   deal in on. The fallbacks in the `var()`s are the shipped numbers — the live
+   values come from `src/scoringleave.ts` so the duration is not written down in
+   two places. */
 @keyframes standingsRise {
   from { transform: translateY(105vh); }
   to { transform: none; }
+}
+
+/* The final board does the same thing a column at a time, left to right, so
+   the winner's step is the first to arrive. The whole column travels — ribbon,
+   name and plinth together — because it is one object standing on a step, not
+   a step with things balanced on it. */
+.podium--entering .podium-col {
+  animation: standingsRise var(--enter-dur, 640ms) cubic-bezier(0.34, 1.42, 0.64, 1)
+    calc(var(--enter-start, 760ms) + var(--col-i, 0) * var(--enter-stagger, 60ms)) both;
 }
 
 /* No `overflow: hidden`, even though the place block runs to the row's edge:

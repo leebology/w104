@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import type { Player, RoomState } from "../../shared/state";
 import type { Standing } from "../../shared/standings";
 import { ordinal } from "../ordinal";
+import { enterVars } from "../scoringleave";
 import { ReadyMark } from "./ReadyMark";
 import { TeamBadge } from "./TeamBadge";
 
@@ -54,6 +55,12 @@ type Props = {
    * not about what happens next.
    */
   final?: boolean;
+  /**
+   * Rise in from the bottom edge, column by column, as the round's results wipe
+   * off above — see `src/scoringleave.ts`. Only when the board arrived that
+   * way; every other route onto this screen gets the settled staircase.
+   */
+  entering?: boolean;
 };
 
 /**
@@ -67,7 +74,7 @@ type Props = {
  * three, so the same fact is carried three ways for a screen that is read from
  * a sofa. Ties share all three.
  */
-export function Podium({ room, standings, final }: Props) {
+export function Podium({ room, standings, final, entering }: Props) {
   const shared = new Set(
     standings
       .map((s) => s.place)
@@ -75,8 +82,11 @@ export function Podium({ room, standings, final }: Props) {
   );
 
   return (
-    <ol className="podium">
-      {standings.map((s) => {
+    <ol
+      className={entering ? "podium podium--entering" : "podium"}
+      style={entering ? (enterVars as CSSProperties) : undefined}
+    >
+      {standings.map((s, i) => {
         const members = s.members
           .map((id) => room.players.find((p) => p.id === id))
           .filter((p): p is Player => p !== undefined);
@@ -94,7 +104,14 @@ export function Podium({ room, standings, final }: Props) {
             data-rank={rank}
             data-state={state}
             data-team={team ? "" : undefined}
-            style={{ "--plinth": `${stepOf(s.place)}%` } as CSSProperties}
+            style={
+              {
+                "--plinth": `${stepOf(s.place)}%`,
+                // Rank order, left to right — the winner's column arrives
+                // first, which is the one the room is looking for.
+                "--col-i": i,
+              } as CSSProperties
+            }
           >
             {s.place <= 3 && (
               <span className="podium-ribbon" aria-hidden="true">

@@ -88,7 +88,7 @@ export function HostStandings({ room, countdown, fromScoring }: Props) {
             array in the same order, so nothing about placement or ties depends
             on which is showing. */}
         {done ? (
-          <Podium room={room} standings={standings} final />
+          <Podium room={room} standings={standings} final entering={entering} />
         ) : (
           <StandingsList room={room} standings={standings} entering={entering} />
         )}
