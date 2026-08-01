@@ -3,6 +3,8 @@ import { useSyncExternalStore } from "react";
 import type { ClientMessage, ErrorCode, ServerMessage } from "../../shared/protocol";
 import type { RejectReason } from "../../shared/reduce";
 import type { Entry, RoomState } from "../../shared/state";
+import type { Hand } from "../../shared/customCategories";
+import type { ScorerId } from "../../shared/teams";
 import { randomUUID } from "./identity";
 
 // Set by Vercel in production; falls back to the local `wrangler dev` server.
@@ -17,6 +19,10 @@ export type ClientState = {
   connected: boolean;
   room: RoomState | null;
   entries: LocalEntry[];
+  /** This player's own committed categories. Never in `room`. */
+  drafts: string[];
+  /** This player's own hands. Never in `room`. */
+  hands: Hand[];
   /** Add to Date.now() to get the server's clock. */
   clockOffset: number;
   error: { code: ErrorCode; message: string } | null;
@@ -47,12 +53,20 @@ const REJECTIONS: Record<RejectReason, string> = {
   // In a team match the list is shared, so it may well have been a teammate.
   duplicate: "That's already on the list.",
   limit: "That's enough words!",
+  // Dead code, permanently — not just not-yet-wired. "too-short" is
+  // flushEntry's alone, and a flush gets no `entryAck` to carry it: this map
+  // is read only in the entryAck rejected branch, so the key can never be
+  // looked up. Kept solely so this stays exhaustive over RejectReason for
+  // tsc; do not wire it up or delete it as unused.
+  "too-short": "That's too short.",
 };
 
 const EMPTY: ClientState = {
   connected: false,
   room: null,
   entries: [],
+  drafts: [],
+  hands: [],
   clockOffset: 0,
   error: null,
   rejected: null,
@@ -61,14 +75,32 @@ const EMPTY: ClientState = {
 
 export class RoomStore {
   private listeners = new Set<() => void>();
+  /**
+   * Mirrored column scrolls, as a plain listener set rather than part of the
+   * `useSyncExternalStore` snapshot.
+   *
+   * Deliberately outside React state. `HostScoring` renders up to ten columns
+   * of up to 200 rows; routing a 4Hz value through `set()` would re-render that
+   * whole tree four times a second per scrolling player. The host writes
+   * `scrollTop` straight onto the DOM nodes it already holds instead — the same
+   * imperative-where-React-would-be-wrong call the measured swap makes.
+   */
+  private scrollListeners = new Set<(scorer: ScorerId, at: number) => void>();
   private socket: PartySocket | null = null;
   private seq = 0;
   private state: ClientState = EMPTY;
   private playerId = "";
+  /** Tears down the wake listeners for the current socket. See `connect`. */
+  private unwatch: (() => void) | null = null;
 
   subscribe = (fn: () => void): (() => void) => {
     this.listeners.add(fn);
     return () => { this.listeners.delete(fn); };
+  };
+
+  onColumnScroll = (fn: (scorer: ScorerId, at: number) => void): (() => void) => {
+    this.scrollListeners.add(fn);
+    return () => { this.scrollListeners.delete(fn); };
   };
 
   getSnapshot = (): ClientState => this.state;
@@ -121,9 +153,44 @@ export class RoomStore {
     socket.addEventListener("message", (event) => {
       if (isCurrent()) this.receive(JSON.parse(event.data as string) as ServerMessage);
     });
+
+    /**
+     * Come back the moment the phone does.
+     *
+     * partysocket retries on its own, but a backgrounded tab is exactly where
+     * that goes wrong: the OS suspends its timers, so the retry that was due
+     * during the two minutes the screen was off fires late — and the backoff it
+     * fires on has meanwhile grown. Every one of these events means "this
+     * device is being used again", and `reconnect()` both resets the retry
+     * counter and goes now rather than at the end of a delay computed while
+     * nobody was looking.
+     *
+     * A no-op when the socket is already open or dialling, which is the common
+     * case: a short screen-off does not close a socket at all.
+     */
+    const wake = () => {
+      if (!isCurrent()) return;
+      if (document.visibilityState !== "visible") return;
+      if (socket.readyState === WebSocket.OPEN) return;
+      if (socket.readyState === WebSocket.CONNECTING) return;
+      socket.reconnect();
+    };
+    document.addEventListener("visibilitychange", wake);
+    // `pageshow` rather than `focus`: it also fires when Safari restores the
+    // page from the back/forward cache, where the socket is dead but no
+    // visibility change is ever dispatched.
+    window.addEventListener("pageshow", wake);
+    window.addEventListener("online", wake);
+    this.unwatch = () => {
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("pageshow", wake);
+      window.removeEventListener("online", wake);
+    };
   }
 
   disconnect(): void {
+    this.unwatch?.();
+    this.unwatch = null;
     this.socket?.close();
     this.socket = null;
   }
@@ -148,6 +215,21 @@ export class RoomStore {
       rejected: null,
     });
     this.send({ type: "submitEntry", text: trimmed, seq });
+  }
+
+  /**
+   * The buffer still in the box when the round ended. Fire-and-forget: no
+   * `seq` and no optimistic copy, unlike `submit`. Nothing renders `entries`
+   * once `playing` is over — `PlayerScoring` reads `room.phase.results` — so
+   * an optimistic copy would only sit unacked in client state until the
+   * standings transition swept it up.
+   *
+   * Length, phase and every other entry rule are the server's. This end knows
+   * only that the box was not empty.
+   */
+  flush(text: string): void {
+    if (text.trim() === "") return;
+    this.send({ type: "flushEntry", text });
   }
 
   now(): number {
@@ -198,6 +280,11 @@ export class RoomStore {
           ],
         });
         break;
+      case "columnScroll":
+        // Straight to the listeners — never through `set()`, which would
+        // re-render every subscriber four times a second.
+        for (const listener of this.scrollListeners) listener(msg.scorer, msg.at);
+        break;
       case "entryAck":
         if (msg.accepted) {
           // Drop the optimistic copy rather than stripping its `seq`: the
@@ -212,6 +299,12 @@ export class RoomStore {
             rejectedSeq: this.state.rejectedSeq + 1,
           });
         }
+        break;
+      case "yourDrafts":
+        this.set({ drafts: msg.drafts });
+        break;
+      case "yourHands":
+        this.set({ hands: msg.hands });
         break;
       case "error":
         this.set({ error: { code: msg.code, message: msg.message } });

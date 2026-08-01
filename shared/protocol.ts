@@ -1,7 +1,9 @@
 import type { Entry, PlayerId, RoomState } from "./state";
 import type { RejectReason } from "./reduce";
-import type { NumericSettingKey } from "./gamemodes";
-import type { TeamId } from "./teams";
+import type { ChoiceSettingKey, NumericSettingKey } from "./gamemodes";
+import type { ScorerId, TeamId } from "./teams";
+import type { ViewId } from "./views";
+import type { Hand } from "./customCategories";
 
 export type ClientMessage =
   | { type: "setProfile"; name: string; emoji: string }
@@ -9,23 +11,113 @@ export type ClientMessage =
   | { type: "startGame" }
   | { type: "cancelStart" }
   | { type: "kick"; targetId: PlayerId }
+  /**
+   * Give up your seat. Distinct from simply closing the socket, which leaves
+   * the player in the room greyed out so a locked phone can reclaim its seat —
+   * this is the deliberate version, and it takes the seat with it.
+   */
+  | { type: "leaveRoom" }
   | { type: "submitEntry"; text: string; seq: number }
-  | { type: "setSettings"; values: Partial<Record<NumericSettingKey, number>> }
+  /**
+   * The buffer left in the box when the round ended. No `seq`, and answered by
+   * no `entryAck`: the optimistic path exists because a 30-second round cannot
+   * wait on a round trip, and a flush has nothing left to wait for.
+   */
+  | { type: "flushEntry"; text: string }
+  | {
+      type: "setSettings";
+      values: Partial<Record<NumericSettingKey, number>>;
+      choices?: Partial<Record<ChoiceSettingKey, string>>;
+    }
   | { type: "setMode"; mode: string }
   | { type: "setConfiguring"; open: boolean }
   | { type: "showStandings" }
+  /** Host-only, `scoring` only: land every outstanding strike of the reveal. */
+  | { type: "fastForward" }
+  /**
+   * Validation, `scoring` only: strike a word out by hand, or take it back.
+   *
+   * `index` is into that scorer's `results` entries. Not host-only — a player
+   * marks their own list, and `scorerId` is ignored from them. The **host** may
+   * name any scorer with `scorerId` and mark that list instead, which is how a
+   * wrong answer gets struck off the TV.
+   */
+  | { type: "selfStrike"; index: number; struck: boolean; scorerId?: ScorerId }
+  /**
+   * The scroll mirror, `scoring` only: put my scorer's column on the host TV at
+   * this fraction of its scrollable range. Accepted only from that column's
+   * driver — see `driverOf` in `shared/mirror.ts`.
+   */
+  | { type: "scrollTo"; at: number }
   | { type: "backToLobby" }
   | { type: "castVote"; category: string }
   | { type: "resetVotes" }
   | { type: "joinTeam"; teamId: TeamId }
   | { type: "leaveTeam" }
   | { type: "setTeamName"; teamId: TeamId; name: string }
+  /**
+   * Opening and closing the team-name editor. Holds the countdown out of team
+   * select for as long as it is open — see `Player.naming`.
+   */
+  | { type: "setTeamNaming"; naming: boolean }
+  | { type: "balanceTeams" }
+  /**
+   * The phone publishing which slot it is on. Cheap and frequent; the only
+   * thing that drives the writing state on the TV, and it carries no text.
+   */
+  | { type: "moveCursor"; slot: number }
+  /**
+   * Committing a category. **Committing is readying** — never on keystroke,
+   * or the phase could close under a player mid-word.
+   */
+  | { type: "commitDraft"; slot: number; text: string }
+  /** Taking one back. Un-readies, which tears down an in-flight close. */
+  | { type: "clearDraft"; slot: number }
+  /**
+   * Debug-panel controls. Host-only and enforced as such in `shared/reduce.ts`
+   * and `party/server.ts` — the panel hides them from non-hosts, but a hidden
+   * button is not an authorization boundary and these mutate a live round.
+   */
+  | { type: "debugPause"; paused: boolean }
+  | { type: "debugSkip" }
+  /** Fills every scorer's list with random words. `playing` only. */
+  | { type: "debugFill" }
+  /**
+   * Puts the whole room — TV and phones — on the named screen. Legal from every
+   * phase, and jumping to the screen already showing restarts it, which is the
+   * panel's refresh button. `to` is checked against the catalog on arrival.
+   */
+  | { type: "debugJump"; to: ViewId }
+  /**
+   * Sets the placeholder-bot population to exactly `count`, clamped to
+   * 0..MAX_BOTS on arrival. Legal from every phase.
+   */
+  | { type: "debugBots"; count: number }
+  /**
+   * Sets the scoring reveal's cadence, in milliseconds per line, clamped on
+   * arrival. Host-only, and it moves the whole room: every phone builds the
+   * same reveal schedule the TV does.
+   */
+  | { type: "debugRevealSpeed"; lineMs: number }
   | { type: "endGame" };
 
 export type ServerMessage =
   | { type: "state"; state: RoomState }
   | { type: "entryAck"; seq: number; accepted: boolean; reason?: RejectReason }
   | { type: "yourEntries"; entries: Entry[] }
+  /** This player's own committed slots. Never broadcast — see toRoomState. */
+  | { type: "yourDrafts"; drafts: string[] }
+  /** This player's own hands. Never broadcast: a leaked hand plus a public
+      tally lets the room deduce who voted for what. */
+  | { type: "yourHands"; hands: Hand[] }
+  /**
+   * One column's mirrored scroll position. Sent to the host socket alone, and
+   * never persisted or broadcast — a scroll is not game state.
+   *
+   * Addressed by *scorer* rather than by sender: with teams on the sender is
+   * one member of a shared column, and the TV addresses columns by scorer.
+   */
+  | { type: "columnScroll"; scorer: ScorerId; at: number }
   | { type: "error"; code: ErrorCode; message: string };
 
 export type ErrorCode =

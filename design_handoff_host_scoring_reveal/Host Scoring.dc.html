@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Bungee&display=swap" rel="stylesheet">
+<style>
+body { margin:0; background:#E9E7E2; }
+a { color:#1A0710; }
+a:hover { color:#7A6A5C; }
+</style>
+</helmet>
+<div style="min-height:100vh;box-sizing:border-box;background:#E9E7E2;font-family:'Archivo',sans-serif;display:flex;flex-direction:column;gap:10px;padding:26px;align-items:center;justify-content:center">
+<div style="display:flex;align-items:baseline;gap:12px;width:100%;max-width:1600px">
+  <span style="font-family:'Bungee',cursive;font-size:13px;letter-spacing:.08em;color:#1A0710">HOST SCORING</span>
+  <span style="font-size:12px;letter-spacing:.1em;color:#8A877F">TV · 16:9 · 1200 × 675 BASIS, SCALED TO FIT</span>
+</div>
+<div ref="{{ frameRef }}" style="width:100%;max-width:1600px;aspect-ratio:16/9;border-radius:14px;overflow:hidden;position:relative;background:#E62E5C;box-shadow:0 18px 50px rgba(0,0,0,.16)">
+<div ref="{{ screenRef }}" data-screen-label="MVP Host Scoring" style="box-sizing:border-box;width:1200px;height:675px;overflow:hidden;background:#E62E5C;color:#FFF7E8;font-family:'Archivo',sans-serif;display:flex;flex-direction:column;padding:24px 26px 18px;position:absolute;top:0;left:0;transform-origin:top left">
+  <div style="position:relative;display:flex;justify-content:space-between;align-items:center;gap:16px;padding:22px 34px;flex:0 0 auto">
+    <div style="display:flex;align-items:center;gap:14px;background:#FFF7E8;color:#1A0710;padding:7px 18px;border-radius:99px;border:3px solid #1A0710">
+      <span style="font-size:14px;color:#7A6A5C;letter-spacing:.16em;white-space:nowrap">JOIN AT OKAYNAMEONE.APP</span>
+      <span style="font-family:'Bungee',cursive;font-size:28px;line-height:1.06;color:#1A0710;letter-spacing:.1em">PLUM</span>
+    </div>
+    <span style="position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;font-family:'Bungee',cursive;font-size:18px;letter-spacing:.14em;color:#FFF7E8;pointer-events:none">ROUND 1 / 3</span>
+    <span style="font-family:'Bungee',cursive;font-size:32px;line-height:1.06;color:#FFF7E8">Results · woman</span>
+  </div>
+  <div ref="{{ gridRef }}" style="flex:1;min-height:0;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));grid-auto-rows:minmax(0,1fr);gap:12px;width:100%;max-width:3840px;margin:0 auto">
+    <sc-for list="{{ players }}" as="p" hint-placeholder-count="5">
+      <div style="box-sizing:border-box;background:#FFF7E8;color:#1A0710;border:3px solid #1A0710;border-radius:14px;padding:14px;box-shadow:6px 6px 0 #1A0710;display:flex;flex-direction:column;min-width:0;min-height:0">
+        <div style="flex:0 0 auto">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="font-size:30px;line-height:1">{{ p.emoji }}</span>
+            <div style="flex:1;display:flex;flex-direction:column;gap:2px;min-width:0">
+              <span style="font-family:'Bungee',cursive;font-size:17px;line-height:1.06;white-space:nowrap">{{ p.name }}</span>
+              <span style="font-size:11px;color:#7A6A5C;letter-spacing:.08em;white-space:nowrap">{{ p.rank }}</span>
+            </div>
+            <div style="display:flex;gap:10px;text-align:center;flex:0 0 auto">
+              <div style="display:flex;flex-direction:column;gap:2px">
+                <span style="font-family:'Bungee',cursive;font-size:24px;line-height:1.06;color:#E62E5C;font-variant-numeric:tabular-nums">{{ p.unique }}</span>
+                <span style="font-size:9px;color:#7A6A5C;letter-spacing:.1em">UNIQUE</span>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:2px">
+                <span style="font-family:'Bungee',cursive;font-size:24px;line-height:1.06;color:#7A6A5C;font-variant-numeric:tabular-nums">{{ p.total }}</span>
+                <span style="font-size:9px;color:#7A6A5C;letter-spacing:.1em">TOTAL</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div style="height:1px;background:#E7D3BE;margin:10px 0;flex:0 0 auto"></div>
+        <div style="display:flex;flex-direction:column;min-width:0;flex:1;min-height:0">
+          <div style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:#C9B8A2 transparent;padding-right:8px;display:flex;flex-direction:column;gap:5px">
+            <sc-for list="{{ p.entries }}" as="e" hint-placeholder-count="8">
+              <sc-if value="{{ e.dup }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;line-height:1.35">
+                  <span style="font-size:15px;font-weight:400;color:#9C8B79;text-decoration:line-through;overflow-wrap:break-word;flex:1 1 auto;min-width:0">{{ e.w }}</span>
+                  <span style="font-size:11px;line-height:1;color:#9C8B79;flex:0 0 auto;white-space:nowrap;letter-spacing:-.16em;padding-right:.16em">{{ e.by }}</span>
+                </div>
+              </sc-if>
+              <sc-if value="{{ e.uniq }}" hint-placeholder-val="{{ false }}">
+                <div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline;line-height:1.35">
+                  <span style="font-size:15px;font-weight:600;color:#1A0710;overflow-wrap:break-word">{{ e.w }}</span>
+                </div>
+              </sc-if>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+  <div style="flex:0 0 auto;display:flex;justify-content:center;padding-top:16px">
+    <div style="font-family:'Bungee',cursive;font-size:16px;line-height:1.06;padding:16px 30px;border:4px solid #1A0710;border-radius:99px;background:#FFD400;color:#2A1400;box-shadow:5px 5px 0 #1A0710;text-align:center;text-transform:uppercase">Standings</div>
+  </div>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1400,&quot;height&quot;:840},&quot;playerCount&quot;:{&quot;editor&quot;:&quot;range&quot;,&quot;default&quot;:5,&quot;min&quot;:2,&quot;max&quot;:10,&quot;step&quot;:1,&quot;tsType&quot;:&quot;number&quot;,&quot;section&quot;:&quot;Room&quot;},&quot;showAttribution&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Behavior&quot;}}">
+// Plain word lists, exactly as they came off the handoff's five columns.
+// Duplication, unique counts and the attribution trail are all derived below —
+// the same way shared/scoring.ts derives them — so trimming or extending the
+// room stays internally consistent instead of showing stale emoji.
+const SCORERS = [
+  { emoji: "🦩", name: "Nia", words: ["Beyoncé", "Adele", "my nan", "Oprah", "Cleopatra", "Björk", "Michelle Obama", "Dolly Parton", "Ada Lovelace", "Joan of Arc", "Amelia Earhart", "Hypatia", "Rosa Parks", "Malala", "Grace Hopper", "Whitney Houston", "Aretha Franklin", "Nefertiti", "Jane Austen", "Marilyn Monroe", "Sappho", "Boudica", "my old boss"] },
+  { emoji: "🐙", name: "Dev", words: ["Beyoncé", "Rihanna", "Grace Jones", "Taylor Swift", "Madonna", "Angela Merkel", "Cher", "Serena Williams", "Wangari Maathai", "Oprah", "Michelle Obama", "Kamala Harris", "Dolly Parton", "Mother Teresa", "Anna Wintour", "Rosa Parks", "Malala", "Greta Thunberg", "Whitney Houston", "Marilyn Monroe", "Nina Simone"] },
+  { emoji: "🦊", name: "Mara", words: ["Beyoncé", "Rihanna", "my mum", "Adele", "Serena Williams", "Zaha Hadid", "Frida Kahlo", "Marie Curie", "Simone Biles", "Michelle Obama", "Lady Gaga", "Tracy Chapman", "Joan of Arc", "Amelia Earhart", "Agnès Varda", "Britney Spears", "Whitney Houston", "Hedy Lamarr", "Jane Austen", "Ruth Bader Ginsburg"] },
+  { emoji: "🍄", name: "Kit", words: ["Beyoncé", "Rihanna", "Yayoi Kusama", "Taylor Swift", "Madonna", "Patti Smith", "Marie Curie", "Michelle Obama", "Katherine Johnson", "Lady Gaga", "Ariana Grande", "Anne Boleyn", "Mother Teresa", "Rosa Parks", "Chimamanda Adichie", "Zendaya", "Aretha Franklin", "Emmeline Pankhurst", "Jane Austen", "Marilyn Monroe"] },
+  { emoji: "👾", name: "Bo", words: ["Beyoncé", "Rihanna", "Ripley", "Taylor Swift", "Madonna", "Xena", "Cher", "Frida Kahlo", "Sailor Moon", "Cleopatra", "Lady Gaga", "Miss Piggy", "Ariana Grande", "Britney Spears", "Zendaya", "Jane Austen", "Marilyn Monroe"] },
+  // Sample players 6–10, for the two-row layout the codebase allows up to the
+  // ten-player cap. Avatars come from AVATARS in src/components/AvatarPicker.tsx.
+  { emoji: "🐸", name: "Ines", words: ["Beyoncé", "Rihanna", "Michelle Obama", "Hilma af Klint", "Taylor Swift", "Rosa Parks", "Toni Morrison", "Cleopatra", "Jane Austen", "Marilyn Monroe", "Lady Gaga", "Nina Simone", "Mary Shelley", "Serena Williams", "Adele", "Malala", "Amelia Earhart"] },
+  { emoji: "🦉", name: "Tomas", words: ["Beyoncé", "Madonna", "Marie Curie", "Rosa Parks", "Jane Austen", "Simone de Beauvoir", "Oprah", "Cher", "Dolly Parton", "Zendaya", "Marilyn Monroe", "Aretha Franklin", "Joan of Arc", "Rihanna", "Björk", "Whitney Houston"] },
+  { emoji: "🦀", name: "Yui", words: ["Beyoncé", "Rihanna", "Taylor Swift", "Michelle Obama", "Ariana Grande", "Murasaki Shikibu", "Marie Curie", "Lady Gaga", "Frida Kahlo", "Zendaya", "Marilyn Monroe", "Jane Austen", "Mother Teresa", "Britney Spears", "Rosa Parks"] },
+  { emoji: "🐬", name: "Odile", words: ["Beyoncé", "Madonna", "Simone Veil", "Rihanna", "Michelle Obama", "Serena Williams", "Édith Piaf", "Marilyn Monroe", "Cleopatra", "Jane Austen", "Malala", "Lady Gaga", "Adele", "Marie Curie", "Oprah", "Coco Chanel"] },
+  { emoji: "🦄", name: "Priya", words: ["Beyoncé", "Rihanna", "Taylor Swift", "Michelle Obama", "Indira Gandhi", "Rosa Parks", "Lata Mangeshkar", "Jane Austen", "Zendaya", "Marilyn Monroe", "Malala", "Cher", "Lady Gaga", "Amelia Earhart", "Whitney Houston"] },
+];
+
+const norm = (w) => w.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, "").trim();
+
+// One row up to five players, two balanced rows up to the ten-player cap —
+// mirrors columnsFor() in src/screens/host/HostScoring.tsx.
+const columnsFor = (n) => (n <= 5 ? Math.max(n, 1) : Math.ceil(n / 2));
+
+class Component extends DCLogic {
+  frameRef = React.createRef();
+  screenRef = React.createRef();
+  gridRef = React.createRef();
+
+  fit = () => {
+    const f = this.frameRef.current, s = this.screenRef.current, g = this.gridRef.current;
+    // One basis, held: the handoff's documented 1200×675 host screen, scaled
+    // whole into the frame. Type, borders and gaps keep their fixed px within
+    // it, so the layout is the reference render at any browser width.
+    if (f && s) s.style.transform = "scale(" + f.clientWidth / 1200 + ")";
+    if (g) {
+      const cols = columnsFor(this.count());
+      g.style.gridTemplateColumns = "repeat(" + cols + ",minmax(0,1fr))";
+      // style.css's `calc(var(--cols) * 20vw)` — a fifth of the screen per card,
+      // capped on the grid and centred, so cards keep their width rather than
+      // stretching to fill the row.
+      g.style.maxWidth = cols * 240 + "px";
+    }
+  };
+
+  count() {
+    return Math.max(2, Math.min(10, this.props.playerCount ?? 5));
+  }
+
+  componentDidMount() {
+    this.ro = new ResizeObserver(this.fit);
+    if (this.frameRef.current) this.ro.observe(this.frameRef.current);
+    this.fit();
+  }
+
+  componentDidUpdate() { this.fit(); }
+  componentWillUnmount() { if (this.ro) this.ro.disconnect(); }
+
+  renderVals() {
+    const showAttribution = this.props.showAttribution ?? true;
+    const inRoom = SCORERS.slice(0, this.count());
+    const players = inRoom
+      .map((s) => {
+        const entries = s.words.map((w) => {
+          const also = inRoom
+            .filter((o) => o !== s && o.words.some((x) => norm(x) === norm(w)))
+            .map((o) => o.emoji)
+            .join("");
+          return { w, dup: also !== "", uniq: also === "", by: showAttribution ? also : "" };
+        });
+        return {
+          emoji: s.emoji,
+          name: s.name,
+          total: entries.length,
+          unique: entries.filter((e) => e.uniq).length,
+          entries,
+        };
+      })
+      .sort((a, b) => b.unique - a.unique || b.total - a.total)
+      .map((s, i) => ({ ...s, rank: "RANK " + (i + 1) }));
+    return { players, frameRef: this.frameRef, screenRef: this.screenRef, gridRef: this.gridRef };
+  }
+}
+</script>
+</body>
+</html>

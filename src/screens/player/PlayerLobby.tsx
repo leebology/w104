@@ -1,12 +1,9 @@
 import { useState } from "react";
-import { useRemaining } from "../../net/clock";
 import { AVATARS, AvatarPicker } from "../../components/AvatarPicker";
-import { formatDuration } from "../../components/Stepper";
+import { GetReady } from "../../components/GetReady";
 import { saveProfile } from "../../net/identity";
 import { roomStore } from "../../net/room";
-import { modeSpec } from "../../../shared/gamemodes";
 import type { PlayerId, RoomState } from "../../../shared/state";
-import { teamsEnabled } from "../../../shared/teams";
 
 type Props = {
   room: RoomState;
@@ -18,7 +15,6 @@ type Props = {
 
 export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
   const me = room.players.find((p) => p.id === playerId);
-  const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   const [name, setName] = useState(me?.name ?? "");
   const [emoji, setEmoji] = useState(me?.emoji ?? AVATARS[0]);
 
@@ -30,32 +26,38 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
     saveProfile(nextName, nextEmoji);
   };
 
+  // Everything above the footer steps back under the count; the footer does
+  // not. Un-readying is the room's brake on the countdown, so that button has
+  // to stay lit and tappable while it runs.
+  const dim = countdown ? " countdown-dim" : "";
+
   return (
     <main className="screen screen--mobile screen--locked player-lobby">
-      <button type="button" className="back-pill" onClick={onLeave}>
-        Back
+      {/* Gives the seat up rather than just closing the socket. A dropped
+          connection deliberately leaves the player in the room, greyed out, so
+          a locked phone can reclaim its seat and its words — which is the
+          right answer for a phone that died and the wrong one for somebody who
+          meant to leave. The message goes first: `onLeave` closes the socket,
+          and anything sent after it is sent to nothing. */}
+      <button
+        type="button"
+        className={`back-pill${dim}`}
+        onClick={() => {
+          roomStore.send({ type: "leaveRoom" });
+          onLeave();
+        }}
+      >
+        Leave room
       </button>
 
-      <p className="plaque player-lobby__room">Room {room.code}</p>
-      <p className="player-lobby__settings">
-        {modeSpec(room.settings.mode).name}
-        {" · "}
-        {room.settings.roundCount} {room.settings.roundCount === 1 ? "ROUND" : "ROUNDS"}
-        {" · "}
-        {formatDuration(room.settings.durationSec)}
-        {teamsEnabled(room.settings) && (
-          <>
-            {" · "}
-            {room.settings.teamCount} TEAMS
-          </>
-        )}
-      </p>
-      {/* Without this the countdown just vanishes and the room looks broken. */}
-      {room.configuring && (
-        <p className="player-lobby__settings">Host is adjusting settings…</p>
-      )}
+      {/* Same pill the host wears in team select, just labelled for a player
+          who already knows they're in the room — no join address needed. */}
+      <div className={`pill room-chip player-lobby__code-chip${dim}`}>
+        <span className="room-chip__label">ROOM CODE:</span>
+        <span className="room-chip__code">{room.code}</span>
+      </div>
 
-      <section className="card">
+      <section className={`card${dim}`}>
         <label className="field__label" htmlFor="player-name">Your name</label>
         <input
           id="player-name"
@@ -71,7 +73,7 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
         />
       </section>
 
-      <section className="card">
+      <section className={`card${dim}`}>
         <span className="field__label">Pick an avatar</span>
         <AvatarPicker
           value={emoji}
@@ -82,8 +84,14 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
         />
       </section>
 
+      {/* The same card the TV is showing, over the same dimmed screen. */}
+      {countdown && (
+        <div className="countdown-pose">
+          <GetReady endsAt={countdown.endsAt} offset={countdown.offset} label="CATEGORY VOTE" />
+        </div>
+      )}
+
       <div className="player-lobby__footer">
-        {countdown && <p className="get-ready get-ready--small">Get ready… {remaining}</p>}
         {/* Readying up is also the last real user gesture before the round
             starts off a server timer — see PlayerView on why that matters to
             the iOS keyboard. */}

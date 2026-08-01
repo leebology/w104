@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
-import { useRemaining } from "../../net/clock";
 import { roomStore } from "../../net/room";
-import { MAX_TEAM_NAME_LEN, TEAM_COLORS, membersOf, teamOf } from "../../../shared/teams";
+import { GetReady } from "../../components/GetReady";
+import { TeamGrid } from "../../components/TeamGrid";
+import { MAX_TEAM_NAME_LEN, TEAM_COLORS, teamOf } from "../../../shared/teams";
 import type { PlayerId, RoomState } from "../../../shared/state";
 
 type Props = {
@@ -33,9 +34,30 @@ function PenGlyph() {
   );
 }
 
+/**
+ * Team selection, on the phone.
+ *
+ * **Every team keeps its place for the whole screen.** The grid is the full
+ * roster of teams in colour order, and joining one changes what a tile *says*,
+ * never where it sits — the tile you tapped is still under your thumb
+ * afterwards, which is the only way the screen can answer "which one am I on?"
+ * with the thing you were already looking at. The earlier arrangement lifted
+ * your team out of the grid and re-drew it at the top, so the act of joining
+ * moved every remaining tile and left you reading a card that had arrived from
+ * somewhere else.
+ *
+ * Everything that grows or shrinks is therefore boxed into a fixed slot: the
+ * title slot above the grid is the plaque's height whether it is holding the
+ * plaque or the name editor that replaces it, and the footer holds the Leave
+ * button's height whether or not there is one in it.
+ *
+ * Every tile carries its members by name as well as by face — a room of ten
+ * emoji is not a roster anyone can read across two columns — and your own name
+ * is inverted into an ink pill wherever it appears, which is what makes your
+ * team identifiable at a glance rather than by counting faces.
+ */
 export function PlayerTeams({ room, playerId, countdown }: Props) {
   const mine = teamOf(room, playerId);
-  const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
 
   // Mirrors the server's name while not being edited, exactly as Stepper's
   // draft mirrors its value — committing on every keystroke would fight the
@@ -45,31 +67,46 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
 
   return (
     <main className="screen screen--mobile screen--locked player-teams">
-      <p className="plaque player-teams__plaque">Pick a team</p>
-
-      {mine ? (
-        <section
-          className="player-teams__mine"
-          style={{ "--accent": `var(${TEAM_COLORS[mine.colorIndex].token})` } as CSSProperties}
-        >
-          {/* The colour is a strip *inside* the card rather than a top border,
-              so the ink outline stays continuous on all four sides. */}
-          <span className="player-teams__strip" />
-          <span className="player-teams__joined">Joined!</span>
-          {/* The pen leads the name rather than trailing it: trailing, it
-              collides with the JOINED! badge pinned to this card's top-right
-              corner, and a long team name pushes it straight under one. */}
-          <div className="player-teams__title">
+      {/* One slot at the top of the screen, holding the title *or* the name
+          editor — never both, and never one above the other. Once you are on a
+          team the instruction has been followed and the tab that replaces it
+          says the same thing better, so the room the two would have taken
+          between them goes to the grid instead. Its height is fixed to the
+          plaque's, so the swap does not move the tiles below. */}
+      {/* Never dimmed, countdown or not. `countdown-dim` carries
+          `pointer-events: none`, so dimming this slot made the name editor
+          unreachable for the five seconds it was most likely to be wanted —
+          and renaming stays legal throughout, exactly as leaving a team does.
+          An editor opened here holds the count down while it is open, so
+          nothing is lost to the clock mid-word. */}
+      <div className="player-teams__title-slot">
+        {mine ? (
+          <div
+            className="team-badge player-teams__title"
+            style={{ "--accent": `var(${TEAM_COLORS[mine.colorIndex].token})` } as CSSProperties}
+          >
+            {/* The pen leads the name rather than trailing it: trailing, a long
+                name pushes it off the tab's end. */}
             <PenGlyph />
             <input
               className="player-teams__name"
               value={draft}
+              // Sized to the name rather than to a fixed width, so the tab is
+              // as long as what is written on it.
+              size={Math.max(draft.length, 3)}
               maxLength={MAX_TEAM_NAME_LEN}
               aria-label="Team name — shared with your teammates"
               onChange={(e) => setDraft(e.target.value)}
-              onBlur={() =>
-                roomStore.send({ type: "setTeamName", teamId: mine.id, name: draft })
-              }
+              // Opening the editor holds the countdown out of team select, and
+              // closing it lets `settle` derive one — the same arrangement the
+              // host's drawers have with the lobby. Without it a room where
+              // everybody has a team counts down while you are still typing,
+              // and the phase goes out from under the word.
+              onFocus={() => roomStore.send({ type: "setTeamNaming", naming: true })}
+              onBlur={() => {
+                roomStore.send({ type: "setTeamName", teamId: mine.id, name: draft });
+                roomStore.send({ type: "setTeamNaming", naming: false });
+              }}
               onKeyDown={(e) => {
                 if (e.key !== "Enter") return;
                 e.preventDefault();
@@ -77,65 +114,50 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
               }}
             />
           </div>
-          {/* Says whose name it is. The field is shared and last write wins,
-              so a teammate's edit arriving under your thumb has to be the
-              expected thing rather than a glitch. */}
-          <p className="player-teams__shared">Your whole team can rename this</p>
-          <ul className="player-teams__members">
-            {membersOf(room, mine.id).map((p) => (
-              <li key={p.id}>
-                {p.emoji} {p.name}
-                {p.id === playerId && " (you)"}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : (
-        <p className="player-teams__hint">Tap a colour to join it.</p>
-      )}
+        ) : (
+          <p className="plaque player-teams__plaque">Pick a team</p>
+        )}
+      </div>
 
-      {mine && (
-        <div className="divider player-teams__divider">
-          <span>OR SWITCH TO</span>
+      {/* The tiles themselves are `TeamGrid`, shared with the waiting room —
+          a latecomer picks a team from the same grid, on a screen that is not
+          this one. Everything around it differs between the two and stays
+          here. */}
+      <TeamGrid room={room} playerId={playerId} dim={countdown !== undefined} />
+
+      {/* The same card the TV is showing and the same one every other countdown
+          in the game wears, posed over the dimmed tiles rather than squeezed
+          into the footer as the old small plaque. It is deliberately over the
+          grid and not over the Leave button below it. */}
+      {countdown && (
+        <div className="countdown-pose">
+          <GetReady endsAt={countdown.endsAt} offset={countdown.offset} label="CATEGORY VOTE" />
         </div>
       )}
 
-      <ul className="player-teams__grid">
-        {room.teams.map((team) => (
-          <li key={team.id}>
-            <button
-              type="button"
-              className={team.id === mine?.id ? "team-tile team-tile--mine" : "team-tile"}
-              style={{ "--accent": `var(${TEAM_COLORS[team.colorIndex].token})` } as CSSProperties}
-              onClick={() => roomStore.send({ type: "joinTeam", teamId: team.id })}
-            >
-              <span className="team-tile__strip" />
-              <span className="team-tile__name">{team.name}</span>
-              <span className="team-tile__count">
-                {membersOf(room, team.id).map((p) => p.emoji).join("") || "—"}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-
       <div className="player-teams__footer">
-        {countdown && <p className="get-ready get-ready--small">Get ready… {remaining}</p>}
         {/* Leaving *is* un-readying — there is no separate button, and once
             the countdown is running this is the room's only brake, since the
             TV has no Stop button by design. It does not change its wording or
             its colour to say so: it is the same action either way, and a
             button that restyles itself mid-countdown reads as a different
-            button appearing under the thumb already reaching for it. */}
-        {mine && (
-          <button
-            type="button"
-            className="btn btn--secondary btn--block"
-            onClick={() => roomStore.send({ type: "leaveTeam" })}
-          >
-            Leave team
-          </button>
-        )}
+            button appearing under the thumb already reaching for it.
+
+            Held in a fixed-height slot rather than mounted and unmounted, for
+            the same reason the editor above is: it sits below a scrolling grid
+            and its arrival would otherwise shorten the grid the moment you
+            joined. */}
+        <div className="player-teams__leave">
+          {mine && (
+            <button
+              type="button"
+              className="btn btn--secondary btn--block"
+              onClick={() => roomStore.send({ type: "leaveTeam" })}
+            >
+              Leave team
+            </button>
+          )}
+        </div>
       </div>
     </main>
   );

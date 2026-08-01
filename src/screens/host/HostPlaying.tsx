@@ -3,7 +3,8 @@ import { RoomChip } from "../../components/RoomChip";
 import { PlayerPill } from "../../components/Roster";
 import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
-import { HostHeader, PlayerCount } from "./HostHeader";
+import { seatedPlayers } from "../../../shared/waiting";
+import { HostBackToRoom, HostHeader, HostHeaderRight, PlayerCount } from "./HostHeader";
 
 type Props = { room: RoomState; endsAt: number; offset: number };
 
@@ -15,16 +16,30 @@ type Props = { room: RoomState; endsAt: number; offset: number };
  * results. The pulsing dot on each pill is the entire activity signal.
  */
 export function HostPlaying({ room, endsAt, offset }: Props) {
-  const remaining = useRemaining(endsAt, offset);
+  const remaining = useRemaining(endsAt, offset, room.paused);
   const fill = Math.max(0, Math.min(1, remaining / room.settings.durationSec));
+  // The room as this round has it. Anyone who walked in after the whistle is in
+  // the waiting room, is not typing, and is already named in the header strip —
+  // a pill for them here would be a player in a round they are not in, and the
+  // count beside it would be a lie about who is racing.
+  const playing = seatedPlayers(room.players);
 
   return (
     <main className="screen screen--host">
       <HostHeader
-        left={<RoomChip code={room.code} />}
+        left={<RoomChip room={room} />}
         round={currentRound(room)}
         of={room.settings.roundCount}
-        right={<PlayerCount n={room.players.length} />}
+        right={
+          <HostHeaderRight>
+            <PlayerCount n={playing.length} />
+            {/* A live round is abandonable too — `backToLobby` allows this
+                phase for it. Closed to a ✕ like every other one, which matters
+                more here than anywhere: this screen is the category, and the
+                corner must not compete with it. */}
+            <HostBackToRoom />
+          </HostHeaderRight>
+        }
       />
 
       <div className="host-stage">
@@ -35,10 +50,18 @@ export function HostPlaying({ room, endsAt, offset }: Props) {
           <span className="banner__text">{room.category}</span>
         </div>
         <ul className="roster-row">
-          {room.players.map((p) => (
+          {playing.map((p) => (
             <PlayerPill key={p.id} player={p} variant="playing" />
           ))}
         </ul>
+        {/* **No time warning here — the phones carry it alone.** The TV already
+            says what a warning says, permanently and without covering anything:
+            the clock and the draining bar are on screen for the whole round, so
+            a band across the middle of it is the one screen in the game telling
+            somebody a thing they can already see. It costs more than it says,
+            too — this screen *is* the category, and the band lands over the
+            banner people look up to re-read. The phone is where it earns its
+            place: head-down, typing, with no clock in view. */}
       </div>
 
       {/* Counted down locally against the server's absolute deadline; the
@@ -49,7 +72,9 @@ export function HostPlaying({ room, endsAt, offset }: Props) {
           <div className="timer-track__fill" style={{ width: `${fill * 100}%` }} />
         </div>
         <span className="timer-bar__label">
-          {remaining} of {room.settings.durationSec} sec left
+          {room.paused !== null
+            ? `paused · ${remaining} of ${room.settings.durationSec} sec left`
+            : `${remaining} of ${room.settings.durationSec} sec left`}
         </span>
       </div>
     </main>

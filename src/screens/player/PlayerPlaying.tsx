@@ -1,5 +1,10 @@
 import { useEffect, useRef } from "react";
-import { teamsEnabled } from "../../../shared/teams";
+import type { CSSProperties } from "react";
+import { TeamBadge } from "../../components/TeamBadge";
+import { TimeWarning } from "../../components/TimeWarning";
+import { useRemaining } from "../../net/clock";
+import { useRoundWarning } from "../../roundwarnings";
+import { teamsEnabled, teamOf } from "../../../shared/teams";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import type { LocalEntry } from "../../net/room";
 
@@ -7,18 +12,48 @@ type Props = {
   room: RoomState;
   playerId: PlayerId;
   entries: LocalEntry[];
+  offset: number;
 };
 
 /**
- * No clock here on purpose. The countdown lives on the TV, where everyone
- * reads it at once; on the phone it only competed with the one thing this
- * screen is for, which is getting words down.
+ * A small pie in the corner, not the host's full timer bar with its numeral:
+ * the round screen's job is getting words down, so the countdown is a glance,
+ * not a second thing to read. A conic-gradient slice draws itself with no
+ * SVG geometry to keep in sync with a ring's radius. Teal rather than a new
+ * colour — the same fill the "OK," plaque and the host timer bar use.
+ *
+ * Takes `remaining` rather than reading the clock itself: the screen also
+ * needs it for the time warnings, and two `useRemaining` calls would mean two
+ * intervals that can land a tick apart.
  */
-export function PlayerPlaying({ room, playerId, entries }: Props) {
+function TimerWheel({ remaining, durationSec, paused }: {
+  remaining: number;
+  durationSec: number;
+  /** `RoomState.paused` — the wheel holds its slice rather than draining. */
+  paused: number | null;
+}) {
+  const frac = durationSec > 0 ? Math.max(0, Math.min(1, remaining / durationSec)) : 0;
+  return (
+    <div
+      className={`playing__timer${paused !== null ? " playing__timer--paused" : ""}`}
+      style={{ "--frac": frac } as CSSProperties}
+      aria-hidden="true"
+    />
+  );
+}
+
+export function PlayerPlaying({ room, playerId, entries, offset }: Props) {
   const list = useRef<HTMLDivElement>(null);
   const shared = teamsEnabled(room.settings);
+  const team = teamOf(room, playerId);
   const emojiOf = (id: PlayerId) =>
     room.players.find((p) => p.id === id)?.emoji ?? "";
+
+  // Narrowed once here rather than at each use: hooks cannot be called
+  // conditionally, and the round screen renders under other phases briefly.
+  const round = room.phase.name === "playing" ? room.phase : null;
+  const remaining = useRemaining(round?.endsAt ?? 0, offset, room.paused);
+  const warning = useRoundWarning(remaining, room.settings.durationSec);
 
   // Scrolls the list by its own `scrollTop`, never `scrollIntoView` on a
   // trailing sentinel. `block: "end"` aligns the sentinel with the scrollport's
@@ -40,6 +75,22 @@ export function PlayerPlaying({ room, playerId, entries }: Props) {
   // across phase changes.
   return (
     <main className="screen screen--mobile screen--locked playing">
+      {round && (
+        <TimerWheel
+          remaining={remaining}
+          durationSec={room.settings.durationSec}
+          paused={room.paused}
+        />
+      )}
+      {/* Keyed on the mark alone, not on the round: `.reject-banner`'s
+          reject-fade plays once on insertion and then holds at opacity 0, so
+          a static key across a round would flash only the first warning and
+          silently update the text under an already-invisible node for the
+          rest. Marks are distinct within a round by construction, and the
+          screen remounts at the next round's boundary regardless. */}
+      {round && warning !== null && (
+        <TimeWarning key={warning} mark={warning} variant="player" />
+      )}
       <div className="playing__head">
         <span className="playing__name-a">NAME A:</span>
         <div className="banner playing__banner">
@@ -54,21 +105,30 @@ export function PlayerPlaying({ room, playerId, entries }: Props) {
           list. The input itself is still mounted in PlayerView — it has
           to outlive this screen to keep the keyboard up — which is why
           the two are aligned in CSS rather than nested here. */}
-      <div className="card playing__card">
+      <div className={`card playing__card${team ? " playing__card--team" : ""}`}>
+        {/* Whose list this is. The words on it are the whole team's, so the
+            card says so in the same tab the team wore in team select. */}
+        {team && (
+          <TeamBadge
+            name={team.name}
+            colorIndex={team.colorIndex}
+            className="team-badge--playing"
+          />
+        )}
         <div className="word-list playing__list" ref={list}>
-          {entries.length === 0 && (
-            <p className="playing__empty">Type anything. Obvious answers score nothing.</p>
-          )}
           {entries.map((entry, i) => (
             <div className="word-row" key={entry.seq ?? `${entry.at}-${i}`}>
+              <span className="word">{entry.text}</span>
               {/* In team play the list is the whole team's, so a word needs
                   to say who got it — otherwise teammates re-type each
                   other's. Never shown in free-for-all, where every word is
-                  yours and the emoji would be noise. */}
+                  yours and the emoji would be noise. Always on the right,
+                  after the word — `justify-content: space-between` on
+                  `.word-row` puts a lone word at the left either way, so
+                  every row's text lines up on the same edge. */}
               {shared && entry.by !== playerId && (
                 <span className="word-row__by">{emojiOf(entry.by)}</span>
               )}
-              <span className="word">{entry.text}</span>
             </div>
           ))}
         </div>

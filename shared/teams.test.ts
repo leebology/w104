@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { TEAM_COLORS, assignStragglers, makeTeams, membersOf, rosterOf, teamOf, teamsEnabled } from "./teams";
+import { TEAM_COLORS, assignStragglers, balanceTeams, makeTeams, membersOf, rosterOf, teamOf, teamsEnabled } from "./teams";
 import { MAX_TEAM_COUNT, MIN_TEAM_COUNT, snapTeamCount, defaultSettings } from "./gamemodes";
 import { createRoom } from "./state";
 import type { Player, Room } from "./state";
@@ -163,6 +163,90 @@ describe("assignStragglers", () => {
   });
 });
 
+describe("balanceTeams", () => {
+  /** How many players ended up on each team, in team order. */
+  const sizes = (players: Player[], teams: ReturnType<typeof makeTeams>) =>
+    teams.map((t) => players.filter((p) => p.teamId === t.id).length);
+
+  test("deals everybody, including the ones who already chose", () => {
+    // The case the button exists for: the whole room piled onto Red. The old
+    // behaviour left them there and only placed stragglers, so pressing it
+    // changed nothing at all.
+    const teams = makeTeams(2);
+    const piled = roster("t0", "t0", "t0", "t0");
+    expect(sizes(balanceTeams(piled, teams, 0.42), teams)).toEqual([2, 2]);
+  });
+
+  test("splits as evenly as the roster allows", () => {
+    const teams = makeTeams(3);
+    const players = roster(null, null, null, null, null, null, null);
+    // Seven across three: 3/2/2 in some order, never 4/2/1.
+    const out = sizes(balanceTeams(players, teams, 0.7), teams).sort();
+    expect(out).toEqual([2, 2, 3]);
+  });
+
+  test("bots are dealt like anybody else", () => {
+    const teams = makeTeams(2);
+    const players = roster(null, null, null, null).map((p, i) =>
+      i >= 2 ? { ...p, isBot: true as const } : p,
+    );
+    const out = balanceTeams(players, teams, 0.1);
+    expect(out.every((p) => p.teamId !== null)).toBe(true);
+    expect(sizes(out, teams)).toEqual([2, 2]);
+  });
+
+  test("the same roll always deals the same way", () => {
+    const teams = makeTeams(3);
+    const players = roster(null, null, null, null, null);
+    const a = balanceTeams(players, teams, 0.31).map((p) => p.teamId);
+    const b = balanceTeams(players, teams, 0.31).map((p) => p.teamId);
+    expect(a).toEqual(b);
+  });
+
+  test("different rolls deal differently, so pressing again re-sorts", () => {
+    // Not a guarantee for any *one* pair of rolls — an even split can come up
+    // twice — so this asserts over a spread: a hundred rolls of eight players
+    // across two teams cannot all produce the same assignment unless the roll
+    // is being ignored.
+    const teams = makeTeams(2);
+    const players = roster(null, null, null, null, null, null, null, null);
+    const deals = new Set(
+      Array.from({ length: 100 }, (_, i) =>
+        balanceTeams(players, teams, i / 100).map((p) => p.teamId).join(""),
+      ),
+    );
+    expect(deals.size).toBeGreaterThan(1);
+  });
+
+  test("order out is order in — only teamId moves", () => {
+    const teams = makeTeams(2);
+    const players = roster(null, null, null, null);
+    const out = balanceTeams(players, teams, 0.55);
+    expect(out.map((p) => p.id)).toEqual(["p0", "p1", "p2", "p3"]);
+    expect(out.map((p) => p.name)).toEqual(["P0", "P1", "P2", "P3"]);
+  });
+
+  test("returns the identical array when there are no teams", () => {
+    const players = roster(null, null);
+    expect(balanceTeams(players, [], 0.5)).toBe(players);
+  });
+
+  test("returns the identical array when the deal changes nothing", () => {
+    // One player, one team: wherever the shuffle puts them, they are already
+    // there. The no-op contract is what stops `reduce` broadcasting for it.
+    // The team is built by hand because `makeTeams(1)` is empty by design —
+    // one team is not a match.
+    const players = roster("t0");
+    const single = [{ id: "t0", colorIndex: 0, name: TEAM_COLORS[0].name }];
+    expect(balanceTeams(players, single, 0.5)).toBe(players);
+  });
+
+  test("an empty room is a no-op rather than a divide by zero", () => {
+    const players: Player[] = [];
+    expect(balanceTeams(players, makeTeams(2), 0.5)).toBe(players);
+  });
+});
+
 describe("rosterOf", () => {
   test("with teams off, one scorer per player", () => {
     // withTeams(0) already gives teamCount 0 and makeTeams(0) === [].
@@ -184,5 +268,75 @@ describe("rosterOf", () => {
   test("empty teams are excluded — this is the one place that rule lives", () => {
     const room = withTeams(4, ["t0", "t0"]);
     expect(rosterOf(room).map((s) => s.id)).toEqual(["t0"]);
+  });
+});
+
+// ---------------------------------------------------------- the waiting room
+
+/** `roster`, with the given indices sitting in the waiting room. */
+function withWaiting(players: Player[], ...waitingIndices: number[]): Player[] {
+  const set = new Set(waitingIndices);
+  return players.map((p, i) => (set.has(i) ? { ...p, waiting: true } : p));
+}
+
+describe("rosterOf and the waiting room", () => {
+  test("with teams off, a waiting player is not a scorer", () => {
+    const room = withTeams(0, [null, null, null]);
+    const scorers = rosterOf({ ...room, players: withWaiting(room.players, 2) });
+    expect(scorers.map((s) => s.id)).toEqual(["p0", "p1"]);
+  });
+
+  test("with teams on, they are not in their team's member list", () => {
+    // They have picked — that is what makes them admissible — but the list
+    // being scored this round is not theirs to be on yet.
+    const room = withTeams(2, ["t0", "t1", "t0"]);
+    const scorers = rosterOf({ ...room, players: withWaiting(room.players, 2) });
+    expect(scorers.find((s) => s.id === "t0")!.members).toEqual(["p0"]);
+  });
+
+  test("a team whose only member is waiting does not score", () => {
+    // The empty-teams rule and this one meet in the same filter.
+    const room = withTeams(2, ["t0", "t1"]);
+    const scorers = rosterOf({ ...room, players: withWaiting(room.players, 1) });
+    expect(scorers.map((s) => s.id)).toEqual(["t0"]);
+  });
+
+  test("membersOf still lists them — it is display truth", () => {
+    const room = withTeams(2, ["t0", "t1", "t0"]);
+    const players = withWaiting(room.players, 2);
+    expect(membersOf({ ...room, players }, "t0").map((p) => p.id)).toEqual(["p0", "p2"]);
+  });
+});
+
+describe("the dealers leave the waiting room alone", () => {
+  test("assignStragglers does not place a waiting player", () => {
+    const out = assignStragglers(withWaiting(roster("t0", null, null), 2), makeTeams(2));
+    expect(out[1].teamId).toBe("t1");
+    expect(out[2].teamId).toBeNull();
+  });
+
+  test("a room whose only straggler is waiting is a no-op", () => {
+    const players = withWaiting(roster("t0", "t1", null), 2);
+    expect(assignStragglers(players, makeTeams(2))).toBe(players);
+  });
+
+  test("but a waiting player who has picked still counts toward team size", () => {
+    // They will be on that team next round, and the point of the split is that
+    // it comes out even.
+    const out = assignStragglers(withWaiting(roster("t0", "t1", "t1", null), 2), makeTeams(2));
+    expect(out[3].teamId).toBe("t0");
+  });
+
+  test("balanceTeams does not deal a waiting player", () => {
+    const players = withWaiting(roster("t0", "t0", "t0", null), 3);
+    const out = balanceTeams(players, makeTeams(2), 0.7);
+    expect(out[3].teamId).toBeNull();
+    // And the three seated players still come out split across both teams.
+    expect(new Set(out.slice(0, 3).map((p) => p.teamId)).size).toBe(2);
+  });
+
+  test("a room of nothing but waiting players is a no-op", () => {
+    const players = withWaiting(roster(null, null), 0, 1);
+    expect(balanceTeams(players, makeTeams(2), 0.3)).toBe(players);
   });
 });

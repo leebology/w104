@@ -1,5 +1,6 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it, test } from "vitest";
 import { DEFAULT_MODE } from "./gamemodes";
+import { REVEAL_TIMING } from "./revealtiming";
 import { countdownScreen, createRoom, currentRound, matchComplete, preRoundPhase, toRoomState } from "./state";
 import type { Room } from "./state";
 
@@ -14,7 +15,9 @@ function fullRoom(): Room {
     }],
     phase: { name: "playing", endsAt: 31_000 },
     category: "Bands",
-    settings: { mode: DEFAULT_MODE, roundCount: 3, durationSec: 45, teamCount: 0 },
+    settings: {
+      mode: DEFAULT_MODE, roundCount: 3, durationSec: 45, teamCount: 0, categorySource: "stock",
+    },
     history: [],
     lastActivityAt: 2000,
     entries: { p0: [{ text: "Adele", at: 1500, by: "p0" }] },
@@ -31,16 +34,40 @@ describe("toRoomState", () => {
   test("publishes exactly the public keys", () => {
     const state = toRoomState(fullRoom(), 9000);
     expect(Object.keys(state).sort()).toEqual([
+      // Withheld until `authorsRevealed` flips — see `toRoomState`'s pool
+      // mapping — but the flag itself is not a secret.
+      "authorsRevealed",
       "category",
       "code",
       "configuring",
+      // Public — it drives the writing state on the TV and says nothing
+      // about the text; the text itself (`drafts`) stays server-only.
+      "cursors",
       "history",
       "hostId",
+      // Public on purpose: every screen showing the round timer has to know it
+      // is held, or it counts down to a deadline the server stopped
+      // maintaining and sits on 0:00. It leaks nothing — the pause is already
+      // visible as a timer that is not moving.
+      "paused",
       "phase",
       "players",
+      // Public with authorship nulled until `authorsRevealed` — see
+      // `toRoomState`'s `publicPool` mapping.
+      "pool",
+      // Public on purpose as well: the phones build the reveal's schedule from
+      // this too, and a cadence the TV kept to itself would be a room watching
+      // two different reveals.
+      "revealLineMs",
       "serverTime",
       "settings",
+      // Derived from `drafts`/`cursors` at the boundary — see the "creating
+      // phase's privacy boundary" tests below.
+      "slotStates",
       "teams",
+      // Public on purpose too, and for the same shape of reason: a debug view
+      // refresh has to remount the screen on every phone, not only on the TV.
+      "viewNonce",
       "votes",
     ]);
   });
@@ -50,6 +77,8 @@ describe("toRoomState", () => {
     expect(state).not.toHaveProperty("entries");
     expect(state).not.toHaveProperty("lastActivityAt");
     expect(state).not.toHaveProperty("kicked");
+    expect(state).not.toHaveProperty("drafts");
+    expect(state).not.toHaveProperty("deal");
   });
 
   test("preserves the public fields and stamps the server clock", () => {
@@ -61,11 +90,20 @@ describe("toRoomState", () => {
       players: room.players,
       phase: { name: "playing", endsAt: 31_000 },
       category: "Bands",
-      settings: { mode: DEFAULT_MODE, roundCount: 3, durationSec: 45, teamCount: 0 },
+      settings: {
+        mode: DEFAULT_MODE, roundCount: 3, durationSec: 45, teamCount: 0, categorySource: "stock",
+      },
       history: [],
       votes: {},
       teams: [],
       configuring: false,
+      paused: null,
+      viewNonce: 0,
+      revealLineMs: REVEAL_TIMING.LINE_INTERVAL,
+      cursors: {},
+      pool: null,
+      authorsRevealed: false,
+      slotStates: {},
       serverTime: 9000,
     });
   });
@@ -90,14 +128,19 @@ describe("createRoom", () => {
 
   test("starts on the default settings with no rounds played", () => {
     const room = createRoom("PLUM", 1000);
-    expect(room.settings).toEqual({ mode: DEFAULT_MODE, roundCount: 1, durationSec: 30, teamCount: 0 });
+    expect(room.settings).toEqual({
+      mode: DEFAULT_MODE, roundCount: 1, durationSec: 30, teamCount: 0, categorySource: "stock",
+    });
     expect(room.history).toEqual([]);
   });
 });
 
 describe("derived match helpers", () => {
   const view = (rounds: number, played: number) => ({
-    settings: { mode: DEFAULT_MODE, roundCount: rounds, durationSec: 30, teamCount: 0 },
+    settings: {
+      mode: DEFAULT_MODE, roundCount: rounds, durationSec: 30, teamCount: 0,
+      categorySource: "stock" as const,
+    },
     history: Array.from({ length: played }, () => ({ category: "woman", places: {} })),
   });
 
@@ -130,5 +173,65 @@ describe("derived match helpers", () => {
       phase: { name: "countdown", endsAt: 2000, to: "playing" },
       history: [{ category: "song", places: {} }],
     })).toBe("standings");
+  });
+});
+
+describe("the creating phase's privacy boundary", () => {
+  it("strips drafts and the deal, and derives slot states in their place", () => {
+    const room = createRoom("JADE", 0);
+    room.players = [
+      { id: "p0", name: "A", emoji: "🐝", ready: false, connected: true, teamId: null },
+      { id: "p1", name: "B", emoji: "🦊", ready: false, connected: true, teamId: null },
+    ];
+    room.settings = { ...room.settings, categorySource: "custom" };
+    room.phase = { name: "creating", endsAt: 1000 };
+    room.drafts = { p0: ["smells", ""], p1: ["", ""] };
+    room.cursors = { p0: 1, p1: 0 };
+    room.deal = { p0: [{ cardIds: ["c1", "c2", "c3"] }] };
+
+    const state = toRoomState(room, 0);
+    expect("drafts" in state).toBe(false);
+    expect("deal" in state).toBe(false);
+    // Nothing anywhere in the payload may contain what somebody typed.
+    expect(JSON.stringify(state)).not.toContain("smells");
+    expect(state.slotStates.p0).toEqual(["done", "writing"]);
+    expect(state.slotStates.p1).toEqual(["writing", "empty"]);
+  });
+
+  it("carries no slot states outside the creating phase", () => {
+    const room = createRoom("JADE", 0);
+    room.drafts = { p0: ["secret"] };
+    expect(toRoomState(room, 0).slotStates).toEqual({});
+  });
+});
+
+describe("the pool's authorship boundary", () => {
+  // Task 6 covers `publicPool` nulling authorship in isolation, and covers
+  // `toRoomState` stripping `drafts`/`deal` from a room whose `pool` is null.
+  // Neither exercises the two together: a real pool, with real author ids,
+  // carried through `toRoomState`. This is the gap — a leaked author id plus
+  // the public vote tally is enough to deduce who voted for what.
+  it("nulls every card's authorId until authorsRevealed, even with a real pool", () => {
+    const room = createRoom("JADE", 0);
+    room.players = [
+      { id: "p0", name: "A", emoji: "🐝", ready: false, connected: true, teamId: null },
+      { id: "p1", name: "B", emoji: "🦊", ready: false, connected: true, teamId: null },
+    ];
+    room.settings = { ...room.settings, categorySource: "custom" };
+    room.phase = { name: "voting", endsAt: 1000 };
+    room.pool = [
+      { id: "c0", text: "smells", authorId: "p0", slot: 0 },
+      { id: "c1", text: "noises", authorId: "p1", slot: 0 },
+    ];
+    room.deal = { p0: [{ cardIds: ["c0", "c1"] }] };
+    room.authorsRevealed = false;
+
+    const state = toRoomState(room, 0);
+    expect(state.pool!.map((c) => c.authorId)).toEqual([null, null]);
+
+    // Revealed only once the flag flips — the reveal this feature exists for.
+    room.authorsRevealed = true;
+    const revealed = toRoomState(room, 0);
+    expect(revealed.pool!.map((c) => c.authorId).sort()).toEqual(["p0", "p1"]);
   });
 });

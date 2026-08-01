@@ -1,10 +1,14 @@
 import type { CSSProperties } from "react";
-import { useRemaining } from "../../net/clock";
+import { GetReady } from "../../components/GetReady";
 import { RoomChip } from "../../components/RoomChip";
+import { TeamBadge } from "../../components/TeamBadge";
+import { pulseInterval } from "../../components/Roster";
 import { roomStore } from "../../net/room";
-import { TEAM_COLORS, membersOf } from "../../../shared/teams";
+import { TeamNaming } from "../../components/TeamNaming";
+import { TEAM_COLORS, isBeingNamed, membersOf } from "../../../shared/teams";
+import { seatedPlayers } from "../../../shared/waiting";
 import type { RoomState } from "../../../shared/state";
-import { HostExit, HostHeader, HostHeaderRight, PlayerCount } from "./HostHeader";
+import { HostBackToRoom, HostHeader } from "./HostHeader";
 
 type Props = {
   room: RoomState;
@@ -24,33 +28,33 @@ type Props = {
  * offered throughout, countdown included.
  */
 export function HostTeams({ room, countdown }: Props) {
-  const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
-  const unassigned = room.players.filter((p) => p.teamId === null);
+  // Seated players only. A latecomer without a team is not a straggler this
+  // screen can do anything about — the host's Continue does not place them and
+  // Auto sort does not deal them — so listing them here would say Continue is
+  // about to fix something it will not touch. The header strip is where they
+  // are named, hollow until they pick.
+  const unassigned = seatedPlayers(room.players).filter((p) => p.teamId === null);
+  // What steps back behind the card: the picking is over, so the panels and the
+  // stragglers dim. The footer does not — Auto sort stays legal through the
+  // count, and it is the only lever the TV has left while it runs.
+  const dim = countdown ? " countdown-dim" : "";
 
   return (
     <main className="screen screen--host host-teams">
       {/* No round marker: team selection only ever happens before round one,
           so the number could not change while this screen is up. */}
       <HostHeader
-        left={<RoomChip code={room.code} />}
-        right={
-          <HostHeaderRight>
-            <PlayerCount n={room.players.length} />
-            <HostExit
-              label="Back to room"
-              onClick={() => roomStore.send({ type: "backToLobby" })}
-            />
-          </HostHeaderRight>
-        }
+        left={<RoomChip room={room} />}
+        right={<HostBackToRoom />}
       />
 
-      <p className="plaque host-teams__plaque">Pick a team</p>
+      <p className={`plaque host-teams__plaque${dim}`}>Pick a team</p>
 
       {/* Fixed-width panels, five to a row. Adding a team adds a panel rather
           than shrinking the others, so the card a player is aiming at does
           not move under them as the room fills up. */}
       <div
-        className="team-grid"
+        className={`team-grid${dim}`}
         style={{ "--cols": Math.min(room.teams.length, 5) } as CSSProperties}
       >
         {room.teams.map((team) => (
@@ -59,12 +63,16 @@ export function HostTeams({ room, countdown }: Props) {
             key={team.id}
             style={{ "--accent": `var(${TEAM_COLORS[team.colorIndex].token})` } as CSSProperties}
           >
-            {/* The name is live and the accent is not — renaming must never
-                recolour a team, because the colour is what the room is
-                actually navigating by. It rides the tab rather than a top
-                border so the panel's ink outline stays unbroken on all four
-                sides. */}
-            <h2 className="team-panel__name">{team.name}</h2>
+            {/* The tab rides over the panel's corner rather than being a top
+                border, so the ink outline stays unbroken on all four sides.
+                Same badge on every screen that names a team — see TeamBadge.
+                `--lg`: the panel is wide enough now to read at TV distance. */}
+            {/* Above the tab, on the line the panel keeps clear for it. A
+                rename lands on every screen at once when it is committed;
+                this is what stops it arriving out of nowhere, and it is the
+                visible half of the countdown that is not starting. */}
+            {isBeingNamed(room, team.id) && <TeamNaming size="lg" />}
+            <TeamBadge name={team.name} colorIndex={team.colorIndex} className="team-badge--lg" />
             <ul className="team-panel__members">
               {membersOf(room, team.id).map((p) => (
                 <li key={p.id} className={p.connected ? "" : "team-member--gone"}>
@@ -78,14 +86,18 @@ export function HostTeams({ room, countdown }: Props) {
       </div>
 
       {unassigned.length > 0 && (
-        <div className="team-unassigned">
+        <div className={`team-unassigned${dim}`}>
           <span className="team-unassigned__label">STILL PICKING</span>
           <ul className="team-unassigned__list">
             {unassigned.map((p) => (
               <li className="pill team-straggler" key={p.id}>
-                <span className="team-member__avatar">{p.emoji}</span>
+                <span
+                  className="team-member__avatar team-member__avatar--bob"
+                  style={{ "--bob": pulseInterval(p.id) } as CSSProperties}
+                >
+                  {p.emoji}
+                </span>
                 <span className="team-straggler__name">{p.name || "…"}</span>
-                <span className="player-pill__dot" aria-hidden="true" />
               </li>
             ))}
           </ul>
@@ -93,28 +105,41 @@ export function HostTeams({ room, countdown }: Props) {
       )}
 
       <div className="host-teams__footer">
-        {countdown ? (
-          <>
-            <p className="get-ready get-ready--tv">Get ready… {remaining}</p>
-            <p className="host-teams__hint">
-              Leaving a team on your phone stops the countdown.
-            </p>
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              className="btn"
-              onClick={() => roomStore.send({ type: "startGame" })}
-            >
-              Continue
-            </button>
-            <p className="host-teams__hint">
-              Anyone still picking gets dropped into the emptiest team.
-            </p>
-          </>
+        {/* Bottom-left rather than beside Continue: it rearranges the room
+            rather than advancing it, so it does not share the gold forward
+            action's spot. Left up through the countdown too — joinTeam and
+            leaveTeam both stay legal there, and this is no different. */}
+        <button
+          type="button"
+          className="btn btn--secondary host-teams__sort"
+          onClick={() => roomStore.send({ type: "balanceTeams" })}
+        >
+          Auto sort
+        </button>
+        {/* The forward action goes while the count runs — it has already been
+            pressed, and the card below says so louder than a disabled button
+            could. */}
+        {!countdown && (
+          <button
+            type="button"
+            className="btn"
+            onClick={() => roomStore.send({ type: "startGame" })}
+          >
+            Continue
+          </button>
         )}
       </div>
+
+      {/* The same card every other countdown in the game wears, posed over the
+          dimmed panels. It used to be the old gold plaque tucked in the footer,
+          which made the one countdown a room reads from furthest away the one
+          drawn smallest. No Stop button: this count is not cancellable at all
+          (see `cancelStart`), and leaving a team on a phone is the brake. */}
+      {countdown && (
+        <div className="countdown-pose">
+          <GetReady endsAt={countdown.endsAt} offset={countdown.offset} label="CATEGORY VOTE" />
+        </div>
+      )}
     </main>
   );
 }

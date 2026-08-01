@@ -1,7 +1,11 @@
 import type { Results } from "./scoring";
+import { REVEAL_TIMING } from "./revealtiming";
 import { DEFAULT_CATEGORY } from "./categories";
+import { publicPool, quotaFor, slotStatesFor } from "./customCategories";
+import type { Hand, PoolCard, SlotState } from "./customCategories";
 import { DEFAULT_MODE, defaultSettings } from "./gamemodes";
-import type { GameModeId } from "./gamemodes";
+import type { CategorySource, GameModeId } from "./gamemodes";
+import type { SelfMarks } from "./selfstrike";
 import type { VoteMap } from "./voting";
 import type { ScorerId, Team, TeamId } from "./teams";
 import { teamsEnabled } from "./teams";
@@ -32,6 +36,11 @@ export type MatchSettings = {
    * share word lists for the match. See shared/teams.ts.
    */
   teamCount: number;
+  /**
+   * Where this match's categories come from. `"stock"` is the built-in ten;
+   * `"custom"` inserts the writing phase. See shared/customCategories.ts.
+   */
+  categorySource: CategorySource;
 };
 
 /** One player's outcome in one round. */
@@ -68,6 +77,49 @@ export type Player = {
    * `players`, which also gives it a stable order for free.
    */
   teamId: TeamId | null;
+  /**
+   * A debug-menu placeholder rather than a person — see `shared/bots.ts`.
+   *
+   * Optional, and absent on every real player: that is what keeps it off the
+   * persistence migration list, since a room stored before it existed loads
+   * back with the field simply missing rather than needing a backfill in
+   * `load()`. Read it through `isBot`, never as a bare truthiness test.
+   *
+   * It rides in `RoomState` with the rest of the player, deliberately: the
+   * point of a bot is that every screen renders it exactly as it renders a
+   * player, so nothing downstream has to be told which is which.
+   */
+  isBot?: true;
+  /**
+   * Seated, but not in the match yet — they joined past the lobby and are
+   * waiting for the next whistle. Inert in every derivation the match is made
+   * of; see `shared/waiting.ts` and `admitWaiting` in `shared/reduce.ts`.
+   *
+   * Optional, and absent on everyone in a room stored before this landed,
+   * which reads as seated through `inWaitingRoom` — the correct answer, since
+   * such a room has no waiting players by construction. That is why it needs
+   * no `load()` fallback, unlike `paused` or `revealLineMs`.
+   *
+   * `boolean` rather than the `true` literal `isBot` uses, because unlike
+   * `isBot` this one is *cleared*: returning to the lobby seats everybody.
+   */
+  waiting?: boolean;
+  /**
+   * This player has their team's name open in the editor, in team select.
+   *
+   * A hold on the countdown out of `teams` and nothing else. `ready` there
+   * means "on a team", so somebody renaming their team is fully ready by that
+   * measure and the room would count down and take the phase away mid-word —
+   * the same failure `commitDraft` avoids in `creating` by making the commit
+   * *be* the ready. Renaming cannot use that trick, because being on the team
+   * is what readied you and the name is optional, so the hold is its own flag.
+   *
+   * It can only ever hold: `everyoneReady` counts connected players, so a
+   * phone locked mid-rename is already out of the reckoning, and the host's
+   * Continue skips `settle` outright. Optional and absent everywhere else,
+   * which keeps it off the persistence-migration list.
+   */
+  naming?: boolean;
 };
 
 export type Phase =
@@ -77,6 +129,11 @@ export type Phase =
    * joining a team, or the host forces it. Only reachable when teams are on.
    */
   | { name: "teams" }
+  /**
+   * Players writing this match's categories. One window per match, and only
+   * reachable when `categorySource` is `"custom"`.
+   */
+  | { name: "creating"; endsAt: number }
   /** The room picking this match's categories. One 60-second window per match. */
   | { name: "voting"; endsAt: number }
   /**
@@ -85,10 +142,35 @@ export type Phase =
    * voting and the one before round one — so there is nothing left to derive
    * it from.
    */
-  | { name: "countdown"; endsAt: number; to: "voting" | "playing" }
+  | { name: "countdown"; endsAt: number; to: "creating" | "voting" | "playing" }
   | { name: "playing"; endsAt: number }
   | { name: "timesup"; endsAt: number }
-  | { name: "scoring"; results: Results }
+  /**
+   * The round's results, played to the room as a reveal.
+   *
+   * `startedAt` is server time and is the *only* thing the reveal is driven by:
+   * the TV and every phone derive the same line count from it against the same
+   * schedule (`shared/reveal.ts`), so nothing has to be ticked over the wire.
+   * Same principle as a phase deadline — broadcast the absolute moment once and
+   * let each client count locally.
+   *
+   * `skipped` is the host's FAST FORWARD. A flag rather than a moment, because
+   * skipping means "every outstanding strike lands now", which has no schedule
+   * left to sit on.
+   *
+   * `selfMarks` is self-validation — the words scorers struck out by hand. It
+   * rides here rather than on `Results` because it is a *choice made during this
+   * screen*, not an output of `scoreRound`: the phase owns it, so abandoning the
+   * round or banking it takes the marks with it and nothing has to clear them.
+   * Like `votes`, it is no secret — the TV renders it to the room by design.
+   */
+  | {
+      name: "scoring";
+      results: Results;
+      startedAt: number;
+      skipped: boolean;
+      selfMarks: SelfMarks;
+    }
   /** Match standings between rounds and at the end. Untimed; the host advances it. */
   | { name: "standings" };
 
@@ -153,14 +235,102 @@ export type Room = {
    * that is already starting. See `setConfiguring` in shared/reduce.ts.
    */
   configuring: boolean;
+  /**
+   * Debug only. Milliseconds left on the running round when the host paused
+   * it, or null when nothing is held.
+   *
+   * The *remaining* time, not the moment of pausing, because `phase.endsAt` is
+   * absolute and a pause has to survive an arbitrary wait: storing when it
+   * started would mean recomputing against a deadline that has long since
+   * passed. Resuming is then `endsAt = now + paused`, and `phase.endsAt` is
+   * simply stale — and unread — for as long as this is non-null.
+   *
+   * Rides in `RoomState` like `configuring` and `votes`: every screen showing
+   * the timer has to know it is held, or it counts down to a dead deadline and
+   * sits on 0:00.
+   */
+  paused: number | null;
+  /**
+   * Debug only. Bumped by every view jump; nothing else reads or writes it.
+   *
+   * It exists so that a jump to the view the room is *already* on is still an
+   * observable change. `HostView` and `PlayerView` key their phase screen on
+   * it, so a bump remounts that screen and every CSS animation and every piece
+   * of screen-local state starts over — which is the whole of "refresh this
+   * view". Re-stamping the phase's own clock is not enough on its own:
+   * `HostScoring` holds the swap, the podium and the footer in local state, and
+   * a fresh `startedAt` alone would restart the line count under an already
+   * settled grid.
+   *
+   * Rides in `RoomState` deliberately. A refresh the TV kept to itself would
+   * leave the phones running the reveal the room has been taken back to the
+   * start of — the same reasoning that puts FAST FORWARD in room state.
+   *
+   * A counter rather than a timestamp so it is stable to compare and cheap to
+   * read as a React key.
+   */
+  viewNonce: number;
+  /**
+   * Debug only. Milliseconds per line of the scoring reveal — the debug menu's
+   * speed slider, defaulting to `REVEAL_TIMING.LINE_INTERVAL`.
+   *
+   * **Room state rather than a local preference, and that is the whole point.**
+   * Every phone builds the same reveal schedule the TV does and strikes each
+   * word on the same beat (see shared/reveal.ts); a cadence the TV kept to
+   * itself would put the room on two different reveals at once. Same reasoning
+   * that puts FAST FORWARD and `viewNonce` in room state.
+   *
+   * Read through `clampLineMs`, never raw: it rides the wire and it is the
+   * denominator of every step in the schedule.
+   */
+  revealLineMs: number;
+  /**
+   * What each player has committed, per slot. `""` is uncommitted.
+   *
+   * **Server-only, and the reason `toRoomState` derives `slotStates`.** The
+   * creation TV shows progress, never content: printing the drafts would let
+   * the room read and judge before the vote and spoil the reveal this feature
+   * exists for. A top-level field rather than a member of the phase, because
+   * `toRoomState` strips whole fields and a nested one would ride out.
+   */
+  drafts: Record<PlayerId, string[]>;
+  /**
+   * Which slot each phone is sitting on. Public — it is the only thing that
+   * drives the writing state on the TV, and it says nothing about the text.
+   */
+  cursors: Record<PlayerId, number>;
+  /**
+   * This match's written categories, built at the close of `creating` and
+   * never before. `null` outside a custom match.
+   *
+   * Rides in `RoomState`, with `authorId` nulled until `authorsRevealed`.
+   */
+  pool: PoolCard[] | null;
+  /**
+   * Who sees which cards. **Server-only:** a leaked hand plus a public tally
+   * lets the room deduce who voted for what. Each player gets their own hands
+   * down their own socket, the way `entries` reaches a team.
+   */
+  deal: Record<PlayerId, Hand[]>;
+  /**
+   * Whether the pool's authorship has been handed to the clients. Flipped when
+   * voting closes and nowhere else — it is the reveal.
+   */
+  authorsRevealed: boolean;
 };
 
 /** Broadcast to every connection. Safe for all eyes. */
 export type RoomState = Omit<
   Room,
-  "entries" | "lastActivityAt" | "kicked" | "hostGoneAt"
+  "entries" | "lastActivityAt" | "kicked" | "hostGoneAt" | "drafts" | "deal"
 > & {
   serverTime: number;
+  /**
+   * Derived from `drafts` and `cursors` at the boundary, so the TV can render
+   * three states per slot without the text ever crossing it. Empty outside the
+   * `creating` phase.
+   */
+  slotStates: Record<PlayerId, SlotState[]>;
 };
 
 export function createRoom(code: string, now: number): Room {
@@ -179,6 +349,14 @@ export function createRoom(code: string, now: number): Room {
     kicked: [],
     hostGoneAt: null,
     configuring: false,
+    paused: null,
+    viewNonce: 0,
+    revealLineMs: REVEAL_TIMING.LINE_INTERVAL,
+    drafts: {},
+    cursors: {},
+    pool: null,
+    deal: {},
+    authorsRevealed: false,
   };
 }
 
@@ -189,9 +367,29 @@ export function toRoomState(room: Room, now: number): RoomState {
     lastActivityAt: _lastActivityAt,
     kicked: _kicked,
     hostGoneAt: _hostGoneAt,
+    drafts,
+    deal: _deal,
     ...rest
   } = room;
-  return { ...rest, serverTime: now };
+
+  const slotStates: Record<PlayerId, SlotState[]> = {};
+  if (room.phase.name === "creating") {
+    const quota = quotaFor(room.players.length, room.settings.roundCount);
+    for (const player of room.players) {
+      slotStates[player.id] = slotStatesFor(
+        drafts[player.id],
+        room.cursors[player.id] ?? 0,
+        quota,
+      );
+    }
+  }
+
+  return {
+    ...rest,
+    pool: room.pool ? publicPool(room.pool, room.authorsRevealed) : null,
+    slotStates,
+    serverTime: now,
+  };
 }
 
 /**
@@ -225,11 +423,14 @@ export function preRoundPhase(view: MatchView): "lobby" | "standings" {
  */
 export function countdownScreen(
   view: MatchView & { phase: Phase },
-): "lobby" | "voting" | "standings" | "teams" {
+): "lobby" | "voting" | "standings" | "teams" | "creating" {
   if (view.phase.name === "countdown" && view.phase.to === "voting") {
     // With teams on there is no lobby→voting countdown at all — the lobby
     // hands off to `teams` first — so a `to: "voting"` countdown can only
     // have come out of team select. Derived, so nothing extra is stored.
+    return teamsEnabled(view.settings) ? "teams" : "lobby";
+  }
+  if (view.phase.name === "countdown" && view.phase.to === "creating") {
     return teamsEnabled(view.settings) ? "teams" : "lobby";
   }
   return view.history.length === 0 ? "voting" : "standings";
