@@ -666,6 +666,15 @@ ul, ol { list-style: none; }
    it. Everything else in this corner backs out of a phase; this ends the room. */
 .host-exit--pinned { padding: 0 18px; }
 .host-exit--pinned .host-exit__label { max-width: none; margin: 0; }
+/* The hover/focus/active rule below adds side margin to the label to make
+   room for it sliding out from under the collapsed ✕ — a pinned button has
+   no collapsed state to slide out of, so that margin would only ever widen
+   it on hover for no reason. Pin it back to 0 here. */
+.host-exit--pinned:hover .host-exit__label,
+.host-exit--pinned:focus-visible .host-exit__label,
+.host-exit--pinned.host-exit--active .host-exit__label {
+  margin: 0;
+}
 
 /* `max-width` rather than a width transition, because the label's own width is
    the target and there is no keyword for that which animates in every browser
@@ -1856,10 +1865,13 @@ ul, ol { list-style: none; }
   animation: cardFadeIn 460ms linear calc(var(--deal-rank) * 150ms) both;
 }
 
-/* Frame 2. The next column shakes for the whole inter-column beat, so the pause
-   is a cue rather than a stall and the room is already looking at the list about
-   to fill. Fires before the first column too. */
-.result-col--cue { animation: shakeCue 1000ms ease-in-out; }
+/* Frame 2. A finished card gets a full second of stillness before its
+   successor cues — the shake reads as an announcement only if the room has
+   just watched the previous list stop, not if it starts the instant the last
+   word lands. The shake itself then fills the second half of the
+   inter-column beat, ending as the new column's first line arrives. Fires
+   before the first column too. */
+.result-col--cue { animation: shakeCue 1000ms ease-in-out 1000ms; }
 
 /* The revealing column sits over its neighbours, so the teal shadow is never
    half-covered by the card next to it. */
@@ -2317,13 +2329,13 @@ ul, ol { list-style: none; }
 }
 
 @keyframes shakeCue {
-  0%, 100% { transform: none; }
-  10% { transform: translateX(-5px) rotate(-0.7deg); }
-  25% { transform: translateX(5px) rotate(0.7deg); }
-  40% { transform: translateX(-4px) rotate(-0.5deg); }
-  55% { transform: translateX(4px) rotate(0.5deg); }
-  70% { transform: translateX(-2px); }
-  85% { transform: translateX(2px); }
+  0%, 100% { transform: scale(1); }
+  10% { transform: translateX(-5px) rotate(-0.7deg) scale(1.03); }
+  25% { transform: translateX(5px) rotate(0.7deg) scale(1.06); }
+  40% { transform: translateX(-4px) rotate(-0.5deg) scale(1.1); }
+  55% { transform: translateX(4px) rotate(0.5deg) scale(1.06); }
+  70% { transform: translateX(-2px) scale(1.03); }
+  85% { transform: translateX(2px) scale(1.01); }
 }
 
 @keyframes marqueeX {
@@ -5048,12 +5060,22 @@ ul, ol { list-style: none; }
 
 .host-creating { padding: 0; }
 
+/* Pinned rather than left in `.host-stage`'s own flex flow: the wall/columns
+   sibling is `flex: 1` and fills the stage completely, which leaves this
+   banner's own cross-axis alignment as the only thing standing between it and
+   the top-left corner on some layouts. Anchoring it to the stage directly —
+   `.host-stage` is already `position: relative` — makes "top middle above the
+   players" true unconditionally instead of an artifact of flex bookkeeping. */
 .host-creating__plaque-wrapper {
-  position: relative;
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 12px;
+  z-index: 1;
 }
 
 .host-creating__plaque {
@@ -5093,14 +5115,19 @@ ul, ol { list-style: none; }
   justify-content: safe center;
   align-content: safe center;
   gap: 18px;
-  padding: 24px 34px;
+  /* Extra top clearance for the now-absolutely-positioned plaque banner —
+     see `.host-creating__plaque-wrapper`. */
+  padding: 96px 34px 24px;
   overflow-y: auto;
 }
 
 .host-creating__column {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* Left rather than centred: the pill reads as a label sitting over the
+     top-left corner of its stack of cards, the same corner every other
+     badge in the app overhangs, instead of floating centred above them. */
+  align-items: flex-start;
   gap: 12px;
   flex: 0 0 218px;
 }
@@ -5123,7 +5150,9 @@ ul, ol { list-style: none; }
   grid-auto-rows: minmax(0, 1fr);
   align-content: safe center;
   gap: 12px;
-  padding: 24px 34px;
+  /* Extra top clearance for the now-absolutely-positioned plaque banner —
+     see `.host-creating__plaque-wrapper`. */
+  padding: 96px 34px 24px;
   overflow-y: auto;
 }
 
@@ -6306,29 +6335,41 @@ ul, ol { list-style: none; }
   gap: 12px;
 }
 
-.player-creating__meta {
-  font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--cream-dim);
-  text-align: center;
-}
+/* The tilted title badge every other player screen wears for its own prompt
+   — see `.player-teams__plaque` for the sibling this mirrors. Sized down
+   from `.plaque`'s default the same way that one is. */
+.player-creating__plaque { font-size: 16px; letter-spacing: 0.1em; padding: 8px 18px; margin: 0 0 4px; }
 
+/* Fixed height rather than `flex: 1` — a card that grows to fill whatever
+   room the keyboard leaves behind is a card whose size depends on whether
+   the keyboard is open, which is exactly the jump this fixes. `vv-compact`'s
+   own override used to be the only place this height was set, so opening
+   the keyboard used to *shrink* the card down to it; now the keyboard state
+   never changes the card's size, only how much dead space sits below it. */
 .player-creating__card {
-  flex: 1;
+  flex: 0 0 auto;
+  min-height: 132px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  cursor: text;
 }
 
 /* The card frame above never moves; this wrapper is what commit-driven
-   advance animates, so the border/shadow/padding stay put. */
+   advance animates, so the border/shadow/padding stay put. Centred rather
+   than top-aligned now that the card no longer stretches to fill the
+   screen — the label/input/counter group reads as one balanced block in the
+   middle of a fixed card instead of pinned to its top edge. */
 .player-creating__card-inner {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  align-items: center;
   gap: 12px;
+  text-align: center;
 }
 
 .player-creating__card-inner--a { animation: slotAdvanceA 220ms cubic-bezier(0.34, 1.28, 0.64, 1); }
@@ -6351,6 +6392,8 @@ ul, ol { list-style: none; }
   background: transparent;
   border: none;
   padding: 0;
+  width: 100%;
+  text-align: center;
   /* Spec calls for a 4px x 34px teal caret; `caret-width`/`caret-height`
      are not real CSS properties, so only the caret's colour is settable. */
   caret-color: var(--teal);
@@ -6460,10 +6503,6 @@ ul, ol { list-style: none; }
   padding: 14px 20px 0;
 }
 
-.vv-compact .player-creating__meta {
-  display: none;
-}
-
 .vv-compact .player-voting__head {
   flex: 0 0 44px;
   padding: 8px 12px;
@@ -6480,10 +6519,6 @@ ul, ol { list-style: none; }
 
 .vv-compact .player-voting__head-title {
   font-size: 11px;
-}
-
-.vv-compact .player-creating__card {
-  min-height: 132px;
 }
 
 .vv-compact .player-creating__input {

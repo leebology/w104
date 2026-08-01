@@ -48,11 +48,13 @@ export function creatingLayout(room: RoomState) {
   // to the avatar alone (§1b: "Below ~64px of cell height…"). Arithmetic
   // against the design's reference 1280×720 stage, not a live measurement —
   // the same footing `useWall` and `quotaFor` already stand on. The chrome
-  // budget is the header (~84px), the plaque + counter band (~70px) and the
-  // timer bar (106px); the wall's own 24px top/bottom padding and 12px row
-  // gaps come off what is left.
+  // budget is the header (~84px) and the timer bar (106px); the plaque band
+  // is no longer flow space (it is pinned over the wall, see
+  // `.host-creating__plaque-wrapper`), so its clearance is spent as the
+  // wall's own 96px top / 24px bottom padding instead, and 12px row gaps come
+  // off what is left.
   const wallRows = Math.ceil(slotCount / wallCols);
-  const wallAvailableHeight = 720 - 84 - 70 - 106 - 48;
+  const wallAvailableHeight = 720 - 84 - 106 - 120;
   const wallCellHeight = (wallAvailableHeight - (wallRows - 1) * 12) / wallRows;
   const smallWallCells = wallCellHeight < 64;
 
