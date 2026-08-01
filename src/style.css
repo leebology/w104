@@ -859,6 +859,10 @@ ul, ol { list-style: none; }
   white-space: nowrap;
 }
 
+/* The write-categories columns travel a long name instead of ellipsing it —
+   see `useMarquee` — so the clip box needs plain clipping, not the dots. */
+.player-pill__name[data-marquee] { text-overflow: clip; }
+
 /* Readiness is the whole pill. A ready player lifts off the page in gold; a
    waiting one sits flat and sunken, exactly like an unfilled room-code box.
    The tag inside spells it out for anyone close enough to read it, but the
@@ -1177,6 +1181,11 @@ ul, ol { list-style: none; }
   padding: 0 30px 16px;
 }
 
+/* The open board says nothing about who's voted for what — see
+   HostVoting.tsx and HostVotingCustom.tsx — so this is just the prompt's
+   own centred message, reusing `.host-voting__no-votes`'s sizing. */
+.host-voting__grid--waiting { justify-content: center; align-items: center; }
+
 .host-voting__row { display: flex; gap: 12px; flex: 1; min-height: 0; }
 .host-voting__result { justify-content: center; }
 .host-voting__row--top { flex: 0 0 206px; }
@@ -1477,18 +1486,20 @@ ul, ol { list-style: none; }
   justify-content: center;
 }
 
-.vote-card--leaving { animation: cardLeave 200ms ease-in both; }
+.vote-card--leaving { animation: cardLeave 600ms ease-in both; }
 
 @keyframes cardLeave {
   from { opacity: 1; transform: none; }
   to { opacity: 0; transform: translateY(6px); }
 }
 
-/* The 260ms reflow onto the podium — slower and a different curve than the
-   live board's own 220ms `flex-grow` transition, because this one is playing
-   once, at a fixed moment, rather than tracking a vote as it lands. */
-.host-voting--closed .vote-card--custom {
-  transition: flex-grow 260ms ease-out;
+/* The reflow onto the podium — slower, and a gentler curve, than the live
+   board's own 220ms `flex-grow` transition, because this one is playing
+   once, at a fixed moment, rather than tracking a vote as it lands. Applies
+   to every closed-reveal card, stock and custom alike, so both boards settle
+   at the same unhurried pace. */
+.host-voting--closed .vote-card {
+  transition: flex-grow 650ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* The transition's board wipe-in (§1c row 4): every pool card, sunken and
@@ -1509,7 +1520,7 @@ ul, ol { list-style: none; }
   .vote-card__total--in { animation: none; }
   .vote-card__total--out { opacity: 0; }
   .vote-card__total--in { opacity: 1; }
-  .host-voting--closed .vote-card--custom { transition: none; }
+  .host-voting--closed .vote-card { transition: none; }
   .vote-card--wipe { animation: none; }
 }
 
@@ -4037,27 +4048,41 @@ ul, ol { list-style: none; }
   color: var(--ink-dim);
 }
 
-/* Keyed off the place and not the row's position, so a tie for the lead
-   colours both leaders rather than whichever one sorted first. */
-.standings-table li[data-first] .standings-table__place { color: var(--pink); }
-
 .standings-table__avatar { font-size: 24px; line-height: 1; flex: 0 0 auto; }
 
+/* A team's name sits in the row rather than overhanging it, same as the
+   host's standings list — the badge keeps its tilt, accent and shape and
+   drops the absolute offset the card version needs to overhang a corner. */
+.standings-table__name .team-badge,
+.final-table__name .team-badge,
+.win-card__who .team-badge {
+  position: relative;
+  top: 0;
+  left: 0;
+  max-width: 100%;
+}
+
+/* A name too long for the row clips and travels, same as a team's badge —
+   see `useMarquee` — rather than ellipsing. `data-marquee` sits directly on
+   this element for a solo row (the team-badge case skips it, since the badge
+   is its own clip box), which is what makes its own `clientWidth` the room
+   the name has to travel: a nested wrapper here would be an inline span with
+   no width of its own to measure. */
 .standings-table__name {
   font-family: var(--display);
   font-size: 16px;
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.standings-table__name em {
+.standings-table__flag {
   font-family: var(--body);
   font-style: normal;
   font-size: 11px;
   color: var(--ink-dim);
+  flex: 0 0 auto;
 }
 
 /* Who has readied up — the question everyone in the room is asking between
@@ -4084,12 +4109,30 @@ ul, ol { list-style: none; }
   white-space: nowrap;
 }
 
+/* Number and unit, always both: a bare total reads as a count of something
+   unstated, and a team row's "2 pts" concatenated into the number's own span
+   used to wrap onto its own line the moment the row ran short of width — this
+   splits them so the unit can be its own short, non-wrapping word. */
+.standings-table__score {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 3px;
+  min-width: 42px;
+  flex: 0 0 auto;
+}
+
 .standings-table__points {
   font-family: var(--display);
   font-size: 22px;
-  width: 36px;
-  text-align: right;
-  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.standings-table__unit {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-dim);
+  white-space: nowrap;
 }
 
 .standings-table__key {
@@ -4199,18 +4242,33 @@ ul, ol { list-style: none; }
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.final-table__name em {
+.final-table__flag {
   font-family: var(--body);
   font-style: normal;
   font-size: 11px;
   color: var(--cream-dim);
+  flex: 0 0 auto;
 }
 
-.final-table__points { font-family: var(--display); font-size: 20px; flex: 0 0 auto; }
+.final-table__score {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.final-table__points { font-family: var(--display); font-size: 20px; white-space: nowrap; }
+
+.final-table__unit {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--cream-dim);
+  white-space: nowrap;
+}
 
 /* ------------------------------------------------------- player footer */
 
@@ -4875,6 +4933,16 @@ ul, ol { list-style: none; }
   top: -14px;
   left: 12px;
   max-width: calc(100% - 24px);
+  /* `inline-block`, not the bare `inline` a `<span>` defaults to: an inline
+     box always reports `clientWidth: 0` (the DOM has no concept of an
+     inline element's own rendered width), and `measureMarquee` reads that
+     width to decide how far the name has to travel. Read as 0, every badge
+     looked like it had no room at all and scrolled even a name that fit —
+     wherever `position` is reset to `relative`/`static` for a badge sitting
+     in flow (the row, the results card, the win card) rather than
+     overhanging a corner. Absolutely positioned already forced this via
+     blockification; this is what keeps it true once that's opted out of. */
+  display: inline-block;
   font-family: var(--display);
   font-size: 16px;
   line-height: 1.06;
@@ -5191,6 +5259,21 @@ ul, ol { list-style: none; }
   align-items: flex-start;
   gap: 12px;
   flex: 0 0 218px;
+  /* A flex item's default `min-width: auto` lets its content demand more
+     room than the fixed basis above — a long name would then widen the
+     pill past the column and break the row's spacing. Pinning it to 0 is
+     what makes the pill's own `max-width: 100%` (below) the real cap. */
+  min-width: 0;
+}
+
+/* The player pill sits in a fixed-width column here, unlike the lobby's
+   roster where it is free to size to its name. Capping it to the column's
+   width is what stops a long name pushing the pill past the grid — the name
+   itself already clips or travels via marquee inside that width. */
+.host-creating__column .player-pill,
+.host-creating__column .player-pill-slot {
+  max-width: 100%;
+  box-sizing: border-box;
 }
 
 .host-creating__slots {
@@ -6450,20 +6533,62 @@ ul, ol { list-style: none; }
   font-size: 30px;
   line-height: 1.06;
   color: var(--ink);
-  background: transparent;
-  border: none;
-  padding: 0;
+  background: var(--cream);
+  border: var(--border);
+  border-radius: 10px;
+  padding: 8px 14px;
   width: 100%;
   text-align: center;
   /* Spec calls for a 4px x 34px teal caret; `caret-width`/`caret-height`
      are not real CSS properties, so only the caret's colour is settable. */
   caret-color: var(--teal);
+  outline: none;
 }
 
-.player-creating__counter {
-  text-align: right;
-  font-size: 13px;
+.player-creating__input:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+/* Arrow-based pager, replacing the numbered slot chips: previous/next plus
+   a plain count, so swiping the card and tapping an arrow are the same
+   move — see `handleChipTap` in PlayerCreating. */
+.creating-pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+}
+
+.creating-pager__arrow {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  font: inherit;
+  font-family: var(--display);
+  font-size: 22px;
+  line-height: 1;
+  border: var(--border);
+  border-radius: 12px;
+  background: var(--cream);
+  color: var(--ink);
+  cursor: pointer;
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.creating-pager__arrow:disabled {
+  background: var(--code-empty);
   color: var(--ink-dim);
+  box-shadow: none;
+  cursor: default;
+}
+
+.creating-pager__count {
+  font-family: var(--display);
+  font-size: 16px;
+  color: var(--ink-dim);
+  min-width: 52px;
+  text-align: center;
 }
 
 .slot-strip {
@@ -6514,6 +6639,12 @@ ul, ol { list-style: none; }
 
 .player-creating__ready-card {
   flex: 1;
+  /* Matches `.player-creating__card`'s own `min-height` — a card should not
+     shrink just because writing gave way to reading. */
+  min-height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   position: relative;
   font: inherit;
   background: var(--cream);
@@ -6529,7 +6660,7 @@ ul, ol { list-style: none; }
   font-size: 26px;
   line-height: 1.06;
   overflow-wrap: anywhere;
-  text-align: left;
+  text-align: center;
 }
 
 .player-creating__ready-card:active {

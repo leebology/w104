@@ -11,7 +11,6 @@ import {
 } from "./gamemodes";
 import type { CategorySource, ChoiceSettingKey, NumericSettingKey } from "./gamemodes";
 import {
-  MAX_CATEGORY_LEN,
   WRITE_MS,
   buildDeal,
   buildPool,
@@ -238,7 +237,7 @@ function writeSlot(room: Room, playerId: PlayerId, slot: number, text: string): 
 
   const mine = [...(room.drafts[playerId] ?? [])];
   while (mine.length < quota) mine.push("");
-  const next = text.trim().slice(0, MAX_CATEGORY_LEN);
+  const next = text.trim();
   if (mine[slot] === next) return room;
   mine[slot] = next;
 

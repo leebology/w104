@@ -49,9 +49,6 @@ export const TINY_ROOM = 2;
 /** The writing window. A constant, not a setting: `durationSec` is the round. */
 export const WRITE_MS = 60_000;
 
-/** Characters a player may type into one category. */
-export const MAX_CATEGORY_LEN = 20;
-
 /** What a creation slot is showing on the TV. Never the text. */
 export type SlotState = "empty" | "writing" | "done";
 
@@ -208,7 +205,7 @@ export function buildPool(
   playerIds.forEach((playerId, seat) => {
     const mine = drafts[playerId] ?? [];
     for (let slot = 0; slot < quota; slot++) {
-      const typed = (mine[slot] ?? "").trim().slice(0, MAX_CATEGORY_LEN);
+      const typed = (mine[slot] ?? "").trim();
       const blank = typed === "";
       out.push({
         id: ids[seat * quota + slot],

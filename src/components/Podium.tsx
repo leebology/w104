@@ -152,7 +152,7 @@ export function Podium({ room, standings, final }: Props) {
                 <TeamBadge
                   name={s.name}
                   colorIndex={s.colorIndex!}
-                  className="team-badge--sm"
+                  className="team-badge--lg"
                 />
               )}
               <span className="podium-plinth__place">{ordinal(s.place)}</span>

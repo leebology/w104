@@ -8,6 +8,8 @@ import { roomStore } from "../../net/room";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import { rosterOf } from "../../../shared/teams";
 import { seatedPlayers } from "../../../shared/waiting";
+import { TeamBadge } from "../../components/TeamBadge";
+import { useMarquee } from "../../marquee";
 
 type Props = {
   room: RoomState;
@@ -73,6 +75,11 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
    */
   const emojiOf = (s: Standing) => (s.colorIndex === null ? s.emoji : null);
 
+  // A name too long for its row clips and travels, same as a team's badge —
+  // one clip box per row, measured together under one ref.
+  const finalList = useMarquee<HTMLOListElement>([standings]);
+  const midList = useMarquee<HTMLOListElement>([standings]);
+
   if (done) {
     return (
       <main className="screen screen--mobile screen--locked player-standings player-standings--final">
@@ -88,8 +95,14 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
                 : `YOU FINISHED ${ordinal(me.place)}`}
             </span>
             <div className="win-card__who">
-              {emojiOf(me) && <span className="win-card__avatar">{emojiOf(me)}</span>}
-              <span className="win-card__name">{me.name}</span>
+              {me.colorIndex !== null ? (
+                <TeamBadge name={me.name} colorIndex={me.colorIndex} className="team-badge--lg" />
+              ) : (
+                <>
+                  {emojiOf(me) && <span className="win-card__avatar">{emojiOf(me)}</span>}
+                  <span className="win-card__name">{me.name}</span>
+                </>
+              )}
             </div>
             <div className="win-card__score">
               <span className="win-card__points">{me.points}</span>
@@ -101,7 +114,7 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
           </section>
         )}
 
-        <ol className="final-table">
+        <ol className="final-table" ref={finalList}>
           <li className="final-table__label">FINAL TABLE</li>
           {standings.map((s) => (
             <li
@@ -111,11 +124,23 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
             >
               <span className="final-table__place">{ordinal(s.place)}</span>
               {emojiOf(s) && <span className="final-table__avatar">{emojiOf(s)}</span>}
-              <span className="final-table__name">
-                {s.name}
-                {s.members.includes(playerId) && <em> (you)</em>}
+              <span
+                className="final-table__name"
+                data-marquee={s.colorIndex === null ? "" : undefined}
+              >
+                {s.colorIndex !== null ? (
+                  <TeamBadge name={s.name} colorIndex={s.colorIndex} className="team-badge--sm" />
+                ) : (
+                  <span className="marquee">{s.name}</span>
+                )}
               </span>
-              <span className="final-table__points">{s.points}</span>
+              {s.colorIndex === null && s.members.includes(playerId) && (
+                <em className="final-table__flag"> (you)</em>
+              )}
+              <span className="final-table__score">
+                <span className="final-table__points">{s.points}</span>
+                <span className="final-table__unit">PTS</span>
+              </span>
             </li>
           ))}
         </ol>
@@ -149,15 +174,15 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
             breakdown inside its own highlight, which is the whole reason the recap
             card could go: it was saying a second time what your row already says,
             and it cost the table the room it needed to show ten people. */}
-        <ol className="card standings-table">
+        <ol className="card standings-table" ref={midList}>
           {standings.map((s) => {
             const members = s.members
               .map((id) => room.players.find((p) => p.id === id))
               .filter((p) => p !== undefined);
             const connected = members.filter((p) => p.connected);
-            const isReady = connected.length > 0 && connected.every((p) => p.ready);
             const dropped = connected.length === 0;
             const isMe = s.members.includes(playerId);
+            const team = s.colorIndex !== null;
             return (
               <li
                 key={s.id}
@@ -170,36 +195,29 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
                   {emojiOf(s) && (
                     <span className="standings-table__avatar">{emojiOf(s)}</span>
                   )}
-                  <span className="standings-table__name">
-                    {s.name}
-                    {isMe && <em> (you)</em>}
-                    {dropped && <em> dropped</em>}
+                  <span className="standings-table__name" data-marquee={team ? undefined : ""}>
+                    {team ? (
+                      <TeamBadge name={s.name} colorIndex={s.colorIndex!} className="team-badge--sm" />
+                    ) : (
+                      <span className="marquee">{s.name}</span>
+                    )}
                   </span>
-                  {/* No dot on a dropped row: it is not waiting on them. The
-                      points stay right-aligned without it. */}
-                  {!dropped && (
-                    <i
-                      className={
-                        isReady
-                          ? "standings-table__dot standings-table__dot--ready"
-                          : "standings-table__dot"
-                      }
-                    />
-                  )}
+                  {!team && isMe && <em className="standings-table__flag"> (you)</em>}
+                  {dropped && <em className="standings-table__flag"> dropped</em>}
                   {/* What the round just played paid this row, immediately left
                       of the running total it went into. */}
                   {s.last !== null && (
                     <span className="standings-table__delta">+{s.last}pts</span>
                   )}
-                  <span className="standings-table__points">{s.points}</span>
+                  <span className="standings-table__score">
+                    <span className="standings-table__points">{s.points}</span>
+                    <span className="standings-table__unit">PTS</span>
+                  </span>
                 </div>
                 {isMe && <RoundBoxes badges={s.badges} room={room} />}
               </li>
             );
           })}
-          <li className="standings-table__key">
-            TEAL DOT = READY FOR ROUND {currentRound(room)}
-          </li>
         </ol>
       </div>
 

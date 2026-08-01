@@ -1,4 +1,3 @@
-import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
 import { prefersReducedMotion } from "../../reveal";
@@ -16,7 +15,7 @@ import { roomStore } from "../../net/room";
 import { TIMING, useCreatingTransition } from "../../transition";
 import { CreatingLeaveBoard } from "./HostCreating";
 import { HostHeader, HostHeaderRight, VotingCount } from "./HostHeader";
-import { VotingExit, balancedRows } from "./HostVoting";
+import { VotingExit } from "./HostVoting";
 
 type Props = {
   room: RoomState;
@@ -37,16 +36,6 @@ type Props = {
  * instead of `BALLOT`) and what happens at close (chances, then authorship).
  * See docs/design/2026-07-30-custom-categories-brief.md §1d.
  */
-
-/**
- * Zero-vote cards get a fixed cap here, not the stock `nameSize`'s 20px — the
- * brief calls this value out explicitly as the one place custom differs from
- * the ballot board's own scale. Voted cards keep the unchanged formula.
- */
-function nameSize(votes: number, max: number): string {
-  if (votes === 0) return "30px";
-  return `${Math.round(26 + 40 * (votes / max))}px`;
-}
 
 export function HostVotingCustom({ room, offset, countdown, creatingSnapshot }: Props) {
   const pool = room.pool ?? [];
@@ -107,17 +96,6 @@ export function HostVotingCustom({ room, offset, countdown, creatingSnapshot }: 
     );
   }
 
-  const { shown, packCount } = boardCards(pool, totals);
-  // One scale across both rows, so a name's size means the same thing
-  // wherever the card sits — same reasoning as the stock board's `maxVotes`.
-  const maxVotes = Math.max(1, ...shown.map((c) => totals[c.id] ?? 0));
-  const rankOf = new Map(shown.map((c, i) => [c.id, i]));
-  const rows = balancedRows(
-    shown,
-    (c) => totals[c.id] ?? 0,
-    (c) => rankOf.get(c.id) ?? 0,
-  );
-
   // Whether the header count and the prompt line have anything to crossfade
   // *from*. Reduced motion cuts straight to the settled frame — no old copy
   // ever shows.
@@ -126,21 +104,6 @@ export function HostVotingCustom({ room, offset, countdown, creatingSnapshot }: 
     ? creatingSnapshot.players.filter((p) => p.connected && p.ready).length
     : 0;
   const crossfadeDelay = transition.delay(TIMING.crossfadeAt);
-
-  // The board's own wipe-in (§1c row 4): every card fades up from
-  // `translateY(8px)`, staggered by board position — row-major, matching
-  // reading order. A closure counter, not a ref: `rows` is rebuilt from the
-  // live `pool`/`totals` on every render, but the delay is computed from
-  // `elapsedAtMount`, which is fixed — so a card that has already finished
-  // wiping in by the time a later vote reorders the board keeps the same
-  // settled, no-op animation state rather than replaying.
-  let wipeIndex = -1;
-  const wipeStyle = (): CSSProperties | undefined => {
-    if (transition.reduced) return undefined;
-    wipeIndex += 1;
-    const i = wipeIndex;
-    return { animationDelay: transition.delay(TIMING.boardWipeStart + i * TIMING.boardWipeStagger) };
-  };
 
   return (
     <main className="screen screen--host host-voting host-voting--custom">
@@ -189,46 +152,12 @@ export function HostVotingCustom({ room, offset, countdown, creatingSnapshot }: 
       {transition.showLeaving && creatingSnapshot ? (
         <CreatingLeaveBoard room={creatingSnapshot} delay={transition.delay} />
       ) : (
-        <div className="host-voting__grid">
-          {rows.map((row, i) => (
-            <div className="host-voting__row" key={i}>
-              {row.map((card) => {
-                const votes = totals[card.id] ?? 0;
-                return (
-                  <div
-                    key={card.id}
-                    className={
-                      (votes > 0 ? "vote-card" : "vote-card vote-card--zero") +
-                      " vote-card--custom" +
-                      (transition.reduced ? "" : " vote-card--wipe")
-                    }
-                    // Card width IS the odds, exactly as the stock board — no
-                    // measurement, no JS layout pass. No voter avatars here:
-                    // hands stay private until the reveal.
-                    style={{
-                      flexGrow: votes + 1,
-                      "--name-size": nameSize(votes, maxVotes),
-                      ...wipeStyle(),
-                    } as CSSProperties}
-                  >
-                    <span className="vote-card__name">{card.text}</span>
-                    {votes > 0 && (
-                      <span className="vote-card__foot vote-card__foot--solo">
-                        <span className="vote-card__total">{votes}</span>
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {packCount > 0 && !transition.showLeaving && (
-        // A count, never a list — a list would be a second board.
-        <div className="host-voting__pack">
-          <span className="host-voting__pack-pill">+ {packCount} MORE ON THE BOARD</span>
+        // The board itself stays hidden while voting is open — showing it
+        // live would let the room watch categories reorder and resize as
+        // votes land, mid-vote. It appears once for everyone, all at once,
+        // in the closed reveal above.
+        <div className="host-voting__grid host-voting__grid--waiting">
+          <p className="host-voting__no-votes">Categories reveal once voting closes.</p>
         </div>
       )}
 
@@ -295,11 +224,18 @@ function HostVotingCustomClosed({
 
   // The board sits still for a beat before it starts moving at all — long
   // enough for the room to look up from their phones at the TV before the
-  // cards they didn't vote for vanish out from under them.
-  const LOOK_UP_MS = 1000;
+  // cards they didn't vote for vanish out from under them. 3s, not 1s: at
+  // 1s the leave and the reflow both read as an instant cut rather than
+  // something the room had a chance to see coming.
+  const LOOK_UP_MS = 3000;
 
-  // The 260ms reflow: survivors mount at flex-grow 0 and are pushed to their
-  // final share after the look-up beat, so `.host-voting--closed .vote-card`'s
+  // How long the zero-vote row takes to actually fade out, once it starts —
+  // shared by the CSS keyframe (`cardLeave`) and the timer that unmounts the
+  // row once the fade has had time to finish.
+  const LEAVE_MS = 600;
+
+  // The reflow: survivors mount at flex-grow 0 and are pushed to their final
+  // share after the look-up beat, so `.host-voting--closed .vote-card`'s
   // transition has something to animate from. Skipped under reduced motion —
   // cards land at their settled share on the very first frame instead.
   const [grown, setGrown] = useState(reduced);
@@ -309,12 +245,25 @@ function HostVotingCustomClosed({
     return () => clearTimeout(t);
   }, [reduced]);
 
-  // Zero-vote cards leave 200ms after the look-up beat. Reduced motion cuts
-  // straight to the settled state — they are simply never shown.
+  // Zero-vote cards start fading only once the look-up beat is over — the
+  // `--leaving` class used to ride on the card from the very first frame, so
+  // the fade actually played out (and finished) while the room was still
+  // arriving at the screen, well before `zeroGone` ever unmounted them.
+  // `leaving` is the flag that actually starts the animation; `zeroGone`
+  // removes the row from the DOM only once that animation has had time to
+  // finish.
+  const [leaving, setLeaving] = useState(reduced);
+  useEffect(() => {
+    if (reduced || zeroCards.length === 0) return;
+    const t = setTimeout(() => setLeaving(true), LOOK_UP_MS);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [zeroGone, setZeroGone] = useState(reduced);
   useEffect(() => {
     if (reduced || zeroCards.length === 0) return;
-    const t = setTimeout(() => setZeroGone(true), LOOK_UP_MS + 200);
+    const t = setTimeout(() => setZeroGone(true), LOOK_UP_MS + LEAVE_MS);
     return () => clearTimeout(t);
     // Runs once per mount: this is a fresh component every time voting
     // closes, so there is exactly one "leave" beat to play.
@@ -402,7 +351,13 @@ function HostVotingCustomClosed({
                 // since this is a fresh mount and it was never part of it.
                 <div className="host-voting__row host-voting__row--leaving">
                   {zeroCards.map((card) => (
-                    <div key={card.id} className="vote-card vote-card--custom vote-card--zero vote-card--leaving">
+                    <div
+                      key={card.id}
+                      className={
+                        "vote-card vote-card--custom vote-card--zero" +
+                        (leaving ? " vote-card--leaving" : "")
+                      }
+                    >
                       <span className="vote-card__name">{card.text}</span>
                     </div>
                   ))}

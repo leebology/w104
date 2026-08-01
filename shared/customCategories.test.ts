@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  HAND_SIZE, MAX_CATEGORY_LEN, MAX_QUOTA, VOTE_BUDGET,
+  HAND_SIZE, MAX_QUOTA, VOTE_BUDGET,
   exposureFor, quotaFor, voteBudgetFor,
 } from "./customCategories";
 
@@ -103,11 +103,11 @@ describe("buildPool", () => {
     expect(pool.every((c) => c.authorId === null)).toBe(true);
   });
 
-  it("trims and caps what a player typed", () => {
+  it("trims what a player typed, with no length cap", () => {
     const long = "x".repeat(40);
     const pool = buildPool(seats(1), { p0: [`  spaced  `, long] }, 2, HOUSE, 0.1);
     expect(pool[0].text).toBe("spaced");
-    expect(pool[1].text).toHaveLength(MAX_CATEGORY_LEN);
+    expect(pool[1].text).toBe(long);
   });
 
   it("gives every card a unique id that does not name its seat", () => {

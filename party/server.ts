@@ -28,7 +28,7 @@ import {
 } from "./archive";
 import { DEFAULT_FILL_COUNT, fillCategoryFor, fillWordsFor } from "../shared/debug";
 import { collectUsage } from "./usage";
-import { MAX_CATEGORY_LEN, quotaOfRoom, writersOf } from "../shared/customCategories";
+import { quotaOfRoom, writersOf } from "../shared/customCategories";
 
 // Bindings declared in wrangler.jsonc.
 export interface Env {
@@ -92,6 +92,13 @@ const MAX_NAME_LEN = 20;
  */
 const MAX_EMOJI_LEN = 16;
 const DEFAULT_EMOJI = "🙂";
+/**
+ * A custom category has no length cap any more — see `writeSlot` — but a
+ * hostile message still should not be able to bloat `Room` with an unbounded
+ * string before it ever reaches `reduce`. Generous on purpose: nowhere near
+ * what a real category name would hit.
+ */
+const MAX_CATEGORY_WIRE_LEN = 2000;
 
 /**
  * One instance per room; the room code is this object's name. Authoritative
@@ -772,9 +779,10 @@ export class W104 extends Server<Env> {
           t: "commitDraft",
           playerId,
           slot: Number(msg.slot),
-          // Bounded again in `reduce`; bounded here so a hostile message
-          // cannot make the room object enormous before it gets there.
-          text: String(msg.text ?? "").slice(0, MAX_CATEGORY_LEN * 4),
+          // No length rule to re-check here any more — `reduce` no longer
+          // caps it either — but a hostile message still should not be able
+          // to make the room object enormous before it gets there.
+          text: String(msg.text ?? "").slice(0, MAX_CATEGORY_WIRE_LEN),
           now,
         });
         break;

@@ -29,7 +29,20 @@ export function measureMarquee(root: HTMLElement): void {
     const room =
       box.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
     const travel = Math.min(0, room - run.getBoundingClientRect().width);
-    box.style.setProperty("--travel", `${Math.round(travel)}px`);
+    const next = `${Math.round(travel)}px`;
+    if (box.style.getPropertyValue("--travel") === next) continue;
+    box.style.setProperty("--travel", next);
+    // A running `infinite alternate` animation does not reliably re-resolve
+    // a `var()` inside its own keyframes the moment the custom property
+    // changes — an already-looping run can keep animating toward the stale
+    // value it started with until something unrelated forces a style
+    // recalc. Restarting the animation outright is what makes a travel
+    // change (a name that was already long at mount, a host reload with an
+    // existing roster) take effect immediately instead of sitting frozen
+    // until the next incidental re-render.
+    run.style.animation = "none";
+    void run.offsetWidth;
+    run.style.animation = "";
   }
 }
 
