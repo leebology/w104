@@ -290,3 +290,13 @@ describe("debugJump", () => {
     expect(jump(room, "standings", 6000).paused).toBeNull();
   });
 });
+
+test("carries the writing phase and its countdown", () => {
+  expect(VIEWS.map((v) => v.id)).toContain("creating");
+  expect(VIEWS.map((v) => v.id)).toContain("countdownToCreating");
+  expect(isViewId("creating")).toBe(true);
+  expect(currentView({ phase: { name: "creating", endsAt: 0 } })).toBe("creating");
+  expect(
+    currentView({ phase: { name: "countdown", endsAt: 0, to: "creating" } }),
+  ).toBe("countdownToCreating");
+});

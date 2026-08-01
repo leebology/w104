@@ -3,14 +3,23 @@ import { formatClock, useRemaining } from "../../net/clock";
 import { BALLOT, RANDOM_CATEGORY } from "../../../shared/categories";
 import { tallyVotes, voteBudget, voteShares } from "../../../shared/voting";
 import { teamsEnabled } from "../../../shared/teams";
+import { customEnabled } from "../../../shared/gamemodes";
 import { isWaiting } from "../../../shared/bots";
+import { seatedPlayers } from "../../../shared/waiting";
 import { currentRound } from "../../../shared/state";
 import type { Player, RoomState } from "../../../shared/state";
 import { VOTING_MS } from "../../../shared/reduce";
 import { GetReady } from "../../components/GetReady";
 import { RoomChip } from "../../components/RoomChip";
 import { roomStore } from "../../net/room";
-import { HostExit, HostHeader, HostHeaderRight, VotingCount } from "./HostHeader";
+import {
+  HostBackToRoom,
+  HostExit,
+  HostHeader,
+  HostHeaderRight,
+  VotingCount,
+} from "./HostHeader";
+import { HostVotingCustom } from "./HostVotingCustom";
 
 type Props = {
   room: RoomState;
@@ -19,6 +28,11 @@ type Props = {
   offset: number;
   /** Present once voting has closed and the round countdown is running. */
   countdown?: { endsAt: number; offset: number };
+  /** The last `creating`-phase `RoomState` this client saw — `null` for a
+      stock match (there is no writing phase to have seen) and for a custom
+      match this client joined after it closed. Only the custom fork's open
+      board does anything with it; see `HostVotingCustom`'s transition. */
+  creatingSnapshot?: RoomState | null;
 };
 
 /** Who voted for this category, and how many times each. */
@@ -65,11 +79,21 @@ function VoteFoot({
  * The back-out. One event, two destinations: with teams on it steps to team
  * select rather than all the way to the room — the server derives that, so
  * this only has to name it correctly.
+ *
+ * **Only one of the two asks first.** Going home ends the game and takes the
+ * confirmation every other "Back to room" takes; stepping back to team select
+ * ends nothing — no round has been played, the teams survive the trip, and the
+ * only casualty is a tally nobody has acted on yet. A dialog warning that the
+ * game will end would be warning about something that does not happen.
+ *
+ * Exported: the custom fork's closed reveal wants the identical behaviour
+ * rather than a second copy of it.
  */
-function VotingExit({ room }: { room: RoomState }) {
+export function VotingExit({ room }: { room: RoomState }) {
+  if (!teamsEnabled(room.settings)) return <HostBackToRoom />;
   return (
     <HostExit
-      label={teamsEnabled(room.settings) ? "Back to teams" : "Back to room"}
+      label="Back to teams"
       onClick={() => roomStore.send({ type: "backToLobby" })}
     />
   );
@@ -97,42 +121,61 @@ function cardLabel(category: string): string {
 }
 
 /**
- * The eleven cards split into the two rows the TV shows, balanced so the rows
- * carry near-equal total grow.
+ * The pool split into the two rows the TV shows, balanced so the rows carry
+ * near-equal total grow.
  *
  * Width is the odds, but `flex-grow` is only ever relative to the row a card
  * is in — so without this a one-vote card in a quiet row comes out wider than
  * a two-vote card in a loud one, and the whole mechanic quietly lies. Heaviest
- * card to the lighter row, half the ballot per row, then each row is put back
- * into ballot order: the list itself never re-sorts, only which row a card
- * lands in.
+ * card to the lighter row, half the pool per row, then each row is put back
+ * into its original order: the list itself never re-sorts, only which row a
+ * card lands in.
+ *
+ * Generic over the card shape and exported: the custom fork's pool is a
+ * `PoolCard`, not this file's inline ballot shape, and its "position" is a
+ * board rank rather than a ballot index, so both are supplied by the caller
+ * instead of assumed here. The stock caller passes `(c) => c.votes` and
+ * `(c) => BALLOT.indexOf(...)`.
  */
-type VoteCard = { category: string; votes: number };
-
-function balancedRows(cards: VoteCard[]): VoteCard[][] {
-  const rowA: VoteCard[] = [];
-  const rowB: VoteCard[] = [];
+export function balancedRows<T>(
+  cards: readonly T[],
+  weightOf: (card: T) => number,
+  orderOf: (card: T) => number,
+): T[][] {
+  const rowA: T[] = [];
+  const rowB: T[] = [];
   let sumA = 0;
   let sumB = 0;
   const half = Math.ceil(cards.length / 2);
-  for (const card of [...cards].sort((a, b) => b.votes - a.votes)) {
+  for (const card of [...cards].sort((a, b) => weightOf(b) - weightOf(a))) {
     const toA = rowB.length >= half || (rowA.length < half && sumA <= sumB);
     if (toA) {
       rowA.push(card);
-      sumA += card.votes + 1;
+      sumA += weightOf(card) + 1;
     } else {
       rowB.push(card);
-      sumB += card.votes + 1;
+      sumB += weightOf(card) + 1;
     }
   }
-  const poolIndex = (c: VoteCard) =>
-    BALLOT.indexOf(c.category as (typeof BALLOT)[number]);
-  rowA.sort((a, b) => poolIndex(a) - poolIndex(b));
-  rowB.sort((a, b) => poolIndex(a) - poolIndex(b));
+  rowA.sort((a, b) => orderOf(a) - orderOf(b));
+  rowB.sort((a, b) => orderOf(a) - orderOf(b));
   return rowB.length > 0 ? [rowA, rowB] : [rowA];
 }
 
-export function HostVoting({ room, offset, countdown }: Props) {
+export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props) {
+  // A different pool, a different fork — everything past this point (both
+  // rows, the closed reveal) is the stock ballot's only.
+  if (customEnabled(room.settings) && room.pool) {
+    return (
+      <HostVotingCustom
+        room={room}
+        offset={offset}
+        countdown={countdown}
+        creatingSnapshot={creatingSnapshot ?? null}
+      />
+    );
+  }
+
   const totals = tallyVotes(room.votes);
   // One hook, one deadline: the voting window while it runs, the round
   // countdown once it has closed. `useRemaining` returns whole seconds.
@@ -150,7 +193,12 @@ export function HostVoting({ room, offset, countdown }: Props) {
   // Matches `everyoneReady` in shared/reduce.ts, which is what actually closes
   // voting: a disconnected player must not read as "ready" on the TV, or the
   // count can say "not everyone's ready" right before voting closes anyway.
-  const ready = room.players.filter((p) => p.connected && isWaiting(p)).length;
+  // Seated players only, on both halves — a latecomer has no vote to spend
+  // (voting is one window at the top of the match) and `everyoneReady` does not
+  // count them, so including them would leave this readout permanently one
+  // short of the count that actually closes the vote.
+  const voters = seatedPlayers(room.players);
+  const ready = voters.filter((p) => p.connected && isWaiting(p)).length;
 
   if (countdown) {
     return <HostVotingClosed room={room} totals={totals} remaining={remaining} cast={cast} />;
@@ -163,16 +211,20 @@ export function HostVoting({ room, offset, countdown }: Props) {
   // One scale across both rows, so a name's size means the same thing
   // wherever the card sits.
   const maxVotes = Math.max(1, ...cards.map((c) => c.votes));
-  const rows = balancedRows(cards);
+  const rows = balancedRows(
+    cards,
+    (c) => c.votes,
+    (c) => BALLOT.indexOf(c.category as (typeof BALLOT)[number]),
+  );
 
   return (
     <main className="screen screen--host host-voting">
       {/* No round marker: voting only ever happens before round one. */}
       <HostHeader
-        left={<RoomChip code={room.code} />}
+        left={<RoomChip room={room} />}
         right={
           <HostHeaderRight>
-            <VotingCount n={room.players.length} ready={ready} />
+            <VotingCount n={voters.length} ready={ready} />
             <VotingExit room={room} />
           </HostHeaderRight>
         }
@@ -260,7 +312,7 @@ function HostVotingClosed({
   return (
     <main className="screen screen--host host-voting host-voting--closed">
       <HostHeader
-        left={<RoomChip code={room.code} />}
+        left={<RoomChip room={room} />}
         right={
           <HostHeaderRight>
             <span className="host-header__count">
@@ -271,58 +323,70 @@ function HostVotingClosed({
         }
       />
 
-      <div className="host-voting__result countdown-dim">
-        {survivors.length === 0 ? (
-          // The deadline force-closes voting regardless of readiness, so this
-          // is reachable with nobody having voted at all. Say nothing about
-          // which category — the draw itself hasn't happened yet.
-          <p className="host-voting__no-votes">
-            No one voted — the room gets a random category.
-          </p>
-        ) : (
-          <>
-            <div className="host-voting__row host-voting__row--top">
-              {top.map((category, i) => (
-                <div className="vote-card" key={category} style={{ flexGrow: shares[category] }}>
-                  <span className="vote-card__name" style={{ fontSize: rankNameSize[i] }}>
-                    {cardLabel(category)}
-                  </span>
-                  <VoteFoot
-                    room={room}
-                    category={category}
-                    total={`${shares[category]}%`}
-                    totalStyle={{ fontSize: rankShareSize[i] }}
-                  />
-                </div>
-              ))}
-            </div>
-
-            {rest.length > 0 && (
-              <div className="host-voting__row host-voting__row--rest">
-                {rest.map((category) => (
-                  // Equal width below the top three: under ~10% the differences
-                  // are not worth a size difference.
-                  <div className="vote-card vote-card--small" key={category}>
-                    <span className="vote-card__name">{cardLabel(category)}</span>
-                    <VoteFoot room={room} category={category} total={`${shares[category]}%`} />
+      {/* The reveal and the countdown card are two blocks sharing one stage,
+          which is what this wrapper is for: it takes the height under the
+          header and spaces the pair inside it, rather than letting the reveal
+          absorb the slack and pin the card to the bottom edge. Neither is
+          dimmed and neither is posed over the other — this is the one screen
+          whose countdown interrupts nothing, because the result *is* what the
+          room is reading and the five seconds exist to let them read it. */}
+      <div className="host-voting__stage">
+        <div className="host-voting__result">
+          {survivors.length === 0 ? (
+            // The deadline force-closes voting regardless of readiness, so this
+            // is reachable with nobody having voted at all. Say nothing about
+            // which category — the draw itself hasn't happened yet.
+            <p className="host-voting__no-votes">
+              No one voted — the room gets a random category.
+            </p>
+          ) : (
+            <>
+              <div className="host-voting__row host-voting__row--top">
+                {top.map((category, i) => (
+                  <div className="vote-card" key={category} style={{ flexGrow: shares[category] }}>
+                    <span className="vote-card__name" style={{ fontSize: rankNameSize[i] }}>
+                      {cardLabel(category)}
+                    </span>
+                    <VoteFoot
+                      room={room}
+                      category={category}
+                      total={`${shares[category]}%`}
+                      totalStyle={{ fontSize: rankShareSize[i] }}
+                    />
                   </div>
                 ))}
               </div>
-            )}
-          </>
-        )}
-      </div>
 
-      {/* The same countdown card the lobby and the standings pose, over the
-          same dimmed screen. Nothing on it names the drawn category: it has not
-          been drawn yet — that happens at the whistle.
+              {rest.length > 0 && (
+                <div className="host-voting__row host-voting__row--rest">
+                  {rest.map((category) => (
+                    // Equal width below the top three: under ~10% the differences
+                    // are not worth a size difference.
+                    <div className="vote-card vote-card--small" key={category}>
+                      <span className="vote-card__name">{cardLabel(category)}</span>
+                      <VoteFoot room={room} category={category} total={`${shares[category]}%`} />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
 
-          No Stop button: `cancelStart` from here lands back in `voting`, which
-          is a hair's breadth from where "Back to teams" goes and reads as the
-          same escape to anyone watching. One way out per screen, in the corner
-          every other host screen keeps it in. */}
-      <div className="countdown-pose">
-        <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
+        {/* The same countdown card the lobby and the standings pose — but a
+            block on the stage rather than a card over the screen. Centred over
+            the reveal it covered the winning categories, and covered the "no
+            one voted" line outright, which is the one thing on this screen a
+            room has to read. Nothing on it names the drawn category: it has not
+            been drawn yet — that happens at the whistle.
+
+            No Stop button: `cancelStart` from here lands back in `voting`, which
+            is a hair's breadth from where "Back to teams" goes and reads as the
+            same escape to anyone watching. One way out per screen, in the corner
+            every other host screen keeps it in. */}
+        <div className="host-voting__countdown">
+          <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
+        </div>
       </div>
     </main>
   );

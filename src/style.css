@@ -292,8 +292,9 @@ ul, ol { list-style: none; }
 /* One gold band per screen, carrying the single loudest thing on it. The
    slant is what separates it from a button — `.btn` is gold too, and a
    heading that looked tappable would be the one mistake this design can
-   make. `.get-ready` and `.banner` are the two other members of the family;
-   this is the quiet one, for a screen's title. */
+   make. `.banner` is the other member of the family; this is the quiet one,
+   for a screen's title. (`.get-ready` was a third until every countdown moved
+   to `GetReady`'s card.) */
 .plaque {
   align-self: center;
   background: var(--gold);
@@ -482,7 +483,98 @@ ul, ol { list-style: none; }
   flex: 0 0 auto;
 }
 
-.room-chip { gap: 14px; padding: 7px 18px; }
+/* The chip and the waiting room beside it. The chip never gives — the join
+   instruction is the one thing on a TV that has to be in the same place every
+   time — so it is fixed and the strip is what shrinks when the header is
+   tight. */
+.room-chip-group {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.room-chip {
+  gap: 14px;
+  padding: 7px 18px;
+  flex: 0 0 auto;
+}
+
+/* ------------------------------------------------------- waiting room strip */
+
+/* Who is joining next round, beside the code they joined with. Draws nothing
+   at all when the waiting room is empty — see WaitingStrip.tsx. */
+.waiting-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.waiting-strip__label {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  line-height: 1.1;
+  color: var(--cream-dim);
+  white-space: nowrap;
+}
+
+/* Overlapped rather than spaced: this is a count the room reads as a clump,
+   and six separated faces would be as wide as the chip they sit beside. The
+   first child cancels the pull so the clump starts where the label ends. */
+.waiting-strip__faces {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.waiting-face {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: -8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--cream);
+  /* The accent when the player has picked a team; cream when there is no team
+     to have — `--accent` is set inline only by WaitingStrip, so the fallback
+     is what every free-for-all badge wears. */
+  box-shadow: 0 0 0 3px var(--accent, var(--cream)), 2px 2px 0 var(--ink);
+  white-space: nowrap;
+}
+
+.waiting-face:first-child { margin-left: 0; }
+
+/* Teams on, no team picked. Hollow is the signal: it is the only thing
+   standing between this player and the next round. */
+.waiting-face--unpicked {
+  background: transparent;
+  box-shadow: 0 0 0 2px var(--cream-dim);
+}
+
+.waiting-face--gone { opacity: 0.45; }
+
+.waiting-face--more {
+  font-family: var(--display);
+  font-size: 14px;
+  color: var(--ink);
+  padding: 4px 9px;
+}
+
+.waiting-face__avatar { font-size: 17px; line-height: 1; }
+
+/* Only ever drawn for a lone arrival — one person is somebody the room can
+   greet by name, and five are a number. */
+.waiting-face__name {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .room-chip__label {
   font-size: 14px;
@@ -531,13 +623,22 @@ ul, ol { list-style: none; }
    app, and the button that abandons the phase must never be able to be
    mistaken for the one that starts it. An outline on the field instead —
    present, findable, and clearly not the primary. */
+/* A closed ✕ that opens into its words. The corner of a host screen is the one
+   place on a TV nothing should be competing for attention, and at rest this is
+   a circle; the label unrolls under a pointer, which only ever exists on the
+   laptop where a host is actually driving. The height is fixed and the ✕ has a
+   width of its own, so the header's bar does not change height when it opens
+   and the circle is a circle rather than a rounded square. */
 .host-exit {
   font: inherit;
   font-family: var(--display);
   font-size: 13px;
   line-height: 1;
   letter-spacing: 0.08em;
-  padding: 11px 18px;
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 8px;
   border: 3px solid var(--cream);
   border-radius: 99px;
   background: transparent;
@@ -545,6 +646,55 @@ ul, ol { list-style: none; }
   text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
+}
+
+/* An SVG, not a glyph — see `HostExit`. The viewBox is symmetric and the two
+   strokes run corner to corner inside it, so the cross is centred in the circle
+   by construction rather than by nudging a text baseline around. */
+.host-exit__x {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 auto;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 3.2;
+  stroke-linecap: round;
+}
+
+/* The lobby's Close room: the full button it always was, with no ✕ in front of
+   it. Everything else in this corner backs out of a phase; this ends the room. */
+.host-exit--pinned { padding: 0 18px; }
+.host-exit--pinned .host-exit__label { max-width: none; margin: 0; }
+/* The hover/focus/active rule below adds side margin to the label to make
+   room for it sliding out from under the collapsed ✕ — a pinned button has
+   no collapsed state to slide out of, so that margin would only ever widen
+   it on hover for no reason. Pin it back to 0 here. */
+.host-exit--pinned:hover .host-exit__label,
+.host-exit--pinned:focus-visible .host-exit__label,
+.host-exit--pinned.host-exit--active .host-exit__label {
+  margin: 0;
+}
+
+/* `max-width` rather than a width transition, because the label's own width is
+   the target and there is no keyword for that which animates in every browser
+   the TV might be. The value only has to clear the longest label; the ease
+   simply finishes early. */
+.host-exit__label {
+  max-width: 0;
+  overflow: hidden;
+  transition: max-width 180ms ease, margin 180ms ease;
+}
+
+.host-exit:hover .host-exit__label,
+.host-exit:focus-visible .host-exit__label,
+.host-exit--active .host-exit__label {
+  max-width: 12em;
+  margin: 0 6px 0 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .host-exit__label { transition: none; }
 }
 
 /* Filled while the confirmation it opened is on screen, so the dialog behind
@@ -728,17 +878,30 @@ ul, ol { list-style: none; }
   box-shadow: none;
 }
 
-.player-pill__mark {
+/* "This one is ready", and the only drawing of it in the app — the lobby pill,
+   the standings row and the results card all render `ReadyMark`. It was the
+   lobby's tag, which is the first one a room ever sees; the standings had an
+   ink chip with a mint dot instead, and the results screen had nothing.
+
+   The ink outline is what the lobby's did not need: there it sits on a gold
+   pill, where cream alone is a tag, and everywhere else it sits on cream. Same
+   construction as `.badge` on the podium, for the same reason. */
+.ready-mark {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  background: var(--cream);
+  color: var(--ink);
+  border: 2px solid var(--ink);
   font-family: var(--display);
   font-size: 11px;
   letter-spacing: 0.12em;
   line-height: 1;
-  padding: 4px 9px;
+  padding: 3px 8px;
   border-radius: 99px;
   white-space: nowrap;
 }
 
-.player-pill--ready .player-pill__mark { background: var(--cream); }
 
 .player-pill--offline { opacity: 0.45; }
 
@@ -986,23 +1149,10 @@ ul, ol { list-style: none; }
   text-align: center;
 }
 
-/* A countdown is a state change, not a notification — it takes the slant and
-   the gold so it reads from across the room. */
-.get-ready {
-  background: var(--gold);
-  color: var(--ink-gold);
-  border: var(--border-heavy);
-  border-radius: 10px;
-  padding: 12px 26px;
-  transform: rotate(-2.5deg);
-  box-shadow: var(--shadow-btn);
-  font-family: var(--display);
-  font-size: 24px;
-  line-height: 1.06;
-  text-align: center;
-}
-
-.get-ready--small { font-size: 17px; padding: 10px 20px; }
+/* The old countdown plaque and its two sizes lived here. Every countdown in the
+   game is `GetReady` now — team select was the last screen still wearing the
+   plaque, on the TV and on the phone both, which made the count a room reads
+   from furthest away the one drawn smallest. See the `countdown` section. */
 
 /* ----------------------------------------------------------- host voting */
 
@@ -1057,6 +1207,53 @@ ul, ol { list-style: none; }
   text-align: center;
 }
 
+/* The one countdown in the game that is laid out rather than posed. Every
+   other screen the card interrupts is furniture the room has already read —
+   the lobby, the standings — so it sits over the middle of it and the screen
+   dims behind. Here the screen *is* the answer to the thing the room just
+   voted on, and it is up for five seconds only: a card over the middle of it
+   covered the winning categories, and covered the "no one voted" line
+   completely. So the two share the height instead.
+
+   **The stage owns the slack, and that is the whole point of it.** Left to the
+   screen's own column the reveal was the one flexible item, so it swallowed
+   every spare pixel and left the card pinned to the bottom edge with the
+   result floating high above it — two blocks at opposite ends of the screen
+   rather than a composition. Here both size to their content and the stage
+   spaces them, so the pair reads as one thing however tall the reveal turns
+   out to be. `space-around` rather than `center`: the reveal is the taller
+   block and a plain centring would put the card under the fold on a short TV.
+
+   The reveal is the one that gives under pressure — eleven surviving
+   categories at 720p want more height than the stage has — which is why the
+   closed screen's top row drops its 206px basis below and the card's band
+   never shrinks. A card told to shrink does not: its height is padding and a
+   150px numeral, so the box gets smaller and the card hangs out of the bottom
+   of the screen. */
+.host-voting__stage {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+}
+
+/* The bottom padding is clearance rather than rhythm: the card is tilted and
+   drops a 14px shadow, so its corners sit lower than the box the flexbox
+   measured. Without it, eleven surviving categories on a 720p TV push the
+   corner past the screen edge, where `.screen--host`'s `overflow: hidden`
+   shaves it off. */
+.host-voting__countdown {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding: 0 30px 16px;
+}
+
+/* Content height on the stage, not a share of it — see above. */
+.host-voting--closed .host-voting__result { flex: 0 1 auto; }
+.host-voting--closed .host-voting__row--top { flex: 0 1 206px; }
+
 /* Width is the odds: flex-grow carries the vote count, so a vote visibly
    grows its card with no measurement and no JS layout pass. */
 .vote-card {
@@ -1103,16 +1300,24 @@ ul, ol { list-style: none; }
    order and competes for width like everything else. */
 .vote-card--random { border-style: dashed; }
 
-/* Two ceilings, and the smaller wins. `--name-size` is the ideal — it scales
-   with share of the leader, set inline per card — and `17cqw` is what the
-   card can actually afford at the width flex-grow has left it. `anywhere`
-   is the last resort under both. */
+/* Two ceilings. `--name-size` is the ideal — it scales with share of the
+   leader, set inline per card — and `17cqw` is what the card can actually
+   afford at the width flex-grow has left it. `anywhere` is the last resort. */
 .vote-card__name {
   font-family: var(--display);
   font-size: min(var(--name-size, 21px), 17cqw);
   line-height: 1.06;
   overflow-wrap: anywhere;
   hyphens: auto;
+}
+
+/* The custom board adds a hard floor, and only the custom board: it is the
+   one that can crowd a row past six, where `17cqw` alone would land near
+   12.7px on the smallest card. Deliberately not on the shared rule — the
+   stock ballot's zero-vote cards ask for 20px (`nameSize` in HostVoting), so
+   a shared floor would silently resize a screen this feature never touched. */
+.host-voting--custom .vote-card__name {
+  font-size: max(24px, min(var(--name-size, 21px), 17cqw));
 }
 
 .vote-card__foot {
@@ -1161,11 +1366,6 @@ ul, ol { list-style: none; }
 
 .host-voting__footer .timer-track { flex: 1; height: 28px; }
 
-/* The countdown plaque, scaled for a TV. A separate class rather than an
-   override, so the phone-sized one keeps its numbers. Only team select still
-   wears it; every other countdown in the game is `GetReady` now. */
-.get-ready--tv { font-size: 40px; padding: 14px 36px; }
-
 /* HostVoting and HostVotingClosed render different DOM subtrees, so React
    remounts rather than transitioning between them — without this the reveal
    is a hard cut. This only covers the incoming side: the result area and the
@@ -1188,6 +1388,129 @@ ul, ol { list-style: none; }
   .host-voting--closed .get-ready-pose {
     animation: none;
   }
+}
+
+/* ---------------------------------------------------- host voting, custom */
+
+/* The custom board caps at ten cards (`BOARD_CAP`) rather than the ballot's
+   up to eleven, so its five-per-row minimum can afford to be wider — 132px
+   instead of the stock 104px — which is what lets `17cqw` clear the 24px
+   floor above without help at ten cards over two rows of five. Applied to
+   every custom card, open board and closed reveal alike, so the promise is
+   uniform across the whole screen. */
+.vote-card--custom { min-width: 132px; }
+
+/* The closed reveal's runners-up keep the stock `.vote-card--small` sizing
+   (150px basis, 220px cap, 19px name, 20px total) but stand taller — 110px
+   rather than 86px — a number the design brief calls out for this board
+   specifically, not a mistaken re-derivation of the stock one. */
+.vote-card--custom.vote-card--small { min-height: 110px; }
+
+/* No voter trail on this board — hands stay private until the reveal — so
+   the lone total has nothing to sit opposite. `.vote-card__foot`'s own
+   `space-between` would otherwise push a single child to the left. */
+.vote-card__foot--solo { justify-content: flex-end; }
+
+/* "+ N MORE ON THE BOARD": a count, never a list — a list would be a second
+   board. Centred under the grid, above the footer. */
+.host-voting__pack {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: center;
+  padding: 0 0 12px;
+}
+
+.host-voting__pack-pill {
+  font-family: var(--display);
+  font-size: 13px;
+  color: var(--ink-dim);
+  background: var(--cream);
+  border: var(--border);
+  border-radius: 99px;
+  padding: 8px 18px;
+}
+
+/* The author chip's slot, stacked above the name rather than beside it — the
+   phone's voting tile puts the chip next to the chance figure instead, but
+   the board pins it "top-left inside the card" per the brief. Grouped with
+   the name in its own flex column so `.vote-card`'s own `space-between`
+   still only has two things to split: this group, and the total below. */
+.vote-card__top {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* The count-to-chance crossfade: both figures stacked in the same grid cell
+   so neither has to be measured or absolutely positioned against the other.
+   `justify-items: end` keeps the stack right-aligned, matching the stock
+   total's own position. */
+.vote-card__crossfade {
+  display: grid;
+  justify-items: end;
+}
+
+.vote-card__crossfade > span { grid-area: 1 / 1; }
+
+@keyframes countFadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes countFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.vote-card__total--out { animation: countFadeOut 200ms ease-out both; }
+.vote-card__total--in { animation: countFadeIn 200ms ease-out both; }
+
+/* Zero-vote cards at the close: on screen just long enough to leave. This
+   row only ever exists for the ~200ms it takes to empty — see
+   `HostVotingCustom.tsx`'s `zeroGone`. */
+.host-voting__row--leaving {
+  display: flex;
+  gap: 12px;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.vote-card--leaving { animation: cardLeave 200ms ease-in both; }
+
+@keyframes cardLeave {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(6px); }
+}
+
+/* The 260ms reflow onto the podium — slower and a different curve than the
+   live board's own 220ms `flex-grow` transition, because this one is playing
+   once, at a fixed moment, rather than tracking a vote as it lands. */
+.host-voting--closed .vote-card--custom {
+  transition: flex-grow 260ms ease-out;
+}
+
+/* The transition's board wipe-in (§1c row 4): every pool card, sunken and
+   unvoted, translating up 8px as it fades in — staggered per card by
+   `HostVotingCustom`'s own `animation-delay`. Reduced motion (below) drops
+   this to nothing rather than a shortened version — the board is meant to
+   simply already be there. */
+.vote-card--wipe { animation: voteBoardWipeIn 180ms ease-out both; }
+
+@keyframes voteBoardWipeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vote-card--leaving { animation: none; opacity: 0; }
+  .vote-card__total--out,
+  .vote-card__total--in { animation: none; }
+  .vote-card__total--out { opacity: 0; }
+  .vote-card__total--in { opacity: 1; }
+  .host-voting--closed .vote-card--custom { transition: none; }
+  .vote-card--wipe { animation: none; }
 }
 
 /* ---------------------------------------------------------- host scoring */
@@ -1408,6 +1731,16 @@ ul, ol { list-style: none; }
 
 .id-card__foot .id-card__meta { flex: 1; }
 
+/* The results card's left slot, holding the ready tag or nothing. It takes the
+   width either way, so the stats stay pinned to the right edge and a card that
+   has readied is the same shape as one that has not. */
+.id-card__status {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
 /* A clip box on this screen rather than an ellipsis — a name too long for its
    column travels. `.id-card__name`'s own `text-overflow` is inert once the run
    inside it is an inline-block, so it costs nothing to leave in place for the
@@ -1532,10 +1865,13 @@ ul, ol { list-style: none; }
   animation: cardFadeIn 460ms linear calc(var(--deal-rank) * 150ms) both;
 }
 
-/* Frame 2. The next column shakes for the whole inter-column beat, so the pause
-   is a cue rather than a stall and the room is already looking at the list about
-   to fill. Fires before the first column too. */
-.result-col--cue { animation: shakeCue 1000ms ease-in-out; }
+/* Frame 2. A finished card gets a full second of stillness before its
+   successor cues — the shake reads as an announcement only if the room has
+   just watched the previous list stop, not if it starts the instant the last
+   word lands. The shake itself then fills the second half of the
+   inter-column beat, ending as the new column's first line arrives. Fires
+   before the first column too. */
+.result-col--cue { animation: shakeCue 1000ms ease-in-out 1000ms; }
 
 /* The revealing column sits over its neighbours, so the teal shadow is never
    half-covered by the card next to it. */
@@ -1709,14 +2045,27 @@ ul, ol { list-style: none; }
 /* The clip box carries the pop and the run inside carries the travel — one
    transform each, so the two never fight. A clipped emoji is a missing
    attribution, so this scrolls rather than truncating. */
+/* The trail does not scale with the word, and that is the difference between
+   the two screens rather than an oversight in one of them. It is a strip of
+   faces and team swatches — identity, not prose — and identity has a floor
+   below which it stops being readable at all, which the TV's 15px column
+   pushed it under: at `--word-size - 4` the host's trail came out at 11px, a
+   third smaller than the phone's, on the screen being read from furthest
+   away. So the phone's size is the size, and a larger word may lead a trail
+   that does not grow with it.
+
+   `line-height` is the other half: emoji draw well outside the em box, so a
+   line box of exactly 1em under `overflow: hidden` shaves the tops and the
+   tails off every face in the trail. The clip box is here to cut the strip
+   off horizontally when it is too long to fit, never to trim the glyphs. */
 .word-row__also {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 40%;
   display: block;
   overflow: hidden;
-  font-size: calc(var(--word-size, 16px) - 4px);
-  line-height: 1;
+  font-size: max(15px, calc(var(--word-size, 16px) - 4px));
+  line-height: 1.3;
   color: var(--struck);
 }
 
@@ -1846,10 +2195,13 @@ ul, ol { list-style: none; }
 
    `--accent` is set per element by whoever renders it, exactly as `TeamBadge`
    does, so the swatch is correct wherever it is dropped. */
+/* Sized in `em`, so it tracks the trail it sits in rather than the word beside
+   it — a swatch stands where a face would, and the faces stopped following
+   `--word-size` when the trail got its floor above. */
 .word-row__team {
   display: inline-block;
-  width: calc(var(--word-size, 16px) - 3px);
-  height: calc(var(--word-size, 16px) - 3px);
+  width: 1em;
+  height: 1em;
   margin-right: 4px;
   border-radius: 4px;
   border: 1px solid var(--ink);
@@ -1977,13 +2329,13 @@ ul, ol { list-style: none; }
 }
 
 @keyframes shakeCue {
-  0%, 100% { transform: none; }
-  10% { transform: translateX(-5px) rotate(-0.7deg); }
-  25% { transform: translateX(5px) rotate(0.7deg); }
-  40% { transform: translateX(-4px) rotate(-0.5deg); }
-  55% { transform: translateX(4px) rotate(0.5deg); }
-  70% { transform: translateX(-2px); }
-  85% { transform: translateX(2px); }
+  0%, 100% { transform: scale(1); }
+  10% { transform: translateX(-5px) rotate(-0.7deg) scale(1.03); }
+  25% { transform: translateX(5px) rotate(0.7deg) scale(1.06); }
+  40% { transform: translateX(-4px) rotate(-0.5deg) scale(1.1); }
+  55% { transform: translateX(4px) rotate(0.5deg) scale(1.06); }
+  70% { transform: translateX(-2px) scale(1.03); }
+  85% { transform: translateX(2px) scale(1.01); }
 }
 
 @keyframes marqueeX {
@@ -2528,6 +2880,12 @@ ul, ol { list-style: none; }
 @media (max-width: 900px) {
   .host-header { padding: 14px 18px; }
   .room-chip { gap: 8px; padding: 6px 12px; }
+  .room-chip-group { gap: 9px; }
+  /* The label goes first when the header is tight: the faces still say a
+     waiting room exists, and the room code has to stay where it is. */
+  .waiting-strip__label { display: none; }
+  .waiting-face__avatar { font-size: 15px; }
+  .waiting-face__name { font-size: 12px; max-width: 9ch; }
   .room-chip__label { font-size: 10px; letter-spacing: 0.1em; }
   .room-chip__code { font-size: 20px; }
   .host-header__round { font-size: 13px; }
@@ -2812,18 +3170,8 @@ ul, ol { list-style: none; }
   flex: 0 0 auto;
 }
 
-/* Ready is the filled one — the room is counting these, so the state that
-   moves the match forward is the state that reads from a distance. */
-.podium-chip--ready { background: var(--ink); color: var(--mint); }
-
-.podium-chip__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 99px;
-  background: var(--mint-lit);
-  flex: 0 0 auto;
-}
-
+/* The ready state left here for `ReadyMark`, which is the one drawing of it in
+   the app now. What stays are the two states that are not ready. */
 .podium-chip--waiting,
 .podium-chip--dropped {
   border: 2px solid var(--cream-dim);
@@ -3361,18 +3709,19 @@ ul, ol { list-style: none; }
   flex: 0 0 auto;
 }
 
-.list-chip--ready { background: var(--ink); color: var(--mint); }
-
-.list-chip__dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 99px;
-  background: var(--mint-lit);
-  flex: 0 0 auto;
-}
+/* `.list-chip--ready` and its mint dot lived here. The board wears `ReadyMark`
+   now, like the lobby and the results card — see the `.ready-mark` note. What
+   is left is the two chips that are *not* readiness: a team part-way there and
+   a row nobody is behind. */
 
 .standings-row--lead .list-chip { padding: 3px 11px; font-size: clamp(11px, 1.1vw, 12px); }
-.standings-row--lead .list-chip__dot { width: 8px; height: 8px; }
+
+/* The leader's row is taller and everything in it a size up, this included. */
+.standings-row--lead .ready-mark { padding: 4px 11px; font-size: clamp(11px, 1.1vw, 13px); }
+
+/* Two columns halve every row's width, so the tag steps down with the rest of
+   the row rather than crowding the points off the end. */
+.standings-rows--split .ready-mark { font-size: clamp(9px, 0.85vw, 11px); padding: 3px 7px; }
 
 /* Inside a cream row, "waiting" is drawn in the same de-emphasized ink the
    struck words use — a cream outline would vanish. */
@@ -3942,6 +4291,45 @@ ul, ol { list-style: none; }
   outline: 2px solid var(--teal);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+/* A Stepper's control row, holding two words instead of a number. The 38px
+   height is what keeps the four drawer cards stacking as one rhythm. */
+.setting-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  height: 38px;
+  width: 200px;
+  background: var(--code-empty);
+  border: var(--border);
+  border-radius: 10px;
+  padding: 4px;
+}
+
+.setting-choice__opt {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  font-family: "Bungee", sans-serif;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--ink-dim);
+  cursor: pointer;
+}
+
+/* A fill, not a border: a bordered segment inside a bordered track draws a
+   double rule, and at drawer distance a fill reads where a tick does not. */
+.setting-choice__opt--on {
+  background: var(--gold);
+  color: var(--ink-gold);
+}
+
+.stepper--disabled .setting-choice__opt {
+  cursor: default;
 }
 
 .stepper__value--display {
@@ -4639,11 +5027,6 @@ ul, ol { list-style: none; }
   text-align: center;
 }
 
-/* The room's only brake lives on the phones, so the TV has to say so — a
-   screen with a running countdown and no visible way to stop it reads as
-   broken otherwise. */
-.host-teams__footer .get-ready--tv + .host-teams__hint { margin-top: 2px; }
-
 .host-teams__plaque { font-size: 22px; letter-spacing: 0.14em; padding: 8px 28px; }
 
 /* Grows with the roster rather than scrolling inside a fixed panel — see
@@ -4708,6 +5091,435 @@ ul, ol { list-style: none; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ------------------------------------------------- host: custom categories */
+
+.host-creating { padding: 0; }
+
+/* Pinned rather than left in `.host-stage`'s own flex flow: the wall/columns
+   sibling is `flex: 1` and fills the stage completely, which leaves this
+   banner's own cross-axis alignment as the only thing standing between it and
+   the top-left corner on some layouts. Anchoring it to the stage directly —
+   `.host-stage` is already `position: relative` — makes "top middle above the
+   players" true unconditionally instead of an artifact of flex bookkeeping. */
+.host-creating__plaque-wrapper {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  z-index: 1;
+}
+
+.host-creating__plaque {
+  font-size: 22px;
+  letter-spacing: 0.14em;
+  padding: 8px 28px;
+  transform: rotate(-2.5deg);
+}
+
+.host-creating__count {
+  font-family: var(--display);
+  font-size: 20px;
+  line-height: 1.06;
+  letter-spacing: 0.12em;
+  color: var(--cream);
+  text-transform: uppercase;
+}
+
+/* The standard `.timer-bar`, at its own default 106px — no override needed.
+   `.host-creating__timer` only scopes the clock and track down to §1b's 52px
+   / 28px, the same way `.player-voting__bar` scopes its own pair. */
+.host-creating__timer .timer-bar__num { font-size: 52px; }
+.host-creating__timer .timer-track { height: 28px; }
+
+/* Layout A: centred row of fixed-width columns, one player per column.
+   TV screens never scroll — `flex-wrap` is what lets 6-12 authors spill to a
+   second row instead, the same problem `.team-grid` solves. `safe center` on
+   both axes is that screen's fix too: plain `center` would push the first
+   row out of reach above the scrollport once wrapped content overflows.
+   `overflow-y: auto` stays only as the same escape valve `.team-grid` keeps
+   for a room dressed with bots — never `overflow-x`. */
+.host-creating__columns {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: safe center;
+  align-content: safe center;
+  gap: 18px;
+  /* Extra top clearance for the now-absolutely-positioned plaque banner —
+     see `.host-creating__plaque-wrapper`. */
+  padding: 96px 34px 24px;
+  overflow-y: auto;
+}
+
+.host-creating__column {
+  display: flex;
+  flex-direction: column;
+  /* Left rather than centred: the pill reads as a label sitting over the
+     top-left corner of its stack of cards, the same corner every other
+     badge in the app overhangs, instead of floating centred above them. */
+  align-items: flex-start;
+  gap: 12px;
+  flex: 0 0 218px;
+}
+
+.host-creating__slots {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Layout B: grid of `--wall-cols` columns (6/7/8, escalating with slot count
+   — see `wallCols` in HostCreating.tsx), one cell per pool slot. Same
+   `overflow-y: auto` + `align-content: safe center` escape valve as
+   `.team-grid`, never `overflow-x` — the columns already fill the row. */
+.host-creating__wall {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--wall-cols, 6), 1fr);
+  grid-auto-rows: minmax(0, 1fr);
+  align-content: safe center;
+  gap: 12px;
+  /* Extra top clearance for the now-absolutely-positioned plaque banner —
+     see `.host-creating__plaque-wrapper`. */
+  padding: 96px 34px 24px;
+  overflow-y: auto;
+}
+
+.host-creating__cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ---- slot states ---- */
+
+/* 218 × 96px cream card with ink border, radius 14px, contents centred.
+   The transition here is the empty → writing edge (§1b): 160ms ease-out,
+   `--code-empty` → cream, shadow in, opacity to 1. The div itself persists
+   across all three states (React reuses it; only its class changes), which
+   is what lets a `transition` — rather than a keyframe — carry that edge. */
+.slot-state {
+  width: 218px;
+  height: 96px;
+  border: var(--border);
+  border-radius: var(--radius);
+  background: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 0;
+  transition: background 160ms ease-out, box-shadow 160ms ease-out, opacity 160ms ease-out;
+}
+
+/* Empty slot: --code-empty fill, no shadow, opacity .72. */
+.slot-state--empty {
+  background: var(--code-empty);
+  box-shadow: none;
+  opacity: 0.72;
+}
+
+/* Writing slot: cream fill, 6px 6px 0 shadow, three 14px teal dots. */
+.slot-state--writing {
+  background: var(--cream);
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: row;
+  gap: 10px;
+}
+
+.slot-state__dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--teal);
+  animation: pulseDot 1.2s infinite;
+}
+
+.slot-state__dot:nth-child(1) { animation-delay: 0s; }
+.slot-state__dot:nth-child(2) { animation-delay: 0.2s; }
+.slot-state__dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* Done slot: cream fill, 6px 6px 0 shadow, gold DONE stamp. */
+.slot-state--done {
+  background: var(--cream);
+  box-shadow: var(--shadow-card);
+}
+
+.slot-state__stamp {
+  background: var(--gold);
+  color: var(--ink-gold);
+  border: var(--border);
+  border-radius: 8px;
+  padding: 5px 14px;
+  font-family: var(--display);
+  font-size: 16px;
+  line-height: 1.06;
+  letter-spacing: 0.14em;
+  font-weight: normal;
+  text-transform: uppercase;
+  box-shadow: 3px 3px 0 var(--ink);
+  transform: rotate(-8deg);
+  opacity: 0;
+}
+
+/* A/B pair for alternation, chosen by `landClassFor` in HostCreating.tsx from
+   an ordinal frozen the moment a slot first arrives at "done" — never a
+   fixed per-slot index, or the class string never changes and the animation
+   never restarts (see CLAUDE.md traps). Both animations run together: the
+   260ms transform and the separate, shorter 180ms opacity ramp. */
+.slot-state__stamp--a {
+  animation: cardLandA 260ms cubic-bezier(0.34, 1.42, 0.64, 1) forwards,
+    stampReveal 180ms linear forwards;
+}
+
+.slot-state__stamp--b {
+  animation: cardLandB 260ms cubic-bezier(0.34, 1.42, 0.64, 1) forwards,
+    stampReveal 180ms linear forwards;
+}
+
+/* The transition's leave overlay (§1c) renders a *cached* snapshot of
+   already-landed slots — the bounce-in above has already played, on the
+   real `HostCreating` screen this overlay is standing in for, so replaying
+   it here would restamp a card that is about to fly away. This holds the
+   stamp at `cardLandA`/`cardLandB`'s own 100% frame with no animation at
+   all. See `CreatingSlot`'s `frozen` prop. */
+.slot-state__stamp--static {
+  opacity: 1;
+  transform: rotate(-8deg);
+}
+
+/* Mini pill inside a wall cell: 3px ink, radius 99px, positioned bottom-left. */
+.mini-pill {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px 3px 5px;
+  border-radius: 99px;
+  border: var(--border);
+  background: var(--cream);
+  color: var(--ink);
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+.mini-pill--ready {
+  background: var(--gold);
+  color: var(--ink-gold);
+  box-shadow: 3px 3px 0 var(--ink);
+}
+
+.mini-pill--waiting {
+  background: var(--code-empty);
+  color: var(--ink-dim);
+}
+
+.mini-pill--offline { opacity: 0.45; }
+
+.mini-pill__avatar {
+  font-size: 15px;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+
+.mini-pill__name {
+  font-family: var(--display);
+  font-size: 11px;
+  line-height: 1.06;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 6ch;
+}
+
+/* ---- animations ---- */
+
+/* `pulseDot` itself lives once, at its original definition near the top of
+   this file (search `@keyframes pulseDot`) — reused here, not redefined. A
+   second `@keyframes pulseDot` block used to live in this section; a global
+   stylesheet lets the later definition of a repeated name win everywhere, so
+   it was silently overriding the dot pulse on every screen that uses it, not
+   just this one. Do not reintroduce it here.
+
+   The stamp landing from scale(.86) translateY(-10px) rotate(-8deg) to rest.
+   KEY MOMENT ~62%: the overshoot — the card is being *stamped*. Opacity is
+   deliberately not in this keyframe — see `stampReveal` below, which runs the
+   opacity ramp on its own, shorter timeline. */
+@keyframes cardLandA {
+  0% { transform: scale(0.86) translateY(-10px) rotate(-8deg); }
+  62% { transform: scale(1.12) translateY(0) rotate(-8deg); }
+  100% { transform: scale(1) translateY(0) rotate(-8deg); }
+}
+
+@keyframes cardLandB {
+  0% { transform: scale(0.86) translateY(-10px) rotate(-8deg); }
+  62% { transform: scale(1.12) translateY(0) rotate(-8deg); }
+  100% { transform: scale(1) translateY(0) rotate(-8deg); }
+}
+
+/* The stamp's own opacity ramp, 180ms linear — shorter than the 260ms
+   transform above so the stamp is solid well before it finishes settling
+   (§1b). Run alongside `cardLandA`/`cardLandB` in the same `animation`
+   shorthand, never folded into their keyframes. */
+@keyframes stampReveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ---- the transition (§1c): host leave overlay ---- */
+
+/* Every pill and every slot that never finished, fading and dropping as it
+   goes (§1c row 1: "the people leave first"). One keyframe for both the host
+   and the phone — a non-done `.slot-state`/`.player-pill`/`.mini-pill` and a
+   phone's writing card/pager/button are visually different objects, but the
+   motion is identical apart from distance (the host's pills drop 12px, the
+   phone's card 28px — `--leave-y`, set inline per caller, defaults to the
+   host's 12px). This fires exactly once per element (a match writes
+   categories once), so there is no retrigger to guard against with an A/B
+   pair the way `cardLandA/B` needs one. */
+.creating-leave__fade {
+  animation: creatingLeaveFade 240ms ease-in both;
+}
+
+@keyframes creatingLeaveFade {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(var(--leave-y, 12px)); }
+}
+
+/* A done slot's FLIP into the centre deck, then (for the six that stay
+   visible) the deck's own shrink-away — one keyframe spanning both, because
+   both share one element and one `animation-delay`; splitting them into two
+   `animation`s would need the delay list and the name list kept in lockstep
+   by hand. `--flip-dx`/`--flip-dy`/`--flip-rot` are set per element from a
+   *measured* delta (`CreatingLeaveBoard`), never calculated — the same
+   precedent the scoring reveal's frame-3 swap sets. Percentages are the
+   table's own offsets against this keyframe's 960ms span (80ms -> 1040ms):
+   56% is 620ms (arrived), 83% is 880ms (shrink begins). Each keyframe
+   selector carries its own easing, which is what lets one `@keyframes` block
+   still play the FLIP's overshoot and the shrink's ease-in as two different
+   curves. */
+.creating-leave__flip {
+  animation: creatingCardToDeck 960ms both;
+}
+
+@keyframes creatingCardToDeck {
+  0% {
+    transform: translate(0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.34, 1.28, 0.64, 1);
+  }
+  56% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot)) scale(1);
+    opacity: 1;
+    animation-timing-function: linear;
+  }
+  83% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot)) scale(1);
+    opacity: 1;
+    animation-timing-function: ease-in;
+  }
+  100% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot)) scale(0.6);
+    opacity: 0;
+  }
+}
+
+/* Slots past the top six (§1c: "fade out during their own travel") — the
+   same FLIP, but fully faded by the moment it would have landed rather than
+   joining the visible deck and shrinking away with it. */
+.creating-leave__flip--fade {
+  animation-name: creatingCardFade;
+}
+
+@keyframes creatingCardFade {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+    animation-timing-function: cubic-bezier(0.34, 1.28, 0.64, 1);
+  }
+  56% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot));
+    opacity: 0;
+  }
+  100% {
+    transform: translate(var(--flip-dx), var(--flip-dy)) rotate(var(--flip-rot));
+    opacity: 0;
+  }
+}
+
+/* The header count and the prompt line crossfading into their voting-screen
+   selves at 880ms (§1c). Grid-stacked, the same technique
+   `.vote-card__crossfade` already uses for count -> chance: both children
+   share one cell, so the fade is the only thing moving. `--prompt` blockifies
+   it for the plaque/prompt pairing, which — unlike the header count — are
+   full-width block elements, not an inline run in a header row. */
+.creating-crossfade {
+  display: inline-grid;
+}
+
+.creating-crossfade--prompt {
+  display: grid;
+}
+
+/* The phone counter crossfade (§1c: "the counter stays"). Unlike the header
+   count and the prompt, this one sits inside a flex row of its own
+   (`.player-voting__head`) and has to keep filling it, or the card visibly
+   narrows the moment this wrapper — now the row's only child — stops
+   matching its content width. */
+.creating-crossfade--counter {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+.creating-crossfade__out,
+.creating-crossfade__in {
+  grid-area: 1 / 1;
+}
+
+/* Each side of the counter crossfade reproduces `.player-voting__head`'s own
+   row layout, since wrapping the numeral and its label pair in the grid cell
+   above takes them out of that flex row. */
+.creating-crossfade--counter .creating-crossfade__out,
+.creating-crossfade--counter .creating-crossfade__in {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.creating-crossfade__out { animation: creatingCrossfadeOut 180ms ease-out both; }
+.creating-crossfade__in { animation: creatingCrossfadeIn 180ms ease-out both; }
+
+@keyframes creatingCrossfadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes creatingCrossfadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .creating-leave__fade,
+  .creating-leave__flip,
+  .creating-crossfade__out,
+  .creating-crossfade__in {
+    animation: none;
+  }
 }
 
 /* ------------------------------------------------------ player: teams */
@@ -4878,6 +5690,97 @@ ul, ol { list-style: none; }
 .player-teams__leave {
   width: 100%;
   min-height: 52px;
+}
+
+/* ---------------------------------------------------- player: waiting room */
+
+/* The screen a latecomer sits on until the next whistle. Shaped like team
+   select rather than like the lobby, because with teams on it *is* team
+   select with different copy around it — and the grid must not move under a
+   thumb here either. */
+.player-waiting {
+  padding-top: 22px;
+  gap: 14px;
+}
+
+/* Everything the countdown card steps in front of. The footer stays outside
+   it, as team select's does: changing your mind is the one thing that is still
+   legal while the count is running. */
+.player-waiting__stage {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.player-waiting__head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.player-waiting__head h1 {
+  font-family: var(--display);
+  font-size: clamp(24px, 7vw, 32px);
+  line-height: 1.05;
+  color: var(--cream);
+}
+
+/* The only line on this screen that changes on its own. Without it the screen
+   is a spinner. */
+.player-waiting__status {
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--cream-dim);
+}
+
+.player-waiting__note {
+  text-align: center;
+  font-size: 15px;
+  line-height: 1.45;
+  color: var(--cream-dim);
+  padding: 0 18px;
+}
+
+/* The same fixed-height swap team select makes: the instruction and the badge
+   that replaces it take one slot, so picking a team moves nothing below. */
+.player-waiting__title-slot {
+  flex: 0 0 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* `.team-badge` is `position: absolute`, which is right for a badge dropped on
+   a card with other content in flow. Here the tab *is* the content of its
+   slot, so it opts back in — the same exception `.player-teams__title` makes. */
+.player-waiting__title-slot .team-badge {
+  position: static;
+  align-self: center;
+  max-width: 100%;
+}
+
+.player-waiting__countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.player-waiting__footer {
+  margin-top: auto;
+  width: 100%;
+  /* Holds the button's height whether or not there is one, so the grid above
+     does not resize the moment a team is picked. */
+  min-height: 52px;
+  padding-top: 10px;
 }
 
 /* ------------------------------------------------------------ debug panel */
@@ -5459,3 +6362,418 @@ ul, ol { list-style: none; }
 
 /* The plaque already separates it; a rule as well is two dividers for one job. */
 .debug-section--usage { border-top: 0; padding-top: 16px; }
+
+/* ------------------------------------------------------- player creating */
+
+.player-creating {
+  padding: 44px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* The tilted title badge every other player screen wears for its own prompt
+   — see `.player-teams__plaque` for the sibling this mirrors. Sized down
+   from `.plaque`'s default the same way that one is. */
+.player-creating__plaque { font-size: 16px; letter-spacing: 0.1em; padding: 8px 18px; margin: 0 0 4px; }
+
+/* Fixed height rather than `flex: 1` — a card that grows to fill whatever
+   room the keyboard leaves behind is a card whose size depends on whether
+   the keyboard is open, which is exactly the jump this fixes. `vv-compact`'s
+   own override used to be the only place this height was set, so opening
+   the keyboard used to *shrink* the card down to it; now the keyboard state
+   never changes the card's size, only how much dead space sits below it. */
+.player-creating__card {
+  flex: 0 0 auto;
+  min-height: 132px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  cursor: text;
+}
+
+/* The card frame above never moves; this wrapper is what commit-driven
+   advance animates, so the border/shadow/padding stay put. Centred rather
+   than top-aligned now that the card no longer stretches to fill the
+   screen — the label/input/counter group reads as one balanced block in the
+   middle of a fixed card instead of pinned to its top edge. */
+.player-creating__card-inner {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+}
+
+.player-creating__card-inner--a { animation: slotAdvanceA 220ms cubic-bezier(0.34, 1.28, 0.64, 1); }
+.player-creating__card-inner--b { animation: slotAdvanceB 220ms cubic-bezier(0.34, 1.28, 0.64, 1); }
+
+.player-creating__label {
+  font-family: var(--display);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-dim);
+}
+
+.player-creating__input {
+  font: inherit;
+  font-family: var(--display);
+  font-size: 30px;
+  line-height: 1.06;
+  color: var(--ink);
+  background: transparent;
+  border: none;
+  padding: 0;
+  width: 100%;
+  text-align: center;
+  /* Spec calls for a 4px x 34px teal caret; `caret-width`/`caret-height`
+     are not real CSS properties, so only the caret's colour is settable. */
+  caret-color: var(--teal);
+}
+
+.player-creating__counter {
+  text-align: right;
+  font-size: 13px;
+  color: var(--ink-dim);
+}
+
+.slot-strip {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.slot-strip__chip {
+  width: 56px;
+  height: 44px;
+  flex: 0 0 auto;
+  font: inherit;
+  font-family: var(--display);
+  font-size: 16px;
+  line-height: 1.06;
+  border: var(--border);
+  border-radius: 12px;
+  background: var(--code-empty);
+  color: var(--ink-dim);
+  cursor: pointer;
+  text-align: center;
+  padding: 0;
+  transition: background 160ms ease-out, color 160ms ease-out, box-shadow 160ms ease-out;
+}
+
+.slot-strip__chip--current {
+  background: var(--cream);
+  color: var(--ink);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.slot-strip__chip--done {
+  background: var(--gold);
+  color: var(--ink-gold);
+  box-shadow: 4px 4px 0 var(--ink);
+}
+
+.player-creating__commit {
+  min-height: 61px;
+}
+
+.player-creating__ready-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.player-creating__ready-card {
+  flex: 1;
+  position: relative;
+  font: inherit;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: 16px 44px 16px 16px;
+  /* The brief's ready-card shadow is 5px 5px 0, not --shadow-card's 6px —
+     --shadow-btn already holds that exact value. */
+  box-shadow: var(--shadow-btn);
+  cursor: pointer;
+  font-family: var(--display);
+  font-size: 26px;
+  line-height: 1.06;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.player-creating__ready-card:active {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 var(--ink);
+}
+
+.player-creating__pen {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  color: var(--ink-dim);
+  /* Stroked, not filled, so stroke-width is what draws it. */
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.6px;
+  pointer-events: none;
+}
+
+.player-creating__ready-hint {
+  font-size: 13px;
+  color: var(--cream-dim);
+  text-align: center;
+}
+
+/* ---- compact keyboard view ---- */
+
+.vv-compact .player-creating {
+  padding: 14px 20px 0;
+}
+
+.vv-compact .player-voting__head {
+  flex: 0 0 44px;
+  padding: 8px 12px;
+}
+
+.vv-compact .player-voting__count {
+  font-size: 26px;
+}
+
+.vv-compact .player-voting__head-text {
+  min-height: 26px;
+  gap: 2px;
+}
+
+.vv-compact .player-voting__head-title {
+  font-size: 11px;
+}
+
+.vv-compact .player-creating__input {
+  font-size: 26px;
+}
+
+.vv-compact .slot-strip__chip {
+  height: 44px;
+}
+
+.vv-compact .player-creating__commit {
+  min-height: 52px;
+}
+
+.vv-compact .player-voting__bar {
+  height: 34px;
+  padding: 0 12px;
+}
+
+.vv-compact .player-voting__bar .timer-bar__num {
+  display: none;
+}
+
+.vv-compact .player-voting__bar .timer-track {
+  height: 14px;
+}
+
+/* ---- motion ---- */
+
+/* Two identical copies — see "the one that will definitely bite you" in
+   docs/design/2026-07-30-custom-categories-traps.md, and the same A/B pairs
+   the scoring reveal keeps. NEXT, NEXT, DONE fires this on the same frame
+   three times in a
+   row; an unchanged class name would not restart the animation, so the
+   component alternates between these two. One continuous 220ms motion on the
+   single content node: the outgoing card fades out to the left, then the
+   incoming card (already the new content, by the time this plays) fades in
+   from the right — the "the card frame does not move, only its contents"
+   the brief asks for, since only this inner wrapper animates. */
+@keyframes slotAdvanceA {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  40% {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  60% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slotAdvanceB {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  40% {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  60% {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .player-creating__card-inner--a,
+  .player-creating__card-inner--b {
+    animation: none;
+  }
+  .slot-strip__chip { transition: none; }
+}
+
+/* -------------------------------------------------------- player voting, custom */
+
+/* The hand, and later the picks-only review — both are the same object: a
+   flex column of full cards, `flex: 1` each, never a grid. Same role as
+   `.player-voting__grid` but a column, because a hand is dealt one at a time
+   and the picks review can run to `VOTE_BUDGET` (4) cards without scrolling —
+   the same no-scroll trick `.player-creating__ready-cards` already relies on. */
+.player-voting__hand {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* Bigger than the stock ballot tile on purpose — dealing hands of three
+   instead of showing a ten-category grid buys the room to go big. */
+.vote-tile--hand {
+  flex: 1;
+  font-size: 28px;
+  line-height: 1.12;
+  padding: 16px;
+}
+
+/* The picks-only review renders `<div>`s, not `<button>`s — a spent hand
+   cannot be revisited — and needs the box model spelled out explicitly, the
+   same as the stock locked grid: without it the picks measure wider than the
+   cards they replace. */
+.vote-tile--picked {
+  box-sizing: border-box;
+  /* Not a button: nothing to tap, so nothing should press. */
+  pointer-events: none;
+}
+
+/* Chance and authorship share a row, chance on the left where the stock tile
+   already puts it, the author chip pinned to the right of it. */
+.vote-tile__pick-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.vote-tile__pick-foot .vote-tile__chance { margin-top: 0; }
+
+.author-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-family: var(--display);
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 11px;
+  border-radius: 99px;
+  border: var(--border);
+  background: var(--paper-lit);
+  color: var(--ink);
+  box-shadow: 3px 3px 0 var(--ink);
+  transform: rotate(-2.5deg);
+  animation: plaquePop 280ms cubic-bezier(0.34, 1.42, 0.64, 1) both;
+}
+
+.author-chip__emoji { font-size: 17px; line-height: 1; }
+
+/* Gold on `--ink-gold`, the DONE-stamp pairing: the house is the game itself,
+   never a player, so it never wears the paper-lit "this is somebody's" chip. */
+.author-chip--house {
+  background: var(--gold);
+  color: var(--ink-gold);
+}
+
+/* The hand swap, 840ms total. `pickFlashA`/`pickFlashB` and `dealInA`/
+   `dealInB` are identical pairs, not two designs — the three hand slots are
+   the same three elements for the whole voting phase, so an unchanged
+   `animation` value would not restart on the very next hand. The exit motion
+   (the picked card lifting away, the other two dropping) is a plain
+   transition instead, which does not have that problem: the slots always
+   pass back through their un-exited rest state before the next hand deals,
+   so the same target values retrigger correctly every time. */
+@keyframes pickFlashA {
+  0% { background: var(--cream); }
+  45% { background: var(--gold); }
+  100% { background: var(--cream); }
+}
+
+@keyframes pickFlashB {
+  0% { background: var(--cream); }
+  45% { background: var(--gold); }
+  100% { background: var(--cream); }
+}
+
+.vote-tile--flash-a { animation: pickFlashA 180ms ease-out; }
+.vote-tile--flash-b { animation: pickFlashB 180ms ease-out; }
+
+.vote-tile--exit-up {
+  transition: transform 200ms ease-in, opacity 200ms ease-in;
+  transform: translateY(-40px);
+  opacity: 0;
+}
+
+.vote-tile--exit-down {
+  transition: transform 180ms ease-in;
+  transform: translateY(24px);
+}
+
+@keyframes dealInA {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes dealInB {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: none; }
+}
+
+.vote-tile--deal-a { animation: dealInA 320ms cubic-bezier(0.34, 1.42, 0.64, 1) both; }
+.vote-tile--deal-b { animation: dealInB 320ms cubic-bezier(0.34, 1.42, 0.64, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vote-tile--flash-a,
+  .vote-tile--flash-b,
+  .vote-tile--deal-a,
+  .vote-tile--deal-b {
+    animation: none;
+  }
+  .vote-tile--exit-up,
+  .vote-tile--exit-down {
+    transition: none;
+  }
+  .author-chip {
+    animation: none;
+    transform: rotate(-2.5deg);
+  }
+}

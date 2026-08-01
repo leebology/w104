@@ -1,14 +1,15 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, it } from "vitest";
 import { createRoom, currentRound, matchComplete, preRoundPhase } from "./state";
 import type { Room } from "./state";
 import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_FLUSH_LEN, TIMESUP_MS, VOTING_MS, alarmOutcome, canEndGame, flushEntry, nextAlarmAt, reduce, submitEntry } from "./reduce";
-import { voteBudget } from "./voting";
+import { voteBudget, votesSpent } from "./voting";
 import { CATEGORIES, RANDOM_CATEGORY } from "./categories";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS } from "./teams";
 import { MAX_LINE_MS, MIN_LINE_MS, rowKey } from "./reveal";
 import { isSelfStruck } from "./selfstrike";
 import type { SelfMarks } from "./selfstrike";
 import type { Results } from "./scoring";
+import { MAX_CATEGORY_LEN, VOTE_BUDGET, WRITE_MS, quotaFor } from "./customCategories";
 
 /** A room with `n` joined players, none ready, plus a host. */
 function seed(n: number, now = 1000): Room {
@@ -294,22 +295,52 @@ describe("flushEntry", () => {
     expect(result.room.entries.p0).toEqual([{ text: "Adele", at: 10_000, by: "p0" }]);
   });
 
+  // Both of these derive their instants from the phase rather than naming
+  // them. They used to be written as absolute milliseconds, which silently
+  // stopped meaning what they said the moment COUNTDOWN_MS changed: one
+  // failed outright, and the other went on passing while its timestamp had
+  // drifted to a moment before the round it claimed to be at the end of.
   test("accepts a flush that lands during time's up", () => {
-    const result = flushEntry(timesUp(), "p0", "Adele", 42_200);
+    const room = timesUp();
+    const at = (room.phase as { endsAt: number }).endsAt - 1_000;
+    const result = flushEntry(room, "p0", "Adele", at);
     expect(result.accepted).toBe(true);
-    expect(result.room.entries.p0).toEqual([{ text: "Adele", at: 42_200, by: "p0" }]);
+    expect(result.room.entries.p0).toEqual([{ text: "Adele", at, by: "p0" }]);
   });
 
   test("refuses a flush once scoring has started", () => {
-    const room = reduce(timesUp(), { t: "tick", now: 45_000, roll: 0 });
+    const up = timesUp();
+    const upEnd = (up.phase as { endsAt: number }).endsAt;
+    const room = reduce(up, { t: "tick", now: upEnd, roll: 0 });
     expect(room.phase.name).toBe("scoring");
-    expect(flushEntry(room, "p0", "Adele", 45_100)).toMatchObject({
+    expect(flushEntry(room, "p0", "Adele", upEnd + 100)).toMatchObject({
       accepted: false, reason: "not-playing",
     });
   });
 
   test("refuses a flush outside a round entirely", () => {
     expect(flushEntry(seed(2), "p0", "Adele", 10_000)).toMatchObject({
+      accepted: false, reason: "not-playing",
+    });
+  });
+
+  test("refuses a submit and a flush from the waiting room alike", () => {
+    // Joining past the lobby seats you in the waiting room: inert for the
+    // round in progress, dealt in at the next whistle.
+    let room = playing();
+    room = reduce(room, {
+      t: "join", playerId: "p2", name: "P2", emoji: "🐙", now: 10_000,
+    });
+    expect(room.players.find((p) => p.id === "p2")?.waiting).toBe(true);
+
+    expect(submitEntry(room, "p2", "Adele", 10_100)).toMatchObject({
+      accepted: false, reason: "not-playing",
+    });
+    // The same gate, on the other path onto `entries`. It lives in `addEntry`
+    // rather than in `submitEntry` for exactly this reason: a waiting player's
+    // half-typed buffer is no more theirs to submit than a finished word would
+    // be, and two copies of the rule is how one path keeps it and one loses it.
+    expect(flushEntry(room, "p2", "Adele", 10_100)).toMatchObject({
       accepted: false, reason: "not-playing",
     });
   });
@@ -544,7 +575,7 @@ function scored(roundCount = 3): Room {
 describe("setSettings", () => {
   test("the host sets rounds and duration", () => {
     const room = reduce(seed(2), {
-      t: "setSettings", playerId: "host", values: { roundCount: 3, durationSec: 90 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 3, durationSec: 90 }, choices: {}, now: 2000,
     });
     expect(room.settings).toMatchObject({ roundCount: 3, durationSec: 90 });
   });
@@ -552,7 +583,7 @@ describe("setSettings", () => {
   test("a player cannot set settings", () => {
     const before = seed(2);
     const after = reduce(before, {
-      t: "setSettings", playerId: "p0", values: { roundCount: 5, durationSec: 60 }, now: 2000,
+      t: "setSettings", playerId: "p0", values: { roundCount: 5, durationSec: 60 }, choices: {}, now: 2000,
     });
     expect(after).toBe(before);
   });
@@ -560,20 +591,20 @@ describe("setSettings", () => {
   test("settings cannot change once the match is under way", () => {
     const before = playing();
     const after = reduce(before, {
-      t: "setSettings", playerId: "host", values: { roundCount: 5, durationSec: 60 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 5, durationSec: 60 }, choices: {}, now: 2000,
     });
     expect(after).toBe(before);
   });
 
   test("out-of-range values are clamped", () => {
     const room = reduce(seed(2), {
-      t: "setSettings", playerId: "host", values: { roundCount: 99, durationSec: 99_999 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 99, durationSec: 99_999 }, choices: {}, now: 2000,
     });
     expect(room.settings).toMatchObject({
       roundCount: MAX_ROUND_COUNT, durationSec: MAX_DURATION_SEC,
     });
     const low = reduce(seed(2), {
-      t: "setSettings", playerId: "host", values: { roundCount: 0, durationSec: 1 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 0, durationSec: 1 }, choices: {}, now: 2000,
     });
     expect(low.settings).toMatchObject({ roundCount: 1, durationSec: MIN_DURATION_SEC });
   });
@@ -582,7 +613,7 @@ describe("setSettings", () => {
     const room = reduce(seed(2), {
       t: "setSettings",
       playerId: "host",
-      values: { roundCount: 2.6, durationSec: Number.NaN },
+      values: { roundCount: 2.6, durationSec: Number.NaN }, choices: {},
       now: 2000,
     });
     expect(room.settings).toMatchObject({ roundCount: 3, durationSec: 30 });
@@ -591,17 +622,17 @@ describe("setSettings", () => {
   test("setting the values they already hold is a no-op", () => {
     const before = seed(2);
     const after = reduce(before, {
-      t: "setSettings", playerId: "host", values: { roundCount: 1, durationSec: 30 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 1, durationSec: 30 }, choices: {}, now: 2000,
     });
     expect(after).toBe(before);
   });
 
   test("an omitted field leaves that setting alone", () => {
     let room = reduce(seed(2), {
-      t: "setSettings", playerId: "host", values: { roundCount: 4, durationSec: 60 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { roundCount: 4, durationSec: 60 }, choices: {}, now: 2000,
     });
     room = reduce(room, {
-      t: "setSettings", playerId: "host", values: { durationSec: 45 }, now: 2100,
+      t: "setSettings", playerId: "host", values: { durationSec: 45 }, choices: {}, now: 2100,
     });
     expect(room.settings).toMatchObject({ roundCount: 4, durationSec: 45 });
   });
@@ -611,7 +642,7 @@ describe("teamCount over the wire", () => {
   test("the host can turn teams on", () => {
     let room = seed(2);
     room = reduce(room, {
-      t: "setSettings", playerId: "host", values: { teamCount: 4 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { teamCount: 4 }, choices: {}, now: 2000,
     });
     expect(room.settings.teamCount).toBe(4);
   });
@@ -619,7 +650,7 @@ describe("teamCount over the wire", () => {
   test("a hand-rolled one-team value lands as off", () => {
     let room = seed(2);
     room = reduce(room, {
-      t: "setSettings", playerId: "host", values: { teamCount: 1 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { teamCount: 1 }, choices: {}, now: 2000,
     });
     expect(room.settings.teamCount).toBe(0);
   });
@@ -627,7 +658,7 @@ describe("teamCount over the wire", () => {
   test("setting it to what it already is returns the identical object", () => {
     const room = seed(2);
     const next = reduce(room, {
-      t: "setSettings", playerId: "host", values: { teamCount: 0 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { teamCount: 0 }, choices: {}, now: 2000,
     });
     expect(next).toBe(room);
   });
@@ -744,8 +775,42 @@ describe("backToLobby", () => {
     expect(reduce(before, { t: "backToLobby", playerId: "p0", now: 50_200 })).toBe(before);
   });
 
-  test("not reachable from scoring", () => {
-    const before = scored();
+  /**
+   * The results screen carries the same top-right back-out every other host
+   * screen does, so this is legal there — and it goes all the way home rather
+   * than one step. The one-step rule belongs to the phases *before* round one;
+   * from a round being scored there is nothing to step back into.
+   */
+  test("abandons a round mid-reveal, straight to the lobby", () => {
+    const room = reduce(scored(), { t: "backToLobby", playerId: "host", now: 50_200 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.history).toEqual([]);
+    expect(room.entries).toEqual({});
+  });
+
+  /** The round screen carries the back-out too, so a live round can be dropped. */
+  test("abandons a round being written", () => {
+    const room = reduce(playing(), { t: "backToLobby", playerId: "host", now: 20_000 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.entries).toEqual({});
+  });
+
+  /**
+   * A hold belongs to the phase it was taken in. Carried into the lobby it
+   * freezes the room outright — `tick` returns early while `paused` is set, so
+   * no countdown could ever open again — and both phases a host can hold now
+   * have a back-out on screen while the hold is on.
+   */
+  test("a held phase does not carry its hold home", () => {
+    let room = reduce(playing(), { t: "debugPause", playerId: "host", paused: true, now: 15_000 });
+    expect(room.paused).not.toBeNull();
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 16_000 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.paused).toBeNull();
+  });
+
+  test("still refuses the phases with no way out", () => {
+    const before = seed(2);
     expect(reduce(before, { t: "backToLobby", playerId: "host", now: 50_200 })).toBe(before);
   });
 });
@@ -754,7 +819,7 @@ describe("long rounds", () => {
   test("the entry cap still holds at the ten-minute duration", () => {
     let room = seed(2);
     room = reduce(room, {
-      t: "setSettings", playerId: "host", values: { durationSec: MAX_DURATION_SEC }, now: 1000,
+      t: "setSettings", playerId: "host", values: { durationSec: MAX_DURATION_SEC }, choices: {}, now: 1000,
     });
     room = readyAll(room, 1000);
     const votingStart = (room.phase as { endsAt: number }).endsAt;
@@ -814,7 +879,7 @@ describe("long rounds", () => {
 /** A room that has reached the voting phase with `n` players. */
 function seedVoting(n: number, roundCount = 5, now = 1000): Room {
   let room = seed(n, now);
-  room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount }, now });
+  room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount }, choices: {}, now });
   room = reduce(room, { t: "startGame", playerId: "host", now });
   return reduce(room, { t: "tick", now: now + COUNTDOWN_MS, roll: 0 });
 }
@@ -1134,14 +1199,14 @@ describe("drawing the round's category", () => {
 describe("settings", () => {
   test("the host sets a value the active mode exposes", () => {
     let room = seed(2);
-    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 5 }, now: 2000 });
+    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 5 }, choices: {}, now: 2000 });
     expect(room.settings.roundCount).toBe(5);
   });
 
   test("a value out of the descriptor's range is clamped", () => {
     let room = seed(2);
     room = reduce(room, {
-      t: "setSettings", playerId: "host", values: { durationSec: 99_999 }, now: 2000,
+      t: "setSettings", playerId: "host", values: { durationSec: 99_999 }, choices: {}, now: 2000,
     });
     expect(room.settings.durationSec).toBe(MAX_DURATION_SEC);
   });
@@ -1149,7 +1214,7 @@ describe("settings", () => {
   test("a non-finite value leaves the setting alone", () => {
     const before = seed(2);
     const room = reduce(before, {
-      t: "setSettings", playerId: "host", values: { durationSec: Number.NaN }, now: 2000,
+      t: "setSettings", playerId: "host", values: { durationSec: Number.NaN }, choices: {}, now: 2000,
     });
     expect(room.settings.durationSec).toBe(before.settings.durationSec);
   });
@@ -1157,7 +1222,7 @@ describe("settings", () => {
   test("a player cannot change settings", () => {
     const before = seed(2);
     const room = reduce(before, {
-      t: "setSettings", playerId: "p0", values: { roundCount: 9 }, now: 2000,
+      t: "setSettings", playerId: "p0", values: { roundCount: 9 }, choices: {}, now: 2000,
     });
     expect(room).toBe(before);
   });
@@ -1167,7 +1232,7 @@ describe("settings", () => {
     room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
     expect(room.phase.name).toBe("voting");
     const before = room;
-    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 9 }, now: 9000 });
+    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 9 }, choices: {}, now: 9000 });
     expect(room).toBe(before);
   });
 
@@ -1176,7 +1241,7 @@ describe("settings", () => {
     const room = reduce(before, {
       t: "setSettings",
       playerId: "host",
-      values: { roundCount: before.settings.roundCount },
+      values: { roundCount: before.settings.roundCount }, choices: {},
       now: 2000,
     });
     expect(room).toBe(before);
@@ -1283,7 +1348,7 @@ describe("the drawer hold", () => {
 function seedTeams(n: number, teamCount = 2, now = 1000): Room {
   const room = seed(n, now);
   return reduce(room, {
-    t: "setSettings", playerId: "host", values: { teamCount }, now,
+    t: "setSettings", playerId: "host", values: { teamCount }, choices: {}, now,
   });
 }
 
@@ -1590,6 +1655,89 @@ describe("backToLobby from team select", () => {
   });
 });
 
+/** A room with `n` players, teams on, and custom categories on. */
+function seedTeamsCustom(n: number, teamCount = 2, now = 1000): Room {
+  const room = seed(n, now);
+  return reduce(room, {
+    t: "setSettings",
+    playerId: "host",
+    values: { teamCount },
+    choices: { categorySource: "custom" },
+    now,
+  });
+}
+
+/** A room sitting in team select with `n` players, teams and custom both on. */
+function inTeamsCustom(n: number, teamCount = 2, now = 2000): Room {
+  return readyAll(seedTeamsCustom(n, teamCount), now);
+}
+
+/**
+ * Regression coverage for 07b54ee: with teams **and** custom categories both
+ * on, the countdown out of team select is `to: "creating"` rather than
+ * `to: "voting"` — `afterLobby` routes a custom match through the writing
+ * phase instead. Before that commit, `inTeamSelect`/`backPhase` recognised
+ * only a `to: "voting"` countdown as "out of team select", so this exact
+ * countdown fell outside every rule that assumes leaving a team can cancel
+ * it.
+ */
+describe("team select with custom categories on", () => {
+  test("the host's Continue opens the countdown to creating, not to voting", () => {
+    let room = inTeamsCustom(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
+    expect(room.phase).toEqual({
+      name: "countdown", endsAt: 2200 + COUNTDOWN_MS, to: "creating",
+    });
+  });
+
+  test("leaving a team during that countdown still cancels it, back to team select", () => {
+    // This is the bug 07b54ee fixed: `inTeamSelect` used to return false for
+    // a `to: "creating"` countdown, so `leaveTeam` was rejected outright here
+    // and the countdown ran to completion under a player no longer on a team.
+    let room = inTeamsCustom(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
+    expect(room.phase.name).toBe("countdown");
+    room = reduce(room, { t: "leaveTeam", playerId: "p1", now: 2300 });
+    expect(room.phase).toEqual({ name: "teams" });
+    const p1 = room.players.find((p) => p.id === "p1")!;
+    expect(p1.teamId).toBeNull();
+    expect(p1.ready).toBe(false);
+  });
+
+  test("backToLobby out of the creating phase itself steps back to team select", () => {
+    // Mirrors "backToLobby from voting" with teams on: `creating` joins
+    // `voting` in `backToLobby`'s one-step-back branch (shared/reduce.ts),
+    // both being one step out from the lobby rather than the match's start.
+    // (The countdown *to* creating is different: like the countdown to
+    // voting, `backToLobby` there is not in that branch and goes all the way
+    // home — see "works during the countdown too" above.)
+    let room = inTeamsCustom(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
+    room = reduce(room, { t: "tick", now: 2200 + COUNTDOWN_MS, roll: 0.5 });
+    expect(room.phase.name).toBe("creating");
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 3000 });
+    expect(room.phase).toEqual({ name: "teams" });
+    expect(room.players.every((p) => p.teamId === null)).toBe(true);
+  });
+
+  test("cancelStart is still rejected on the to:creating countdown", () => {
+    // Same protection as the to:voting teams countdown: cancelling would
+    // clear readiness with everyone still on a team and nothing left for them
+    // to leave, wedging the room in `teams` with no way to become ready
+    // again. `reduce`'s "no change" contract is identity, not mere equality —
+    // assert `toBe`, not just an unchanged phase name.
+    let room = inTeamsCustom(2);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 2100 });
+    expect(room.phase.name).toBe("countdown");
+    expect((room.phase as { to: string }).to).toBe("creating");
+    const next = reduce(room, { t: "cancelStart", playerId: "host", now: 2200 });
+    expect(next).toBe(room);
+  });
+});
+
 /** A room in the voting phase with teams on, p0 on t0 and p1 on t1. */
 function votingInTeams(): Room {
   let room = inTeams(2);
@@ -1667,7 +1815,7 @@ describe("backToLobby from the round-1 post-voting countdown", () => {
     // transition this test needs, so this walks the same edges with the
     // round count raised first, while still in the lobby.
     let room = seedTeams(2, 2);
-    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 2 }, now: 1000 });
+    room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount: 2 }, choices: {}, now: 1000 });
     room = readyAll(room, 2000);
     room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
     room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t0", now: 2200 });
@@ -2015,8 +2163,10 @@ describe("the results screen", () => {
     const room = scored();
     const phase = room.phase as { name: string; startedAt: number; skipped: boolean };
     // The reveal's zero is the moment the times-up screen ran out, which is
-    // what `scored()` ticks it on.
-    expect(phase.startedAt).toBe(45_000);
+    // what `scored()` ticks it on. Spelled out from the constants rather than
+    // as the absolute it works out to: `playing()` spends two countdowns
+    // getting there, so a literal here silently becomes a test of COUNTDOWN_MS.
+    expect(phase.startedAt).toBe(2000 + COUNTDOWN_MS * 2 + 30_000 + TIMESUP_MS);
     expect(phase.skipped).toBe(false);
   });
 
@@ -2260,6 +2410,276 @@ function marksOfPhase(room: Room): SelfMarks {
 }
 
 /**
+ * A room in the `creating` phase: `n` players, quota `quotaFor(n, roundCount)`,
+ * nobody has written anything yet. Walks the real edges — a custom-categories
+ * lobby, the countdown, the whistle — so the helper cannot drift from the
+ * rules, the same reasoning `seedVoting` and `playingRoom` follow.
+ */
+function creatingRoom(n: number, roundCount: number, now = 1000): Room {
+  let room = seed(n, now);
+  room = { ...room, settings: { ...room.settings, categorySource: "custom", roundCount } };
+  room = reduce(room, { t: "startGame", playerId: room.hostId!, now });
+  return reduce(room, { t: "tick", now: now + COUNTDOWN_MS, roll: 0.5 });
+}
+
+/**
+ * Every player's whole quota committed, via real `commitDraft` events — the
+ * very last one is what closes the phase, so this returns a room already on
+ * `voting`. See the "closes when everyone is ready" test below.
+ */
+function allWritten(n: number, roundCount: number, now = 1000): Room {
+  let room = creatingRoom(n, roundCount, now);
+  const quota = quotaFor(n, roundCount);
+  room.players.forEach((p, i) => {
+    for (let slot = 0; slot < quota; slot++) {
+      room = reduce(room, {
+        t: "commitDraft", playerId: p.id, slot, text: `${p.id}-${slot}`, now: now + i * quota + slot + 1,
+      });
+    }
+  });
+  return room;
+}
+
+/**
+ * A custom room already in `voting`: the pool is built, hands are dealt, and
+ * nobody has voted yet. `allWritten` already drives the real edge from
+ * `creating` into `voting`, so this is just the name the voting tests know it
+ * by.
+ */
+function votingRoom(n: number, roundCount: number, now = 1000): Room {
+  return allWritten(n, roundCount, now);
+}
+
+describe("the creating phase", () => {
+  const custom = (players: number, roundCount = 3) => {
+    let room = seed(players); // existing helper: N connected, unready players
+    room = { ...room, settings: { ...room.settings, categorySource: "custom", roundCount } };
+    return room;
+  };
+
+  it("opens a countdown to creating rather than to voting", () => {
+    let room = custom(3);
+    room = reduce(room, { t: "startGame", playerId: room.hostId!, now: 0 });
+    expect(room.phase).toEqual({ name: "countdown", endsAt: COUNTDOWN_MS, to: "creating" });
+  });
+
+  it("opens the writing window at the whistle, and clears readiness", () => {
+    let room = custom(3);
+    room = reduce(room, { t: "startGame", playerId: room.hostId!, now: 0 });
+    room = reduce(room, { t: "tick", now: COUNTDOWN_MS, roll: 0.5 });
+    expect(room.phase).toEqual({ name: "creating", endsAt: COUNTDOWN_MS + WRITE_MS });
+    expect(room.players.every((p) => !p.ready)).toBe(true);
+    expect(room.pool).toBeNull();
+  });
+
+  it("readies a player only when every slot they own is committed", () => {
+    let room = creatingRoom(3, 3); // helper: 3 players, quota 3, phase creating
+    const me = room.players[0].id;
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 0, text: "smells", now: 1 });
+    expect(room.players[0].ready).toBe(false);
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 1, text: "noises", now: 2 });
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 2, text: "places", now: 3 });
+    expect(room.players[0].ready).toBe(true);
+  });
+
+  it("trims, caps and rejects an out-of-range slot", () => {
+    let room = creatingRoom(3, 3);
+    const me = room.players[0].id;
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 0, text: "  a  ", now: 1 });
+    expect(room.drafts[me][0]).toBe("a");
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 1, text: "x".repeat(40), now: 2 });
+    expect(room.drafts[me][1]).toHaveLength(MAX_CATEGORY_LEN);
+    const before = room;
+    room = reduce(room, { t: "commitDraft", playerId: me, slot: 9, text: "no", now: 3 });
+    expect(room).toBe(before);
+  });
+
+  /**
+   * Deviation from the brief: its literal test built this scenario from
+   * `allWritten(3, 3)` and then asserted the phase was still `"creating"`
+   * after a `clearDraft`. That cannot happen — `allWritten` (below) drives
+   * real `commitDraft` events, and the moment the *last* player finishes,
+   * `settle` closes the phase in that same `reduce` call. There is no later
+   * moment at which a `clearDraft` can still catch the room in `creating`
+   * with everyone otherwise ready; the close is atomic with the event that
+   * completes it, exactly as spending the last vote is atomic with closing
+   * voting. So this rebuilds the scenario the description actually asks for:
+   * two players ready, a third one slot short (phase still open), and shows
+   * that clearing one of the two *already-ready* players' slots is what stops
+   * the third's final commit from closing the phase a moment later — the
+   * clear pre-empts a close that would otherwise have fired.
+   */
+  it("un-readies on a clear, and that pre-empts a close it would otherwise let happen", () => {
+    let room = creatingRoom(3, 3);
+    const [a, b, c] = room.players.map((p) => p.id);
+    const finish = (id: string, upTo: number, now: number) => {
+      for (let slot = 0; slot < upTo; slot++) {
+        room = reduce(room, { t: "commitDraft", playerId: id, slot, text: `${id}${slot}`, now });
+      }
+    };
+    finish(a, 3, 10);
+    finish(b, 3, 11);
+    finish(c, 2, 12); // one slot short — the phase is still open
+    expect(room.phase.name).toBe("creating");
+
+    room = reduce(room, { t: "clearDraft", playerId: a, slot: 0, now: 20 });
+    expect(room.players.find((p) => p.id === a)!.ready).toBe(false);
+    expect(room.phase.name).toBe("creating");
+
+    // c's final commit would have closed the phase had a's readiness not just
+    // been pulled out from under it.
+    room = reduce(room, { t: "commitDraft", playerId: c, slot: 2, text: "c2", now: 30 });
+    expect(room.phase.name).toBe("creating");
+  });
+
+  it("closes when everyone is ready, building the pool and the deal once", () => {
+    const room = allWritten(4, 3);
+    // `settle` runs on the event that completed the last player, so the room
+    // has already left `creating`.
+    expect(room.phase.name).toBe("voting");
+    expect(room.pool).toHaveLength(12);
+    expect(Object.keys(room.deal)).toHaveLength(4);
+  });
+
+  it("closes on the deadline with blanks backfilled", () => {
+    let room = creatingRoom(4, 3);
+    room = reduce(room, { t: "tick", now: 10 ** 9, roll: 0.5 });
+    expect(room.phase.name).toBe("voting");
+    expect(room.pool!.every((c) => c.authorId === null)).toBe(true);
+  });
+
+  it("moves the cursor without touching readiness", () => {
+    let room = creatingRoom(3, 3);
+    const me = room.players[0].id;
+    room = reduce(room, { t: "moveCursor", playerId: me, slot: 2, now: 1 });
+    expect(room.cursors[me]).toBe(2);
+    expect(room.players[0].ready).toBe(false);
+  });
+
+  it("rejects moveCursor from a playerId that is not in the room", () => {
+    // Mirrors the membership guard writeSlot already applies for
+    // commitDraft/clearDraft — a hand-rolled message naming a nonexistent
+    // player must not seat a phantom entry in `room.cursors`.
+    const room = creatingRoom(3, 3);
+    const after = reduce(room, { t: "moveCursor", playerId: "ghost", slot: 1, now: 1 });
+    expect(after).toBe(room);
+  });
+
+  it("steps back one phase, not all the way home", () => {
+    let room = creatingRoom(3, 3);
+    room = reduce(room, { t: "backToLobby", playerId: room.hostId!, now: 1 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.drafts).toEqual({});
+  });
+
+  it("never opens for a stock match", () => {
+    let room = seed(3);
+    room = reduce(room, { t: "startGame", playerId: room.hostId!, now: 0 });
+    expect(room.phase).toEqual({ name: "countdown", endsAt: COUNTDOWN_MS, to: "voting" });
+  });
+});
+
+describe("voting on hands", () => {
+  it("accepts a card in one of my hands and refuses one that is not", () => {
+    let room = votingRoom(4, 3); // helper: custom room already in `voting`
+    const me = room.players[0].id;
+    const mine = room.deal[me][0].cardIds[0];
+    const theirs = room.deal[room.players[1].id][0].cardIds
+      .find((id) => !room.deal[me].some((h) => h.cardIds.includes(id)))!;
+    const after = reduce(room, { t: "castVote", playerId: me, category: mine, now: 1 });
+    expect(after.votes[me][mine]).toBe(1);
+    const refused = reduce(room, { t: "castVote", playerId: me, category: theirs, now: 1 });
+    expect(refused).toBe(room);
+  });
+
+  it("stops at the budget and readies on the last vote", () => {
+    let room = votingRoom(4, 3);
+    const me = room.players[0].id;
+    for (const hand of room.deal[me]) {
+      room = reduce(room, { t: "castVote", playerId: me, category: hand.cardIds[0], now: 1 });
+    }
+    expect(votesSpent(room.votes[me])).toBe(VOTE_BUDGET);
+    expect(room.players[0].ready).toBe(true);
+    const extra = reduce(room, {
+      t: "castVote", playerId: me, category: room.deal[me][0].cardIds[1], now: 2,
+    });
+    expect(extra).toBe(room);
+  });
+
+  it("lets a card dealt twice be backed twice, and no more", () => {
+    // How many hands held the card is the per-card cap. The built-in ballot
+    // genuinely lets a player stack votes on one category; here you cannot
+    // choose to be dealt a card again, so a second vote is luck rather than a
+    // move (spec §4.3) — and a third is a forged message. This is also why
+    // nothing downstream may read the tally as a 0/1 flag.
+    let room = votingRoom(3, 3);
+    const me = room.players[0].id;
+    const all = room.deal[me].flatMap((h) => h.cardIds);
+    const repeated = all.find((id, i) => all.indexOf(id) !== i);
+    if (!repeated) throw new Error("a three-player deal must repeat a card");
+
+    room = reduce(room, { t: "castVote", playerId: me, category: repeated, now: 1 });
+    room = reduce(room, { t: "castVote", playerId: me, category: repeated, now: 2 });
+    expect(room.votes[me][repeated]).toBe(2);
+
+    const third = reduce(room, { t: "castVote", playerId: me, category: repeated, now: 3 });
+    expect(third).toBe(room);
+
+    // The budget itself is untouched by the refusal — the other cards are
+    // still spendable, so a capped card costs the player nothing.
+    const other = all.find((id) => id !== repeated)!;
+    expect(reduce(room, { t: "castVote", playerId: me, category: other, now: 4 }))
+      .not.toBe(room);
+  });
+});
+
+/**
+ * The pool and the deal exist to keep authorship unreadable, and both are
+ * built from a `roll` seed. Nothing here would catch a `closeCreating` that
+ * silently dropped its roll on the floor — every other test in this file
+ * either passes a fixed roll through `tick` or never varies it — so these
+ * prove entropy actually reaches both close paths: the `tick` deadline, and
+ * `settle`'s ready-up edge, which has no `roll` on its event at all and has
+ * to derive one (see `seedRoll` in `shared/customCategories.ts`).
+ */
+describe("close entropy reaches the pool", () => {
+  /** The id-to-text mapping a shuffle actually controls, order-independent. */
+  const mapOf = (room: Room): Record<string, string> => {
+    const m: Record<string, string> = {};
+    for (const c of room.pool!) m[c.id] = c.text;
+    return m;
+  };
+
+  it("two deadline closes with different tick rolls shuffle the pool differently", () => {
+    const roomA = creatingRoom(4, 3, 1000);
+    const roomB = creatingRoom(4, 3, 1000);
+    const now = 10 ** 9;
+    const closedA = reduce(roomA, { t: "tick", now, roll: 0.1 });
+    const closedB = reduce(roomB, { t: "tick", now, roll: 0.9 });
+    expect(closedA.phase.name).toBe("voting");
+    expect(closedB.phase.name).toBe("voting");
+    // Same players, same (blank) drafts, same quota — the only thing that can
+    // differ is the roll-seeded shuffle.
+    expect(mapOf(closedA)).not.toEqual(mapOf(closedB));
+    expect(closedA.deal).not.toEqual(closedB.deal);
+  });
+
+  it("two ready-up closes at different instants shuffle the pool differently", () => {
+    // `allWritten` drives the room to the moment its last commitDraft closes
+    // `creating` via `settle` — the path with no `roll` on its event at all.
+    // A different base `now` puts that close at a different instant, which is
+    // the only entropy `seedRoll` has to work with (the room code is fixed by
+    // the `seed` helper both calls go through).
+    const roomA = allWritten(4, 3, 1000);
+    const roomB = allWritten(4, 3, 5_000_000);
+    expect(roomA.phase.name).toBe("voting");
+    expect(roomB.phase.name).toBe("voting");
+    expect(mapOf(roomA)).not.toEqual(mapOf(roomB));
+    expect(roomA.deal).not.toEqual(roomB.deal);
+  });
+});
+
+/**
  * The readiness floor is MIN_PLAYERS in the lobby and 1 past it — see
  * `readyFloor`. A match that has begun belongs to whoever is still in it.
  */
@@ -2320,5 +2740,390 @@ describe("the readiness floor", () => {
     room = reduce(room, { t: "disconnect", playerId: "p0", now: 11_100 });
     room = reduce(room, { t: "disconnect", playerId: "p1", now: 11_200 });
     expect(room.phase.name).toBe("standings");
+  });
+});
+
+// ---------------------------------------------------------- the waiting room
+
+/** A latecomer joining the room as it stands. */
+function walkIn(room: Room, id = "late", now = 10_500): Room {
+  return reduce(room, { t: "join", playerId: id, name: "Late", emoji: "🚪", now });
+}
+
+const seatOf = (room: Room, id: string) => room.players.find((p) => p.id === id)!;
+
+describe("joining past the lobby", () => {
+  test("the lobby still seats people into the match", () => {
+    const room = walkIn(seed(2), "late", 1500);
+    expect(seatOf(room, "late").waiting).toBe(false);
+  });
+
+  test("every other phase seats them into the waiting room", () => {
+    // One rule rather than a list of phases, so this is the list of phases
+    // that rule has to be right about.
+    expect(seatOf(walkIn(playing()), "late").waiting).toBe(true);
+    expect(seatOf(walkIn(scored()), "late").waiting).toBe(true);
+    expect(seatOf(walkIn(inTeams(2)), "late").waiting).toBe(true);
+    const voting = reduce(readyAll(seed(2), 2000), {
+      t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0,
+    });
+    expect(voting.phase.name).toBe("voting");
+    expect(seatOf(walkIn(voting), "late").waiting).toBe(true);
+    expect(seatOf(walkIn(readyAll(seed(2), 2000)), "late").waiting).toBe(true);
+  });
+
+  test("they no longer bounce off a running game", () => {
+    const room = walkIn(playing());
+    expect(room.players.map((p) => p.id)).toEqual(["p0", "p1", "late"]);
+  });
+
+  test("a reconnect keeps them waiting", () => {
+    // The player spread carries the flag across, or a reconnect would smuggle
+    // them into the round in progress.
+    let room = walkIn(playing());
+    room = reduce(room, { t: "disconnect", playerId: "late", now: 10_600 });
+    room = walkIn(room, "late", 10_700);
+    expect(seatOf(room, "late").waiting).toBe(true);
+    expect(seatOf(room, "late").connected).toBe(true);
+  });
+
+  test("they still count against MAX_PLAYERS", () => {
+    let room = playing();
+    for (let i = 2; i < MAX_PLAYERS; i++) room = walkIn(room, `late${i}`, 10_500 + i);
+    expect(room.players).toHaveLength(MAX_PLAYERS);
+    room = walkIn(room, "overflow", 10_600);
+    expect(room.players).toHaveLength(MAX_PLAYERS);
+  });
+});
+
+describe("the waiting room is inert", () => {
+  test("it cannot hold a countdown down", () => {
+    let room = reduce(scored(3), { t: "showStandings", playerId: "host", now: 11_000 });
+    room = walkIn(room, "late", 11_050);
+    room = readyAll(room, 11_100);
+    // readyAll includes the latecomer, whose ready event is rejected — and the
+    // countdown opens anyway, because they are not counted.
+    expect(seatOf(room, "late").ready).toBe(false);
+    expect(room.phase.name).toBe("countdown");
+  });
+
+  test("it cannot make a room startable", () => {
+    // One seated player and a latecomer is still one player, so the lobby
+    // floor of MIN_PLAYERS is not met.
+    let room = reduce(scored(3), { t: "showStandings", playerId: "host", now: 11_000 });
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 11_050 });
+    room = reduce(room, { t: "disconnect", playerId: "p1", now: 11_100 });
+    room = reduce(room, { t: "ready", playerId: "p0", ready: true, now: 11_200 });
+    expect(room.phase.name).toBe("lobby");
+  });
+
+  test("the ready event is rejected", () => {
+    const room = walkIn(scored(3));
+    expect(reduce(room, { t: "ready", playerId: "late", ready: true, now: 11_000 })).toBe(room);
+  });
+
+  test("castVote is rejected", () => {
+    let room = reduce(readyAll(seed(2), 2000), { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
+    room = walkIn(room, "late", 3000);
+    const next = reduce(room, {
+      t: "castVote", playerId: "late", category: CATEGORIES[0], now: 3100,
+    });
+    expect(next).toBe(room);
+  });
+
+  test("submitEntry is rejected", () => {
+    const room = walkIn(playing());
+    const result = submitEntry(room, "late", "Adele", 10_600);
+    expect(result.accepted).toBe(false);
+    expect(result.reason).toBe("not-playing");
+    expect(result.room).toBe(room);
+  });
+
+  test("they are not a scorer, so the round is priced without them", () => {
+    const room = walkIn(scored(3));
+    const results = (room.phase as { results: Results }).results;
+    expect(results.scorers.map((s) => s.id)).toEqual(["p0", "p1"]);
+  });
+
+  test("they can still give up the seat, mid-match", () => {
+    // The rule that keeps leaveRoom in the lobby is about the damage of
+    // leaving a match in progress, and a latecomer is not in one.
+    let room = walkIn(playing());
+    room = reduce(room, { t: "leaveRoom", playerId: "late", now: 10_600 });
+    expect(room.players.map((p) => p.id)).toEqual(["p0", "p1"]);
+    // A seated player still cannot.
+    expect(reduce(room, { t: "leaveRoom", playerId: "p0", now: 10_700 })).toBe(room);
+  });
+});
+
+describe("admission at the whistle", () => {
+  /** A room one tick away from round two, with a latecomer in the waiting room. */
+  function atTheWhistle(): { room: Room; endsAt: number } {
+    let room = reduce(scored(3), { t: "showStandings", playerId: "host", now: 11_000 });
+    room = walkIn(room, "late", 11_050);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 11_100 });
+    expect(room.phase.name).toBe("countdown");
+    return { room, endsAt: (room.phase as { endsAt: number }).endsAt };
+  }
+
+  test("the whistle deals them in", () => {
+    const { room, endsAt } = atTheWhistle();
+    const next = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(next.phase.name).toBe("playing");
+    expect(seatOf(next, "late").waiting).toBe(false);
+  });
+
+  test("and only then — the countdown itself does not", () => {
+    const { room } = atTheWhistle();
+    expect(seatOf(room, "late").waiting).toBe(true);
+  });
+
+  test("a cancelled countdown costs nothing to undo", () => {
+    const { room } = atTheWhistle();
+    const back = reduce(room, { t: "cancelStart", playerId: "host", now: 11_200 });
+    expect(back.phase.name).toBe("standings");
+    expect(seatOf(back, "late").waiting).toBe(true);
+  });
+
+  test("a disconnected latecomer is not dealt in", () => {
+    // They would arrive as an empty column and a last place for somebody who
+    // is not there, and the next whistle costs them nothing.
+    const { room, endsAt } = atTheWhistle();
+    const gone = reduce(room, { t: "disconnect", playerId: "late", now: endsAt - 1 });
+    const next = reduce(gone, { t: "tick", now: endsAt, roll: 0 });
+    expect(next.phase.name).toBe("playing");
+    expect(seatOf(next, "late").waiting).toBe(true);
+  });
+
+  test("they play from the round they were admitted for", () => {
+    const { room, endsAt } = atTheWhistle();
+    const next = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(submitEntry(next, "late", "Adele", endsAt + 10).accepted).toBe(true);
+  });
+
+  test("the round-one whistle admits too, so a straggler misses only the ballot", () => {
+    // Someone who arrives during the category vote is in round one.
+    let room = reduce(readyAll(seed(2), 2000), { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
+    expect(room.phase.name).toBe("voting");
+    room = walkIn(room, "late", 3000);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 3100 });
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(room.phase.name).toBe("playing");
+    expect(seatOf(room, "late").waiting).toBe(false);
+  });
+});
+
+/** A team room parked on the scoring screen, as `scored` is for free-for-all. */
+function scoredInTeams(roundCount = 3): Room {
+  let room = playingInTeams();
+  room = { ...room, settings: { ...room.settings, roundCount } };
+  room = submitEntry(room, "p0", "Adele", 10_000).room;
+  const playEnd = (room.phase as { endsAt: number }).endsAt;
+  room = reduce(room, { t: "tick", now: playEnd, roll: 0 });
+  const upEnd = (room.phase as { endsAt: number }).endsAt;
+  return reduce(room, { t: "tick", now: upEnd, roll: 0 });
+}
+
+describe("admission with teams on", () => {
+  /** A team match at standings with a latecomer waiting. */
+  function waitingInTeams(): Room {
+    const room = reduce(scoredInTeams(), {
+      t: "showStandings", playerId: "host", now: 20_000,
+    });
+    return walkIn(room, "late", 20_100);
+  }
+
+  test("no team, no admission", () => {
+    let room = reduce(waitingInTeams(), { t: "startGame", playerId: "host", now: 20_200 });
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(room.phase.name).toBe("playing");
+    expect(seatOf(room, "late").waiting).toBe(true);
+  });
+
+  test("picking one gets them in", () => {
+    let room = reduce(waitingInTeams(), {
+      t: "joinTeam", playerId: "late", teamId: "t1", now: 20_150,
+    });
+    room = reduce(room, { t: "startGame", playerId: "host", now: 20_200 });
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(seatOf(room, "late").waiting).toBe(false);
+    expect(seatOf(room, "late").teamId).toBe("t1");
+  });
+
+  test("a pick landing during the count still gets them in", () => {
+    // The card is not the deadline; the whistle is.
+    let room = reduce(waitingInTeams(), { t: "startGame", playerId: "host", now: 20_200 });
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "joinTeam", playerId: "late", teamId: "t1", now: endsAt - 1 });
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    expect(seatOf(room, "late").waiting).toBe(false);
+  });
+
+  test("their pick does not ready them and does not extend the count", () => {
+    // A latecomer able to re-stamp the countdown — repeatedly — is a latecomer
+    // able to stop the match.
+    let room = reduce(waitingInTeams(), { t: "startGame", playerId: "host", now: 20_200 });
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "joinTeam", playerId: "late", teamId: "t1", now: 20_300 });
+    expect((room.phase as { endsAt: number }).endsAt).toBe(endsAt);
+    expect(seatOf(room, "late").ready).toBe(false);
+  });
+
+  test("they may change their mind right up to the whistle", () => {
+    let room = reduce(waitingInTeams(), {
+      t: "joinTeam", playerId: "late", teamId: "t1", now: 20_150,
+    });
+    room = reduce(room, { t: "leaveTeam", playerId: "late", now: 20_160 });
+    expect(seatOf(room, "late").teamId).toBeNull();
+  });
+
+  test("a waiting player cannot rename a team that is playing", () => {
+    const room = reduce(waitingInTeams(), {
+      t: "joinTeam", playerId: "late", teamId: "t1", now: 20_150,
+    });
+    const next = reduce(room, {
+      t: "setTeamName", playerId: "late", teamId: "t1", name: "Ours", now: 20_200,
+    });
+    expect(next).toBe(room);
+  });
+
+  test("Auto sort does not place them", () => {
+    const room = reduce(waitingInTeams(), {
+      t: "balanceTeams", playerId: "host", roll: 0.4, now: 20_200,
+    });
+    expect(seatOf(room, "late").teamId).toBeNull();
+  });
+});
+
+describe("emptying the waiting room", () => {
+  test("backToLobby seats everybody", () => {
+    let room = walkIn(playing());
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 10_600 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.players.every((p) => p.waiting === false)).toBe(true);
+  });
+
+  test("a view jump to the lobby seats everybody", () => {
+    let room = walkIn(playing());
+    room = reduce(room, { t: "debugJump", playerId: "host", to: "lobby", roll: 0, now: 10_600 });
+    expect(seatOf(room, "late").waiting).toBe(false);
+  });
+
+  test("a view jump anywhere else admits them", () => {
+    // A jump is a teleport, not a promise: the panel shows the screen as the
+    // room would really have it.
+    let room = walkIn(playing());
+    room = reduce(room, {
+      t: "debugJump", playerId: "host", to: "playing", roll: 0, now: 10_600,
+    });
+    expect(seatOf(room, "late").waiting).toBe(false);
+    expect(room.phase.name).toBe("playing");
+  });
+
+  test("stepping back to team select does not — the match is still on", () => {
+    // The one back-out that steps rather than going home. Nothing has ended,
+    // so the latecomer is still waiting for the next whistle.
+    let room = walkIn(inTeams(2), "late", 2500);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2600 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2700 });
+    room = reduce(room, { t: "tick", now: 2700 + COUNTDOWN_MS, roll: 0 });
+    expect(room.phase.name).toBe("voting");
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 9000 });
+    expect(room.phase.name).toBe("teams");
+    expect(seatOf(room, "late").waiting).toBe(true);
+  });
+});
+
+describe("the waiting room and the writing phase", () => {
+  test("somebody walking in mid-write does not move the quota", () => {
+    // The quota is a function of how many people are writing. Counting a
+    // latecomer would add or remove slots under everybody's thumb mid-word,
+    // and `hasWrittenAll` would silently un-ready whoever had finished.
+    const before = creatingRoom(4, 3);
+    const quota = quotaFor(4, 3);
+    const after = walkIn(before, "late", 2000);
+    // The room really did grow — this is not a no-op being mistaken for one.
+    expect(after.players).toHaveLength(5);
+    expect(quotaFor(5, 3)).not.toBe(quota);
+    // ...and the writers' quota is unchanged, which is what the slot guard
+    // below is measured against.
+    expect(
+      reduce(after, {
+        t: "commitDraft", playerId: "p0", slot: quota - 1, text: "still mine", now: 2100,
+      }).drafts["p0"]?.[quota - 1],
+    ).toBe("still mine");
+  });
+
+  test("a latecomer cannot write, point, or clear", () => {
+    const room = walkIn(creatingRoom(4, 3), "late", 2000);
+    expect(reduce(room, {
+      t: "commitDraft", playerId: "late", slot: 0, text: "mine", now: 2100,
+    })).toBe(room);
+    expect(reduce(room, { t: "moveCursor", playerId: "late", slot: 0, now: 2100 })).toBe(room);
+    expect(reduce(room, {
+      t: "clearDraft", playerId: "late", slot: 0, now: 2100,
+    })).toBe(room);
+  });
+
+  test("they cannot hold the writing window open either", () => {
+    // `everyoneReady` excludes them, so the last writer committing still closes
+    // the phase — a latecomer who can never write must not be able to stall it.
+    let room = walkIn(creatingRoom(2, 1), "late", 2000);
+    const quota = quotaFor(2, 1);
+    room.players.filter((p) => p.id !== "late").forEach((p, i) => {
+      for (let slot = 0; slot < quota; slot++) {
+        room = reduce(room, {
+          t: "commitDraft", playerId: p.id, slot, text: `${p.id}-${slot}`,
+          now: 2100 + i * quota + slot,
+        });
+      }
+    });
+    expect(room.phase.name).toBe("voting");
+  });
+
+  test("they author no card and are dealt no hand", () => {
+    // Including them would fill their share of the pool with house cards
+    // attributed to somebody who never wrote one — a lie the authorship reveal
+    // would tell on the TV — and a hand nobody can spend costs every card in it
+    // its exposure.
+    let room = walkIn(creatingRoom(3, 1), "late", 2000);
+    const quota = quotaFor(3, 1);
+    room.players.filter((p) => p.id !== "late").forEach((p, i) => {
+      for (let slot = 0; slot < quota; slot++) {
+        room = reduce(room, {
+          t: "commitDraft", playerId: p.id, slot, text: `${p.id}-${slot}`,
+          now: 2100 + i * quota + slot,
+        });
+      }
+    });
+    expect(room.phase.name).toBe("voting");
+    const pool = room.pool ?? [];
+    expect(pool).toHaveLength(3 * quota);
+    expect(pool.every((c) => c.authorId !== "late")).toBe(true);
+    expect(room.deal?.["late"]).toBeUndefined();
+  });
+
+  test("and they cannot vote in the custom ballot", () => {
+    const room = walkIn(votingRoom(3, 1), "late", 9000);
+    const card = (room.pool ?? [])[0];
+    expect(reduce(room, {
+      t: "castVote", playerId: "late", category: card.id, now: 9100,
+    })).toBe(room);
+  });
+
+  test("but the whistle still deals them into round one", () => {
+    // The waiting room's one door is the same in a custom match as in a stock
+    // one: `countdown -> playing`, and nothing about the pool changes that.
+    let room = walkIn(votingRoom(3, 1), "late", 9000);
+    room = reduce(room, { t: "startGame", playerId: "host", now: 9100 });
+    expect(room.phase.name).toBe("countdown");
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0.5 });
+    expect(room.phase.name).toBe("playing");
+    expect(seatOf(room, "late").waiting).toBe(false);
+    expect(submitEntry(room, "late", "Adele", endsAt + 10).accepted).toBe(true);
   });
 });

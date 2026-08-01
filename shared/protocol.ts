@@ -1,8 +1,9 @@
 import type { Entry, PlayerId, RoomState } from "./state";
 import type { RejectReason } from "./reduce";
-import type { NumericSettingKey } from "./gamemodes";
+import type { ChoiceSettingKey, NumericSettingKey } from "./gamemodes";
 import type { ScorerId, TeamId } from "./teams";
 import type { ViewId } from "./views";
+import type { Hand } from "./customCategories";
 
 export type ClientMessage =
   | { type: "setProfile"; name: string; emoji: string }
@@ -23,7 +24,11 @@ export type ClientMessage =
    * wait on a round trip, and a flush has nothing left to wait for.
    */
   | { type: "flushEntry"; text: string }
-  | { type: "setSettings"; values: Partial<Record<NumericSettingKey, number>> }
+  | {
+      type: "setSettings";
+      values: Partial<Record<NumericSettingKey, number>>;
+      choices?: Partial<Record<ChoiceSettingKey, string>>;
+    }
   | { type: "setMode"; mode: string }
   | { type: "setConfiguring"; open: boolean }
   | { type: "showStandings" }
@@ -51,6 +56,18 @@ export type ClientMessage =
   | { type: "leaveTeam" }
   | { type: "setTeamName"; teamId: TeamId; name: string }
   | { type: "balanceTeams" }
+  /**
+   * The phone publishing which slot it is on. Cheap and frequent; the only
+   * thing that drives the writing state on the TV, and it carries no text.
+   */
+  | { type: "moveCursor"; slot: number }
+  /**
+   * Committing a category. **Committing is readying** — never on keystroke,
+   * or the phase could close under a player mid-word.
+   */
+  | { type: "commitDraft"; slot: number; text: string }
+  /** Taking one back. Un-readies, which tears down an in-flight close. */
+  | { type: "clearDraft"; slot: number }
   /**
    * Debug-panel controls. Host-only and enforced as such in `shared/reduce.ts`
    * and `party/server.ts` — the panel hides them from non-hosts, but a hidden
@@ -83,6 +100,11 @@ export type ServerMessage =
   | { type: "state"; state: RoomState }
   | { type: "entryAck"; seq: number; accepted: boolean; reason?: RejectReason }
   | { type: "yourEntries"; entries: Entry[] }
+  /** This player's own committed slots. Never broadcast — see toRoomState. */
+  | { type: "yourDrafts"; drafts: string[] }
+  /** This player's own hands. Never broadcast: a leaked hand plus a public
+      tally lets the room deduce who voted for what. */
+  | { type: "yourHands"; hands: Hand[] }
   /**
    * One column's mirrored scroll position. Sent to the host socket alone, and
    * never persisted or broadcast — a scroll is not game state.

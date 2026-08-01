@@ -3,6 +3,7 @@ import type { Player, RoomState } from "../../shared/state";
 import type { Standing } from "../../shared/standings";
 import { ordinal } from "../ordinal";
 import { BadgeStrip } from "./BadgeStrip";
+import { ReadyMark } from "./ReadyMark";
 import { TeamBadge } from "./TeamBadge";
 
 /**
@@ -133,18 +134,20 @@ export function Podium({ room, standings, final }: Props) {
             {/* A team is named by its badge, on the plinth — never twice. */}
             {!team && <span className="podium-col__name">{s.name}</span>}
 
-            {final && state !== "dropped" ? null : (
+            {final && state !== "dropped" ? null : state === "ready" ? (
+              // The lobby's tag, the same one the standings list and the results
+              // card wear — see `ReadyMark`. The two chips below are the states
+              // that are *not* ready, and they keep the podium's own shape.
+              <ReadyMark />
+            ) : (
               <span className={`podium-chip podium-chip--${state}`}>
-                {state === "ready" && <i className="podium-chip__dot" />}
                 {state === "dropped"
                   ? "DROPPED"
-                  : state === "ready"
-                    ? "READY"
-                    : team
-                      ? `${members.filter((p) => p.connected && p.ready).length}/${
-                          members.filter((p) => p.connected).length
-                        } READY`
-                      : "NOT READY"}
+                  : team
+                    ? `${members.filter((p) => p.connected && p.ready).length}/${
+                        members.filter((p) => p.connected).length
+                      } READY`
+                    : "NOT READY"}
               </span>
             )}
 

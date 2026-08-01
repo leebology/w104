@@ -8,7 +8,7 @@ import { StandingsList } from "../../components/StandingsList";
 import { roomStore } from "../../net/room";
 import type { RoomState } from "../../../shared/state";
 import { rosterOf } from "../../../shared/teams";
-import { HostExit, HostHeader, HostHeaderRight } from "./HostHeader";
+import { HostBackToRoom, HostHeader, HostHeaderRight } from "./HostHeader";
 
 type Props = {
   room: RoomState;
@@ -30,21 +30,18 @@ export function HostStandings({ room, countdown }: Props) {
           it: the standings are what the room is still talking about, and the
           count is an interruption laid over them. */}
       <div className={countdown ? "host-standings__stage host-standings__stage--dimmed" : "host-standings__stage"}>
+        {/* The chip leads and the screen's own title takes the far end, which
+            is the arrangement every other host screen uses — this one had them
+            the other way round, so the one thing on a TV that has to be in the
+            same corner every time moved on the one screen a room sits longest
+            on. The final board keeps its plaque on the left: there is no chip
+            on it to lead with, the match being over. */}
         <HostHeader
           left={
             done ? (
               <span className="plaque plaque--over">MATCH OVER</span>
             ) : (
-              <div className="host-standings__title">
-                <h1>Standings</h1>
-                {/* The list states the scoring direction in its own explainer
-                    row, so the subtitle counts rounds instead of saying it
-                    twice. */}
-                <p>
-                  AFTER ROUND {played} OF {room.settings.roundCount} ·{" "}
-                  {room.settings.roundCount - played} TO GO
-                </p>
-              </div>
+              <RoomChip room={room} />
             )
           }
           right={
@@ -57,14 +54,21 @@ export function HostStandings({ room, countdown }: Props) {
                 </span>
               ) : (
                 <>
-                  <RoomChip code={room.code} />
+                  <div className="host-standings__title">
+                    <h1>Standings</h1>
+                    {/* The list states the scoring direction in its own
+                        explainer row, so the subtitle counts rounds instead of
+                        saying it twice. */}
+                    <p>
+                      AFTER ROUND {played} OF {room.settings.roundCount} ·{" "}
+                      {room.settings.roundCount - played} TO GO
+                    </p>
+                  </div>
                   {/* The match has no other exit between rounds — see the
                       standings brief. Absent on the final screen, where the
-                      gold button already does exactly this. */}
-                  <HostExit
-                    label="Back to room"
-                    onClick={() => roomStore.send({ type: "backToLobby" })}
-                  />
+                      gold button already does exactly this and ends nothing
+                      that is still running. */}
+                  <HostBackToRoom />
                 </>
               )}
             </HostHeaderRight>

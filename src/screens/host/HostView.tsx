@@ -1,10 +1,12 @@
-import { Fragment } from "react";
+import { Fragment, useRef } from "react";
 import type { ReactElement } from "react";
+import { useMusic } from "../../audio/music";
 import { roomStore } from "../../net/room";
 import type { ClientState } from "../../net/room";
 import { countdownScreen } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
 import { TimesUp } from "../shared/TimesUp";
+import { HostCreating } from "./HostCreating";
 import { HostLobby } from "./HostLobby";
 import { HostPlaying } from "./HostPlaying";
 import { HostScoring } from "./HostScoring";
@@ -14,6 +16,13 @@ import { HostVoting } from "./HostVoting";
 
 export function HostView({ state, onLeave }: { state: ClientState; onLeave: () => void }): ReactElement {
   const room = state.room!;
+
+  // Music is host-only, and this call is the whole of that rule: a phone never
+  // mounts this component. It sits above the screen switch rather than inside
+  // any screen so a track survives the phase change that follows it — and above
+  // the `viewNonce` remount below, so the debug menu's refresh restarts the
+  // animations without restarting the music.
+  useMusic(room);
 
   // The host leaving is the end of the game, not just of their own session:
   // without a host nobody can start the next round, so the room goes with
@@ -25,22 +34,51 @@ export function HostView({ state, onLeave }: { state: ClientState; onLeave: () =
     onLeave();
   };
 
+  // The last `creating`-phase `RoomState` this client saw, mutated during
+  // render rather than reconstructed later — `closeCreating` moves straight
+  // to `voting` with no countdown between them (see its comment in
+  // shared/reduce.ts: "the transition ... is an animation, not a phase"), so
+  // there is no phase left to read the writing board's final layout off of
+  // once voting opens. This ref is that layout's only home: `HostVotingCustom`
+  // hands it to `CreatingLeaveBoard` for the transition's leave overlay
+  // (§1c). A client that mounts straight into `voting` — a reconnect, a
+  // refresh past the beat — never populates it, and the transition degrades
+  // to skipping the leave overlay rather than fabricating one.
+  //
+  // A plain mutation, not `useEffect`: by the time this component re-renders
+  // for the `voting` phase, the *previous* commit's `creating` render has
+  // already happened, and this line runs again on every render regardless of
+  // phase — cheap, and it means the ref is never one render stale.
+  const lastCreatingRoom = useRef<RoomState | null>(null);
+  if (room.phase.name === "creating") lastCreatingRoom.current = room;
+
   // Keyed on `viewNonce` so the debug menu's refresh remounts the screen — the
   // only way to restart animations and screen-local state that a re-render
   // cannot touch. A Fragment rather than an element, because it must add no DOM
   // of its own: every screen below is a `.screen` root the layout depends on.
-  return <Fragment key={room.viewNonce}>{screenFor(room, state, leave)}</Fragment>;
+  return (
+    <Fragment key={room.viewNonce}>
+      {screenFor(room, state, leave, lastCreatingRoom.current)}
+    </Fragment>
+  );
 }
 
 // The explicit ReactElement return type is what makes tsc flag an unhandled
 // phase — there is no noImplicitReturns in this repo, so dropping it would
 // make a missing case compile silently.
-function screenFor(room: RoomState, state: ClientState, leave: () => void): ReactElement {
+function screenFor(
+  room: RoomState,
+  state: ClientState,
+  leave: () => void,
+  creatingSnapshot: RoomState | null,
+): ReactElement {
   switch (room.phase.name) {
     case "lobby":
       return <HostLobby room={room} onLeave={leave} />;
     case "voting":
-      return <HostVoting room={room} offset={state.clockOffset} />;
+      return (
+        <HostVoting room={room} offset={state.clockOffset} creatingSnapshot={creatingSnapshot} />
+      );
     case "countdown": {
       const countdown = { endsAt: room.phase.endsAt, offset: state.clockOffset };
       const screen = countdownScreen(room);
@@ -79,5 +117,7 @@ function screenFor(room: RoomState, state: ClientState, leave: () => void): Reac
       return <HostStandings room={room} />;
     case "teams":
       return <HostTeams room={room} />;
+    case "creating":
+      return <HostCreating room={room} offset={state.clockOffset} />;
   }
 }

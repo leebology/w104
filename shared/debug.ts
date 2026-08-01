@@ -106,3 +106,16 @@ export function fillWordsFor(
   // out of another's — every scorer sees the whole sub-pool.
   return Array.from({ length: count }, () => drawFrom([...shared], each, rand));
 }
+
+/**
+ * A plausible category for a placeholder slot. Deterministic, so the same
+ * bench always dresses the same way, and deliberately varied so the reveal has
+ * something to show.
+ */
+export function fillCategoryFor(seat: number, slot: number): string {
+  const stems = [
+    "smells", "noises", "bad gifts", "excuses", "chores", "snacks",
+    "villains", "phobias", "hobbies", "regrets", "textures", "sidekicks",
+  ];
+  return stems[(seat * 3 + slot) % stems.length];
+}

@@ -35,10 +35,15 @@ export const REVEAL_TIMING = {
    */
   LINE_INTERVAL: 400,
   /**
-   * The extra beat before a column's first line. Not dead time: the next card
-   * shakes through it, so the room's eye is already on the list about to fill.
+   * The extra beat before a column's first line. Not dead time, but not all
+   * cue either: the first half is a beat of stillness after the previous
+   * card stops, and only the second half is the next card shaking, so the
+   * room's eye lands on the list about to fill just as it starts to.
+   * `.result-col--cue`'s `animation-delay` is the other half of this split —
+   * the two must not drift, or the shake stops lining up with the column it
+   * is announcing.
    */
-  COLUMN_PAUSE: 1_000,
+  COLUMN_PAUSE: 2_000,
   /** How long a word holds in plain ink before its own strike draws through. */
   STRIKE_HOLD: 180,
 } as const;

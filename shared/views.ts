@@ -21,6 +21,8 @@ import type { Room } from "./state";
 export const VIEWS = [
   { id: "lobby", label: "Lobby" },
   { id: "teams", label: "Team select" },
+  { id: "countdownToCreating", label: "Countdown → write" },
+  { id: "creating", label: "Write categories" },
   { id: "countdownToVoting", label: "Countdown → vote" },
   { id: "voting", label: "Category vote" },
   { id: "countdownToPlaying", label: "Countdown → round" },
@@ -50,6 +52,7 @@ export function isViewId(value: unknown): value is ViewId {
 export function currentView(view: Pick<Room, "phase">): ViewId {
   const phase = view.phase;
   if (phase.name === "countdown") {
+    if (phase.to === "creating") return "countdownToCreating";
     return phase.to === "voting" ? "countdownToVoting" : "countdownToPlaying";
   }
   return phase.name;

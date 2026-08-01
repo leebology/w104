@@ -26,6 +26,11 @@ export function trackVisualViewport(): void {
     // down over the layout viewport to reveal a focused input, and a screen
     // pinned at a stale offset would sit partly off the top of the display.
     root.style.setProperty("--vv-top", `${vv.offsetTop}px`);
+    // A class, not a media query: media queries measure the *layout* viewport,
+    // which does not shrink when the keyboard opens. 620px is the threshold
+    // below which the creation screen drops its meta line and halves its
+    // counter — see the brief's §1e.
+    root.classList.toggle("vv-compact", vv.height < 620);
   };
 
   sync();

@@ -5,17 +5,46 @@ import { NO_SELF_MARKS, toggleMark } from "./selfstrike";
 import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, MatchSettings, Player, PlayerId, Room, RoundSummary } from "./state";
-import { BALLOT } from "./categories";
-import { isGameModeId, modeSpec, normalizeSetting } from "./gamemodes";
-import type { NumericSettingKey } from "./gamemodes";
+import { BALLOT, CATEGORIES } from "./categories";
+import {
+  customEnabled, isGameModeId, isNumericSpec, modeSpec, normalizeChoice, normalizeSetting,
+} from "./gamemodes";
+import type { CategorySource, ChoiceSettingKey, NumericSettingKey } from "./gamemodes";
+import {
+  MAX_CATEGORY_LEN,
+  WRITE_MS,
+  buildDeal,
+  buildPool,
+  pickCustomCategory,
+  quotaOfRoom,
+  seedRoll,
+  writersOf,
+  voteBudgetFor,
+} from "./customCategories";
 import { pickCategory, spentCategories, voteBudget, votesSpent } from "./voting";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS, assignStragglers, balanceTeams, makeTeams, rosterOf, teamsEnabled } from "./teams";
 import type { ScorerId, TeamId } from "./teams";
 import { MIN_TEAM_COUNT } from "./gamemodes";
 import type { ViewId } from "./views";
 import { isHuman, isWaiting, readyBots, seatBots, setBotCount } from "./bots";
+import { inWaitingRoom, isSeated, seatedPlayers } from "./waiting";
 
-export const COUNTDOWN_MS = 5_000;
+/**
+ * How long the Get Ready card is up.
+ *
+ * **Set by the audio, not by the design.** The countdown plays a lead-in that
+ * hands straight over to the round's music (`src/audio/countdown/`), so the
+ * card has to stay up long enough for that clip to finish — a shorter phase
+ * cuts the music off mid-bar. It was five seconds when nothing was playing over
+ * it. **Replacing the lead clip means changing this number**, which is the one
+ * piece of coupling between a file somebody drags into a folder and the server;
+ * the countdown README says so at the other end.
+ *
+ * Rounded up from the clip rather than matched exactly: the hand-off to the
+ * round's music fires off the clip's own `ended` event, so a little slack here
+ * is inaudible, while too little clips the last note.
+ */
+export const COUNTDOWN_MS = 7_400;
 /** One voting window per match, whatever the round count. */
 export const VOTING_MS = 60_000;
 export const TIMESUP_MS = 3_000;
@@ -73,6 +102,7 @@ export type RoomEvent =
       playerId: PlayerId;
       /** Only keys the *active mode* exposes are honoured. */
       values: Partial<Record<NumericSettingKey, number>>;
+      choices: Partial<Record<ChoiceSettingKey, string>>;
       now: number;
     }
   | { t: "setMode"; playerId: PlayerId; mode: string; now: number }
@@ -84,6 +114,18 @@ export type RoomEvent =
   | { t: "joinTeam"; playerId: PlayerId; teamId: TeamId; now: number }
   | { t: "leaveTeam"; playerId: PlayerId; now: number }
   | { t: "setTeamName"; playerId: PlayerId; teamId: TeamId; name: string; now: number }
+  /**
+   * The phone publishing which slot it is on. Cheap and frequent; the only
+   * thing that drives the writing state on the TV, and it carries no text.
+   */
+  | { t: "moveCursor"; playerId: PlayerId; slot: number; now: number }
+  /**
+   * Committing a category. **Committing is readying** — never on keystroke,
+   * or the phase could close under a player mid-word.
+   */
+  | { t: "commitDraft"; playerId: PlayerId; slot: number; text: string; now: number }
+  /** Taking one back. Un-readies, which tears down an in-flight close. */
+  | { t: "clearDraft"; playerId: PlayerId; slot: number; now: number }
   /**
    * The host's Auto sort. `roll` is a uniform [0,1) from the caller, the same
    * arrangement the category draw uses: the deal has to be random — pressing
@@ -161,6 +203,57 @@ const mapPlayer = (
 ): Player[] => players.map((p) => (p.id === id ? fn(p) : p));
 
 /**
+ * This room's quota, derived from the live room. Never stored.
+ *
+ * **Seated players only, and that is load-bearing rather than tidy.** The quota
+ * is a function of how many people are writing, so counting the waiting room
+ * would change how many slots everybody owns the moment somebody walked in —
+ * slots appearing or vanishing under a thumb mid-word, and `hasWrittenAll`
+ * silently un-readying a player who had finished. A latecomer is not writing;
+ * they are not in this match's pool at all. See `closeCreating`.
+ */
+function quotaOf(room: Room): number {
+  return quotaOfRoom(room);
+}
+
+/** Whether every slot this player owns holds something. */
+function hasWrittenAll(room: Room, playerId: PlayerId): boolean {
+  const quota = quotaOf(room);
+  const mine = room.drafts[playerId] ?? [];
+  for (let i = 0; i < quota; i++) {
+    if ((mine[i] ?? "").trim() === "") return false;
+  }
+  return true;
+}
+
+function writeSlot(room: Room, playerId: PlayerId, slot: number, text: string): Room {
+  const quota = quotaOf(room);
+  if (!Number.isInteger(slot) || slot < 0 || slot >= quota) return room;
+  if (!room.players.some((p) => p.id === playerId)) return room;
+  // The waiting room does not write. A latecomer owns no slots — the quota is
+  // computed without them — so a draft of theirs would be text nobody asked
+  // for, and `buildPool` would then have to decide what to do with an author
+  // who is not in the match. The pool is this match's, like the vote.
+  if (isWaitingPlayer(room, playerId)) return room;
+
+  const mine = [...(room.drafts[playerId] ?? [])];
+  while (mine.length < quota) mine.push("");
+  const next = text.trim().slice(0, MAX_CATEGORY_LEN);
+  if (mine[slot] === next) return room;
+  mine[slot] = next;
+
+  const drafts = { ...room.drafts, [playerId]: mine };
+  const staged: Room = { ...room, drafts };
+  return {
+    ...staged,
+    players: mapPlayer(staged.players, playerId, (p) => ({
+      ...p,
+      ready: hasWrittenAll(staged, playerId),
+    })),
+  };
+}
+
+/**
  * Readiness counts only connected players. Otherwise one person whose phone
  * died in the lobby would block the game for everyone until they came back.
  *
@@ -172,14 +265,30 @@ const mapPlayer = (
  * Debug bots are inert on both halves — excluded from the floor, and always
  * counted as waiting. Scenery must neither hold a room down nor make one
  * startable that would not have started without it. See `shared/bots.ts`.
+ *
+ * **The waiting room is excluded outright**, which is the whole of *its*
+ * inertness and gets both halves at once: a latecomer is not counted toward the
+ * floor, so they can never make a room startable that would not have started;
+ * and they are never asked whether they are ready, so they can neither hold a
+ * countdown down nor tear one off the screen. `isWaiting` above is unrelated —
+ * it is about readiness, not about this. See `shared/waiting.ts`.
  */
 function everyoneReady(room: Room, min: number): boolean {
-  const active = room.players.filter((p) => p.connected);
+  const active = room.players.filter((p) => p.connected && isSeated(p));
   return active.filter(isHuman).length >= min && active.every(isWaiting);
 }
 
-function openCountdown(room: Room, now: number, to: "voting" | "playing"): Room {
+function openCountdown(
+  room: Room,
+  now: number,
+  to: "creating" | "voting" | "playing",
+): Room {
   return { ...room, phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to } };
+}
+
+/** Where a match heads once the room is settled: writing first, if custom. */
+function afterLobby(room: Room): "creating" | "voting" {
+  return customEnabled(room.settings) ? "creating" : "voting";
 }
 
 /**
@@ -216,11 +325,19 @@ function readyFloor(room: Room): number {
 function applySettings(
   settings: MatchSettings,
   values: Partial<Record<NumericSettingKey, number>>,
+  choices: Partial<Record<ChoiceSettingKey, string>>,
 ): MatchSettings {
   let next = settings;
   for (const spec of modeSpec(settings.mode).settings) {
-    const value = normalizeSetting(spec, values[spec.key], settings[spec.key]);
-    if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    if (isNumericSpec(spec)) {
+      const value = normalizeSetting(spec, values[spec.key], settings[spec.key]);
+      if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    } else {
+      const value = normalizeChoice(spec, choices[spec.key], settings[spec.key]);
+      if (value !== next[spec.key]) {
+        next = { ...next, [spec.key]: value as CategorySource };
+      }
+    }
   }
   return next;
 }
@@ -233,8 +350,10 @@ function applySettings(
 function clampToMode(settings: MatchSettings): MatchSettings {
   let next = settings;
   for (const spec of modeSpec(settings.mode).settings) {
-    const value = normalizeSetting(spec, settings[spec.key], settings[spec.key]);
-    if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    if (isNumericSpec(spec)) {
+      const value = normalizeSetting(spec, settings[spec.key], settings[spec.key]);
+      if (value !== next[spec.key]) next = { ...next, [spec.key]: value };
+    }
   }
   return next;
 }
@@ -271,6 +390,45 @@ function enterTeams(room: Room): Room {
       teams,
     ),
   };
+}
+
+/**
+ * Seats every waiting player the next round can take.
+ *
+ * Called from exactly one edge — the `countdown -> playing` tick, beside the
+ * category draw — and for the same reason that draw lives there. Admitting when
+ * the countdown *opens* would have to be undone when it is cancelled, and a
+ * two-way write is a state machine with a second copy of the truth in it.
+ * Admitting at the whistle makes a cancelled countdown a genuine no-op: the
+ * latecomer simply keeps waiting. It also means a team picked *during* the
+ * count still gets them in — the card is not the deadline, the whistle is.
+ *
+ * Two conditions, both about whether putting them in the round is honest:
+ *
+ * - **Connected.** The waiting room's promise is "you are in the next round". A
+ *   phone that is not there arrives as an empty column on the TV and a last
+ *   place in the standings for somebody who is not playing, and waiting for the
+ *   whistle after this one costs them nothing — they were not playing either
+ *   way.
+ * - **On a live team, when teams are on.** A shared word list needs somebody to
+ *   share it with, and the team is theirs to pick: nothing places a latecomer,
+ *   which is why `assignStragglers` and `balanceTeams` both leave them alone.
+ *   A null `teamId`, or one naming a team that no longer exists, are both "no
+ *   team".
+ *
+ * Returns the identical object when it admits nobody, per the no-op rule.
+ */
+function admitWaiting(room: Room): Room {
+  const live = new Set(room.teams.map((t) => t.id));
+  const needsTeam = teamsEnabled(room.settings);
+  let changed = false;
+  const players = room.players.map((p) => {
+    if (!inWaitingRoom(p) || !p.connected) return p;
+    if (needsTeam && (p.teamId === null || !live.has(p.teamId))) return p;
+    changed = true;
+    return { ...p, waiting: false };
+  });
+  return changed ? { ...room, players } : room;
 }
 
 /**
@@ -314,6 +472,61 @@ function bankRound(room: Room, results: Results): Room {
 }
 
 /**
+ * Turns the writing window into a pool and a deal, and opens voting.
+ *
+ * **Both happen exactly once, here.** House cards do not exist before this
+ * call, and the deal is solved in one shot rather than sampled per hand —
+ * every card has to be shown to the same number of people or the vote is not
+ * fair.
+ *
+ * No countdown on this edge: the transition between the two screens is an
+ * animation, not a phase. See the design brief's §1c.
+ */
+function closeCreating(room: Room, now: number, roll: number): Room {
+  const quota = quotaOf(room);
+  // Seated players only, and on both halves of the close. A latecomer authored
+  // nothing — `writeSlot` refuses them — so including them would fill their
+  // share of the pool with house cards attributed to a person who never wrote
+  // one, which is a lie the authorship reveal would tell on the TV. And they
+  // must not be in the deal: the deal is the ballot, `castVote` refuses them,
+  // and a hand dealt to somebody who cannot spend it costs every card in it its
+  // exposure. `quotaOf` counts the same people, so `V = P * q` still holds.
+  const playerIds = writersOf(room.players).map((p) => p.id);
+  const pool = buildPool(playerIds, room.drafts, quota, CATEGORIES, roll);
+  return {
+    ...room,
+    phase: { name: "voting", endsAt: now + VOTING_MS },
+    pool,
+    deal: buildDeal(pool, playerIds, quota, roll),
+    authorsRevealed: false,
+    // `ready` means "votes spent" on the far side of this edge, so the flags
+    // and the empty tally have to agree.
+    players: unready(room.players),
+    votes: {},
+  };
+}
+
+/**
+ * Closing voting hands the clients authorship. It is the reveal, so it happens
+ * once, on the way out of `voting`, and never on any earlier edge.
+ */
+function closeVoting(room: Room, now: number): Room {
+  return {
+    ...room,
+    phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to: "playing" },
+    authorsRevealed: customEnabled(room.settings) ? true : room.authorsRevealed,
+  };
+}
+
+/** The round's category, from whichever pool this match is playing. */
+function drawCategory(room: Room, roll: number): string {
+  if (customEnabled(room.settings) && room.pool) {
+    return pickCustomCategory(room.pool, room.votes, spentCategories(room), roll);
+  }
+  return pickCategory(room.votes, spentCategories(room), roll);
+}
+
+/**
  * The pre-round <-> countdown edge is derived, not commanded: any event that
  * changes readiness re-evaluates it, so un-readying mid-countdown backs out
  * without needing its own case.
@@ -332,7 +545,7 @@ function settle(room: Room, now: number): Room {
     if (!everyoneReady(room, MIN_PLAYERS)) return room;
     return teamsEnabled(room.settings)
       ? enterTeams(room)
-      : openCountdown(room, now, "voting");
+      : openCountdown(room, now, afterLobby(room));
   }
 
   if (phase.name === "teams") {
@@ -340,15 +553,30 @@ function settle(room: Room, now: number): Room {
     // the way castVote and resetVotes own it during voting. Everybody on a team
     // is the whole condition, so the countdown opens with no host action; a
     // player who changes their mind leaves their team and stops it dead.
+    //
+    // `afterLobby`, not a literal "voting": a custom match writes its own pool
+    // first, so team select hands off to `creating` instead.
     return everyoneReady(room, readyFloor(room))
-      ? openCountdown(room, now, "voting")
+      ? openCountdown(room, now, afterLobby(room))
+      : room;
+  }
+
+  if (phase.name === "creating") {
+    // `ready` means "every slot committed" here — `commitDraft` and
+    // `clearDraft` own the flag, the way `castVote` owns it during voting.
+    // Which is why clearing a card tears the close down for free.
+    //
+    // `settle` has no `roll` on its event — unlike `tick`, nothing here carries
+    // one — so the seed comes from `seedRoll`: the room code and this instant,
+    // neither client-controlled and both already in hand, rather than a fixed
+    // default that would make the pool and the deal computable offline.
+    return everyoneReady(room, readyFloor(room))
+      ? closeCreating(room, now, seedRoll(room.code, now))
       : room;
   }
 
   if (phase.name === "voting") {
-    return everyoneReady(room, readyFloor(room))
-      ? openCountdown(room, now, "playing")
-      : room;
+    return everyoneReady(room, readyFloor(room)) ? closeVoting(room, now) : room;
   }
 
   if (phase.name === "scoring") {
@@ -395,11 +623,12 @@ function settle(room: Room, now: number): Room {
 function backPhase(room: Room): Room["phase"] {
   if (
     room.phase.name === "countdown" &&
-    room.phase.to === "voting" &&
+    (room.phase.to === "voting" || room.phase.to === "creating") &&
     teamsEnabled(room.settings)
   ) {
-    // Same derivation as `countdownScreen`: with teams on, a `to: "voting"`
-    // countdown can only have come out of team select.
+    // Same derivation as `countdownScreen`: with teams on, a `to: "voting"` or
+    // `to: "creating"` countdown can only have come out of team select —
+    // `afterLobby` is what a teams-on room's Continue always heads through.
     return { name: "teams" };
   }
   return preRoundPhase(room) === "lobby" ? { name: "lobby" } : { name: "standings" };
@@ -410,28 +639,54 @@ function backPhase(room: Room): Room["phase"] {
  * countdown out of it. The countdown case is what lets a player cancel the
  * start by leaving their team — allowing a *switch* in the same window costs
  * nothing extra.
+ *
+ * `to === "creating"` joins `to === "voting"` here for the same reason it
+ * joins it in `backPhase`: a custom match with teams on heads to the writing
+ * window through team select exactly as a stock match heads to voting, so the
+ * countdown that follows Continue is a team-select countdown either way.
  */
 function inTeamSelect(room: Room): boolean {
   if (room.phase.name === "teams") return true;
   return (
     room.phase.name === "countdown" &&
-    room.phase.to === "voting" &&
+    (room.phase.to === "voting" || room.phase.to === "creating") &&
     teamsEnabled(room.settings)
   );
+}
+
+/** Whether this sender is sitting in the waiting room. */
+function isWaitingPlayer(room: Room, playerId: PlayerId): boolean {
+  const me = room.players.find((p) => p.id === playerId);
+  return me !== undefined && inWaitingRoom(me);
+}
+
+/**
+ * Where `joinTeam` and `leaveTeam` are legal: team select, and the waiting
+ * room in **any** phase.
+ *
+ * The second is the only thing a latecomer can do to the room, and it is what
+ * makes them eligible for the next whistle — with teams on, admission requires
+ * a team they chose. `setTeamName` deliberately does *not* use this: a waiting
+ * player has not joined the team yet, and renaming one that is mid-match is not
+ * theirs to do.
+ */
+function mayPickTeam(room: Room, playerId: PlayerId): boolean {
+  if (inTeamSelect(room)) return true;
+  return teamsEnabled(room.settings) && isWaitingPlayer(room, playerId);
 }
 
 const unready = (players: Player[]): Player[] =>
   players.map((p) => ({ ...p, ready: false }));
 
 /**
- * The phases the debug menu's hold and skip apply to: the two that run a
+ * The phases the debug menu's hold and skip apply to: the ones that run a
  * deadline the room can still be *deciding* against. Written as a predicate so
  * both events agree on the list and tsc narrows `endsAt` for them.
  */
 function isHoldable(
   phase: Room["phase"],
-): phase is Extract<Room["phase"], { name: "playing" | "voting" }> {
-  return phase.name === "playing" || phase.name === "voting";
+): phase is Extract<Room["phase"], { name: "playing" | "voting" | "creating" }> {
+  return phase.name === "playing" || phase.name === "voting" || phase.name === "creating";
 }
 
 /**
@@ -484,7 +739,21 @@ function jumpTo(room: Room, to: ViewId, now: number, roll: number): Room {
   // Cleared on every jump. A held round's `endsAt` is stale by design, so
   // carrying the hold into a phase whose timer nothing can resume would freeze
   // the room with no visible cause.
-  const base: Room = { ...room, paused: null };
+  //
+  // The waiting room is emptied on every jump too, and in both directions: a
+  // jump is a teleport, not a promise, and the panel's job is to show the
+  // screen as the room would really have it. Jumping to the lobby seats
+  // everybody the way `backToLobby` does; jumping anywhere else admits them,
+  // and the `standUpTeams` in each branch below then places anyone a team
+  // match just took in. Admission here is unconditional rather than
+  // `admitWaiting`'s two honest conditions, for the same reason readiness is
+  // *forced* for a countdown target: the jumper builds the screen it was asked
+  // for and nothing derives its way back out of it.
+  const base: Room = {
+    ...room,
+    paused: null,
+    players: room.players.map((p) => (inWaitingRoom(p) ? { ...p, waiting: false } : p)),
+  };
 
   switch (to) {
     case "lobby":
@@ -504,6 +773,7 @@ function jumpTo(room: Room, to: ViewId, now: number, roll: number): Room {
       return enterTeams({ ...base, settings, teams: [] });
     }
 
+    case "countdownToCreating":
     case "countdownToVoting":
     case "countdownToPlaying": {
       const staged = standUpTeams(base);
@@ -514,8 +784,33 @@ function jumpTo(room: Room, to: ViewId, now: number, roll: number): Room {
         phase: {
           name: "countdown",
           endsAt: now + COUNTDOWN_MS,
-          to: to === "countdownToVoting" ? "voting" : "playing",
+          to:
+            to === "countdownToCreating"
+              ? "creating"
+              : to === "countdownToVoting"
+                ? "voting"
+                : "playing",
         },
+        // Matches the `creating` case below: a countdown headed there must not
+        // carry over the last close's pool and deal, or a room jumped back to
+        // re-write would land its next close atop the previous shuffle's
+        // leftovers. `countdownToVoting`/`countdownToPlaying` land on a phase
+        // that reads an *existing* pool, so only this target clears it.
+        ...(to === "countdownToCreating" ? { pool: null, deal: {} } : {}),
+      };
+    }
+
+    case "creating": {
+      const staged = standUpTeams(base);
+      return {
+        ...staged,
+        phase: { name: "creating", endsAt: now + WRITE_MS },
+        players: unready(staged.players),
+        drafts: {},
+        cursors: {},
+        pool: null,
+        deal: {},
+        authorsRevealed: false,
       };
     }
 
@@ -539,7 +834,7 @@ function jumpTo(room: Room, to: ViewId, now: number, roll: number): Room {
         // Drawn here for the same reason the whistle draws it: `playing` is the
         // first screen that shows the category, so it is the first that needs
         // one. Weighted by whatever votes the room has, uniform when it has none.
-        category: pickCategory(staged.votes, spentCategories(staged), roll),
+        category: drawCategory(staged, roll),
         phase: { name: "playing", endsAt: now + staged.settings.durationSec * 1_000 },
         // A round starts empty. This is also what makes jumping to `playing`
         // the way to re-run a round from the top, rather than resuming into a
@@ -624,6 +919,8 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "join": {
       if (room.players.some((p) => p.id === ev.playerId)) {
+        // `...p` carries `waiting` across, so a waiting player's reconnect
+        // cannot smuggle them into the round in progress.
         return {
           ...room,
           players: mapPlayer(room.players, ev.playerId, (p) => ({
@@ -631,20 +928,26 @@ function apply(room: Room, ev: RoomEvent): Room {
           })),
         };
       }
-      // New players may only join between rounds, and only up to the cap; the
-      // server rejects both earlier, this is the second line of defence.
-      // Both checks sit below the returning-player branch above, so someone
-      // already seated always gets back in.
-      if (room.phase.name !== "lobby") return room;
       // Bots do not count against the cap. Twenty of them fit on purpose, and
       // a room dressed for a screenshot must not be a room real phones are
-      // locked out of.
+      // locked out of. Waiting players *do* count: they hold a real seat and
+      // they are in the next round.
       if (room.players.filter(isHuman).length >= MAX_PLAYERS) return room;
       return {
         ...room,
         players: [...room.players, {
           id: ev.playerId, name: ev.name, emoji: ev.emoji,
           ready: false, connected: true, teamId: null,
+          // The lobby seats people into the match; every other phase seats
+          // them into the waiting room, where they sit out whatever is running
+          // and are dealt in at the next whistle. One rule rather than a list
+          // of phases: uniform is what stops a newcomer tearing down a live
+          // countdown, holding a vote open, or moving a team panel under
+          // somebody's thumb. It costs the common case nothing, because
+          // admission is at the *whistle* and the whistle into round one is a
+          // whistle — somebody who arrives during team select or the category
+          // vote plays round one and misses only the ballot.
+          waiting: room.phase.name !== "lobby",
         }],
       };
     }
@@ -669,6 +972,9 @@ function apply(room: Room, ev: RoomEvent): Room {
       ) {
         return room;
       }
+      // The waiting room has no Ready button, and a hand-rolled message must
+      // not set a flag `settle` would read the moment they are admitted.
+      if (isWaitingPlayer(room, ev.playerId)) return room;
       return {
         ...room,
         players: mapPlayer(room.players, ev.playerId, (p) => ({ ...p, ready: ev.ready })),
@@ -701,24 +1007,35 @@ function apply(room: Room, ev: RoomEvent): Room {
       // can leave their team, which clears the flag and has `settle` drop the
       // room back into team select. Assigning here is what gives an auto-placed
       // player something to leave.
+      // Force-readies the room, not the waiting room. `ready` on a latecomer
+      // is a flag nothing reads and nothing they can clear — `everyoneReady`
+      // skips them outright — so setting it would only leave a dishonest value
+      // for the next screen to render.
+      const forceReady = (p: Player) => (inWaitingRoom(p) ? p : { ...p, ready: true });
       if (from === "teams") {
         return {
           ...room,
-          players: assignStragglers(room.players, room.teams).map((p) => ({
-            ...p, ready: true,
-          })),
-          phase: { name: "countdown", endsAt: ev.now + COUNTDOWN_MS, to: "voting" },
+          players: assignStragglers(room.players, room.teams).map(forceReady),
+          phase: { name: "countdown", endsAt: ev.now + COUNTDOWN_MS, to: afterLobby(room) },
+        };
+      }
+      // A solo host closing voting still hands out authorship the same way a
+      // natural close does — `closeVoting` is the one place that flag flips.
+      if (from === "voting") {
+        return {
+          ...closeVoting(room, ev.now),
+          players: room.players.map(forceReady),
         };
       }
       return {
         ...room,
-        players: room.players.map((p) => ({ ...p, ready: true })),
+        players: room.players.map(forceReady),
         phase: {
           name: "countdown",
           endsAt: ev.now + COUNTDOWN_MS,
           // Only `lobby` (with teams off — the teams-on lobby returned above)
-          // heads for voting; `voting` and `standings` head for a round.
-          to: from === "lobby" ? "voting" : "playing",
+          // heads for writing or voting; `standings` heads for a round.
+          to: from === "lobby" ? afterLobby(room) : "playing",
         },
       };
     }
@@ -773,7 +1090,18 @@ function apply(room: Room, ev: RoomEvent): Room {
       // on, and the countdown renders it. Walking out mid-match would leave a
       // half-scored round and a standings table with a hole in it; a player
       // who wants out of one closes the tab, which is the disconnect path.
-      if (room.phase.name !== "lobby" && room.phase.name !== "countdown") return room;
+      //
+      // **The waiting room is the exception, in every phase.** The rule above
+      // is about the damage of leaving a match in progress, and a latecomer is
+      // not in one: no words, no votes, no history, nothing to leave a hole in.
+      // Giving the seat back also frees a slot under `MAX_PLAYERS`.
+      if (
+        room.phase.name !== "lobby" &&
+        room.phase.name !== "countdown" &&
+        !isWaitingPlayer(room, ev.playerId)
+      ) {
+        return room;
+      }
       if (!room.players.some((p) => p.id === ev.playerId)) return room;
       const { [ev.playerId]: _removed, ...entries } = room.entries;
       const { [ev.playerId]: _removedVotes, ...votes } = room.votes;
@@ -806,7 +1134,7 @@ function apply(room: Room, ev: RoomEvent): Room {
       // Locked once the match starts: changing the round count mid-match
       // would move the finish line under the players.
       if (room.phase.name !== "lobby") return room;
-      const settings = applySettings(room.settings, ev.values);
+      const settings = applySettings(room.settings, ev.values, ev.choices);
       return settings === room.settings ? room : { ...room, settings };
     }
 
@@ -840,13 +1168,36 @@ function apply(room: Room, ev: RoomEvent): Room {
 
     case "castVote": {
       if (room.phase.name !== "voting") return room;
-      // A hand-rolled socket message is not bound by the UI, so the ballot and
-      // the budget are both checked here rather than trusted. The *ballot*,
-      // not the pool: `random` is votable but is not a category.
-      if (!(BALLOT as readonly string[]).includes(ev.category)) return room;
       if (!room.players.some((p) => p.id === ev.playerId)) return room;
-      const budget = voteBudget(room.settings);
+      // Voting is one window at the top of the match. Somebody who arrived
+      // after it opened missed it, and there is nothing to re-open — see the
+      // waiting-room spec's non-goals. With custom categories they were also
+      // not in the deal, so they hold no hand to vote from either.
+      if (isWaitingPlayer(room, ev.playerId)) return room;
+
       const row = room.votes[ev.playerId] ?? {};
+
+      if (customEnabled(room.settings)) {
+        // The hand is the ballot, and *how many hands held this card* is the
+        // per-card cap. A hand-rolled socket message is not bound by the UI, so
+        // both are checked here rather than trusted: without the first anyone
+        // could vote for a card they were never shown, and without the second
+        // they could put their whole budget on one card dealt once. The
+        // built-in ballot genuinely lets a player stack votes on a category;
+        // here you cannot choose to be dealt a card again, so backing it twice
+        // is luck rather than a move — see the spec's §4.3. Nothing downstream
+        // may treat this tally as a 0/1 flag: a card dealt twice is two votes.
+        const hands = room.deal[ev.playerId] ?? [];
+        const dealt = hands.filter((h) => h.cardIds.includes(ev.category)).length;
+        if (dealt === 0) return room;
+        if ((row[ev.category] ?? 0) >= dealt) return room;
+      } else if (!(BALLOT as readonly string[]).includes(ev.category)) {
+        return room;
+      }
+
+      const budget = customEnabled(room.settings)
+        ? voteBudgetFor()
+        : voteBudget(room.settings);
       const spent = votesSpent(row);
       if (spent >= budget) return room;
       return {
@@ -876,30 +1227,38 @@ function apply(room: Room, ev: RoomEvent): Room {
     }
 
     case "joinTeam": {
-      if (!inTeamSelect(room)) return room;
+      if (!mayPickTeam(room, ev.playerId)) return room;
       if (!room.teams.some((t) => t.id === ev.teamId)) return room;
       const me = room.players.find((p) => p.id === ev.playerId);
       if (!me || me.teamId === ev.teamId) return room;
+      // Two things below are for participants and not for the waiting room,
+      // and both are the difference between a picker and a player.
+      const waiting = inWaitingRoom(me);
       // `ready` is derived from membership and set only here and in
       // leaveTeam — the `ready` event is rejected in this phase, exactly as
-      // castVote and resetVotes own the flag during voting.
+      // castVote and resetVotes own the flag during voting. It means "on a
+      // team" only inside team select; on a waiting player it would be a
+      // readiness nothing can un-set and nothing should read.
       const players = mapPlayer(room.players, ev.playerId, (p) => ({
-        ...p, teamId: ev.teamId, ready: true,
+        ...p, teamId: ev.teamId, ready: waiting ? p.ready : true,
       }));
       // A *switch* mid-countdown puts the full five seconds back on the clock.
       // Leaving a team already stops the count dead — it clears `ready` and
       // `settle` drops the room back into team select — but switching keeps
       // the flag set, so without this someone changing their mind on the last
       // second is carried into voting on a team they have just left, with no
-      // time for anyone to react to the move. `inTeamSelect` has already
-      // established that this countdown is the one out of team select.
-      return room.phase.name === "countdown"
+      // time for anyone to react to the move.
+      //
+      // Never for a latecomer: the room is not reacting to their pick, and a
+      // waiting player able to extend the countdown — repeatedly — is a waiting
+      // player able to stop the match.
+      return room.phase.name === "countdown" && !waiting
         ? { ...room, players, phase: { ...room.phase, endsAt: ev.now + COUNTDOWN_MS } }
         : { ...room, players };
     }
 
     case "leaveTeam": {
-      if (!inTeamSelect(room)) return room;
+      if (!mayPickTeam(room, ev.playerId)) return room;
       const me = room.players.find((p) => p.id === ev.playerId);
       if (!me || me.teamId === null) return room;
       // Clearing `ready` is what makes `settle` tear the countdown back down.
@@ -946,6 +1305,32 @@ function apply(room: Room, ev: RoomEvent): Room {
         ...room,
         players: players.map((p) => (p.teamId !== null ? { ...p, ready: true } : p)),
       };
+    }
+
+    case "moveCursor": {
+      if (room.phase.name !== "creating") return room;
+      if (!room.players.some((p) => p.id === ev.playerId)) return room;
+      // Nothing to point at: the waiting room owns no slots. Rejected here as
+      // well as in `writeSlot`, so a latecomer cannot leave a cursor sitting on
+      // the TV's progress board for a hand they will never write.
+      if (isWaitingPlayer(room, ev.playerId)) return room;
+      const quota = quotaOf(room);
+      if (!Number.isInteger(ev.slot) || ev.slot < 0 || ev.slot >= quota) return room;
+      if (room.cursors[ev.playerId] === ev.slot) return room;
+      return { ...room, cursors: { ...room.cursors, [ev.playerId]: ev.slot } };
+    }
+
+    case "commitDraft": {
+      if (room.phase.name !== "creating") return room;
+      return writeSlot(room, ev.playerId, ev.slot, ev.text);
+    }
+
+    case "clearDraft": {
+      if (room.phase.name !== "creating") return room;
+      // Goes through the same path a commit does, so un-readying is the same
+      // one rule rather than a second copy of it — and `settle` then tears
+      // down any close this player's readiness was holding open.
+      return writeSlot(room, ev.playerId, ev.slot, "");
     }
 
     case "showStandings": {
@@ -1026,37 +1411,86 @@ function apply(room: Room, ev: RoomEvent): Room {
         room.history.length === 0;
       // `inTeamSelect` rather than a bare `=== "teams"`: the host's Back button
       // stays on screen through the countdown out of team select, so it has to
-      // work there too.
+      // work there too. `creating` joins the list for the same reason
+      // `voting` is on it: both are one step out from the lobby, not the
+      // match's start.
+      //
+      // `playing` and `scoring` are here because those screens carry the same
+      // top-right back-out every other host screen does. Between them they
+      // abandon a round while it is being written or while it is being read,
+      // which is exactly what a host pressing it is asking for, and the D1
+      // archive simply never sees that round: `maybeArchiveBank` keys off the
+      // `scoring -> standings` transition, and neither of these is one.
       if (
         room.phase.name !== "standings" &&
         room.phase.name !== "voting" &&
+        room.phase.name !== "creating" &&
+        room.phase.name !== "playing" &&
+        room.phase.name !== "scoring" &&
         !postVotingCountdown &&
         !inTeamSelect(room)
       ) {
         return room;
       }
-      // With teams on, Back out of voting (or the countdown right after it)
-      // is one step, not all the way home: the room returns to team
-      // selection. The teams themselves survive — `enterTeams` keeps them
-      // when the count still matches — but nobody is on one, which is also
-      // what stops `settle` closing team select again the instant it opens.
-      // The votes go: they belonged to the voting round being abandoned, and
-      // a stale tally must not sit under the team screen.
-      if ((room.phase.name === "voting" || postVotingCountdown) && teamsEnabled(room.settings)) {
-        return { ...enterTeams(room), votes: {} };
+      // With teams on, Back out of voting, the writing window, or the
+      // countdown right after voting is one step, not all the way home: the
+      // room returns to team selection. The teams themselves survive —
+      // `enterTeams` keeps them when the count still matches — but nobody is
+      // on one, which is also what stops `settle` closing team select again
+      // the instant it opens. The votes go: they belonged to the voting round
+      // being abandoned, and a stale tally must not sit under the team
+      // screen. `drafts`/`cursors`/`pool`/`deal` go for the same reason —
+      // whatever was written or drawn belonged to the match being abandoned —
+      // and `authorsRevealed` goes with the pool it describes, so the flag can
+      // never outlive the cards and greet the next pool already revealed.
+      if (
+        (room.phase.name === "voting" || room.phase.name === "creating" || postVotingCountdown) &&
+        teamsEnabled(room.settings)
+      ) {
+        return {
+          ...enterTeams(room),
+          votes: {},
+          paused: null,
+          drafts: {},
+          cursors: {},
+          pool: null,
+          deal: {},
+          authorsRevealed: false,
+        };
       }
       // Settings survive — the host usually wants the same match again — and
       // so does `kicked`, which is durable for the room's lifetime. The votes
       // and the teams do not: both belonged to the match being abandoned, and
-      // the next one rebuilds teams from whatever `teamCount` is by then.
+      // the next one rebuilds teams from whatever `teamCount` is by then. Nor
+      // does anything written for it — `drafts`/`cursors`/`pool`/`deal` and the
+      // `authorsRevealed` flag that describes them reset the same way, for a
+      // custom match that never gets replayed as one.
+      //
+      // `paused` goes with them, for the reason the view jumper clears it: a
+      // hold belongs to the phase it was taken in, and one carried into a lobby
+      // freezes the room with no visible cause — `tick` returns early while it
+      // is set, so nobody's Ready button could ever open a countdown again. All
+      // three phases a round can be held in — `playing`, `voting` and the
+      // writing window — have a back-out on screen while the hold is on.
+      //
+      // The waiting room empties too: back in the room there is no match to be
+      // outside of, and everyone in it is an ordinary player again.
       return {
         ...room,
         phase: { name: "lobby" },
-        players: room.players.map((p) => ({ ...p, ready: false, teamId: null })),
+        players: room.players.map((p) => ({
+          ...p, ready: false, teamId: null, waiting: false,
+        })),
         entries: {},
         history: [],
         votes: {},
         teams: [],
+        paused: null,
+        drafts: {},
+        cursors: {},
+        pool: null,
+        deal: {},
+        authorsRevealed: false,
       };
     }
 
@@ -1199,12 +1633,16 @@ function tick(room: Room, now: number, roll: number): Room {
   if (room.paused !== null) return room;
   const phase = room.phase;
   if (phase.name === "countdown" && now >= phase.endsAt) {
-    if (phase.to === "voting") {
+    if (phase.to === "voting" || phase.to === "creating") {
       return {
         ...room,
-        phase: { name: "voting", endsAt: now + VOTING_MS },
+        phase:
+          phase.to === "creating"
+            ? { name: "creating", endsAt: now + WRITE_MS }
+            : { name: "voting", endsAt: now + VOTING_MS },
         // Load-bearing, not housekeeping: `ready` means "has a team" on this
-        // side of the edge and "votes spent" on the other.
+        // side of the edge and "votes spent" (or "every slot committed") on
+        // the other.
         //
         // The backstop for auto-assignment. The host's Continue already places
         // every straggler, and leaving a team tears the countdown down rather
@@ -1215,22 +1653,32 @@ function tick(room: Room, now: number, roll: number): Room {
           ...p, ready: false,
         })),
         votes: {},
+        // A fresh writing window starts with nothing written; a fresh voting
+        // window has no drafts to carry, so this is a no-op on that edge.
+        drafts: phase.to === "creating" ? {} : room.drafts,
+        cursors: phase.to === "creating" ? {} : room.cursors,
       };
     }
     return {
-      ...room,
+      // The whistle is the waiting room's one door, for the reason the draw
+      // below happens here rather than earlier: a cancelled countdown must cost
+      // nothing to undo. See `admitWaiting`.
+      ...admitWaiting(room),
       // Drawn here and nowhere else. Doing it at the whistle rather than when
       // the countdown opens means there is no window in which a cancelled
       // countdown could re-roll it, and nothing on the countdown screen can
       // leak it.
-      category: pickCategory(room.votes, spentCategories(room), roll),
+      category: drawCategory(room, roll),
       phase: { name: "playing", endsAt: now + room.settings.durationSec * 1_000 },
     };
+  }
+  if (phase.name === "creating" && now >= phase.endsAt) {
+    return closeCreating(room, now, roll);
   }
   if (phase.name === "voting" && now >= phase.endsAt) {
     // The global deadline closes voting into the same countdown the other two
     // triggers open, so a round always starts the same way.
-    return { ...room, phase: { name: "countdown", endsAt: now + COUNTDOWN_MS, to: "playing" } };
+    return closeVoting(room, now);
   }
   if (phase.name === "playing" && now >= phase.endsAt) {
     return { ...room, phase: { name: "timesup", endsAt: now + TIMESUP_MS } };
@@ -1277,6 +1725,21 @@ function addEntry(
   trimmed: string,
   now: number,
 ): SubmitResult {
+  // The sender must be a seated player, and this is not covered by the roster
+  // filter below: the scorer lookup falls back to `[playerId]`, so without this
+  // a waiting player's socket would have its words accepted into `entries`
+  // under its own key — invisible to the reveal, but archived as words in a
+  // round they were not in. It answers the same reason a phase mismatch does,
+  // because it is the same fact: this player is not in this round.
+  //
+  // It sits here rather than in `submitEntry` — where it first landed — so
+  // that `flushEntry` is gated by it too. A waiting player's half-typed buffer
+  // is no more theirs to submit than a finished word would be, and that is
+  // exactly the kind of gap a second copy of these rules would open.
+  const me = room.players.find((p) => p.id === playerId);
+  if (!me || inWaitingRoom(me)) {
+    return { room, accepted: false, reason: "not-playing" };
+  }
   if (trimmed.length > MAX_ENTRY_LEN) {
     return { room, accepted: false, reason: "too-long" };
   }
@@ -1388,12 +1851,23 @@ export function nextAlarmAt(room: Room): number {
   // The `paused` check sits inside the condition rather than in a named
   // boolean above it, because tsc only narrows `phase` through the test it
   // can see here.
+  //
+  // `creating` was missing from this list until it caused a real, visible bug:
+  // without it, the writing phase's alarm was scheduled off the 15s idle-touch
+  // horizon instead of its own 60s deadline, and a room with any activity kept
+  // resetting `lastActivityAt` and re-arming 15s out. The alarm still fired and
+  // still checked the real clock each time — `tick` doesn't trust `nextAlarmAt`,
+  // it re-checks `now >= phase.endsAt` — so the phase never hung forever, but it
+  // could sit up to ~15s past its own deadline waiting for the next touch-cycle
+  // alarm to happen to notice, which read on screen as the writing timer idling
+  // at 0:00 before the room moved on to voting.
   const base =
     room.paused === null &&
     (phase.name === "countdown" ||
       phase.name === "voting" ||
       phase.name === "playing" ||
-      phase.name === "timesup")
+      phase.name === "timesup" ||
+      phase.name === "creating")
       ? phase.endsAt
       : room.lastActivityAt + IDLE_REAP_MS;
   if (room.hostGoneAt === null) return base;

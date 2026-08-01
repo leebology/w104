@@ -7,10 +7,11 @@ import type { ClientMessage, ErrorCode, ServerMessage } from "../shared/protocol
 import { createRoom, matchComplete, toRoomState } from "../shared/state";
 import type { Entry, MatchSettings, PlayerId, Room } from "../shared/state";
 import { DEFAULT_DURATION_SEC } from "../shared/categories";
-import { DEFAULT_MODE, defaultSettings, isGameModeId } from "../shared/gamemodes";
+import { DEFAULT_MODE, customEnabled, defaultSettings, isGameModeId } from "../shared/gamemodes";
 import { MAX_TEAM_NAME_LEN, rosterOf } from "../shared/teams";
 import type { Scorer } from "../shared/teams";
 import { isHuman } from "../shared/bots";
+import { inWaitingRoom, seatedPlayers } from "../shared/waiting";
 import { driverOf } from "../shared/mirror";
 import { isViewId } from "../shared/views";
 import type { ViewId } from "../shared/views";
@@ -25,8 +26,9 @@ import {
 import {
   archiveGameStart, archiveMatchEnd, archiveRound, archiveVotes,
 } from "./archive";
-import { DEFAULT_FILL_COUNT, fillWordsFor } from "../shared/debug";
+import { DEFAULT_FILL_COUNT, fillCategoryFor, fillWordsFor } from "../shared/debug";
 import { collectUsage } from "./usage";
+import { MAX_CATEGORY_LEN, quotaOfRoom, writersOf } from "../shared/customCategories";
 
 // Bindings declared in wrangler.jsonc.
 export interface Env {
@@ -205,6 +207,11 @@ export class W104 extends Server<Env> {
       // denominator of every step in the reveal's schedule, and undefined there
       // would put every line of a stored room's next reveal on one millisecond.
       revealLineMs: clampLineMs(rest.revealLineMs ?? REVEAL_TIMING.LINE_INTERVAL),
+      drafts: rest.drafts ?? {},
+      cursors: rest.cursors ?? {},
+      pool: rest.pool ?? null,
+      deal: rest.deal ?? {},
+      authorsRevealed: rest.authorsRevealed ?? false,
       teams: rest.teams ?? [],
       // Two backfills in one pass. `teamId` gives players stored before teams
       // existed a null slot, and `by` gives their words an author — redundant
@@ -230,6 +237,9 @@ export class W104 extends Server<Env> {
           durationSec: stored?.durationSec ?? legacyDuration ?? DEFAULT_DURATION_SEC,
           // Rooms stored before teamCount existed have no such field at all.
           teamCount: stored?.teamCount ?? base.teamCount,
+          // Rooms stored before this setting existed have no such field at
+          // all, and anything but the literal "custom" defaults safe to stock.
+          categorySource: stored?.categorySource === "custom" ? "custom" : "stock",
         };
       })(),
       // A room persisted mid-countdown before `to` existed has a countdown
@@ -341,15 +351,21 @@ export class W104 extends Server<Env> {
 
     const existing = this.room.players.find((p) => p.id === playerId);
     const known = this.room.hostId === playerId || existing !== undefined;
-    if (!known && this.room.phase.name !== "lobby") {
-      return this.reject(conn, "game-in-progress", "That game is already running.");
-    }
+
+    // There used to be a phase gate here, refusing any newcomer past the
+    // lobby with `game-in-progress`. A latecomer is now seated into the
+    // waiting room by `join` instead and dealt in at the next whistle — see
+    // `shared/waiting.ts`. The error code stays in the protocol: staging and
+    // production run independently deployed Workers, so a new client pointed
+    // at an older one must still handle the answer it gets.
 
     // Only newcomers are capped. Someone already seated — including the tenth
     // player reconnecting after their phone locked — is `known` and skips
     // this, so the cap can never lock a player out of their own room. The
     // host holds no player slot, hence the role check. Debug bots hold none
     // either — a room dressed with twenty of them must still take real phones.
+    // Waiting players are counted: they hold a real seat, and a room of ten
+    // plus three waiting is a thirteen-column results screen one round later.
     if (
       !known &&
       role === "player" &&
@@ -377,6 +393,7 @@ export class W104 extends Server<Env> {
     // A player rejoining mid-round gets the list they contribute to — their
     // own in free-for-all, their team's in team play.
     this.sendEntriesToTeam(playerId);
+    this.pushPrivate(playerId);
     this.broadcastState();
   }
 
@@ -453,8 +470,33 @@ export class W104 extends Server<Env> {
      */
     if (msg.type === "debugFill") {
       if (playerId !== this.room.hostId) return;
-      if (this.room.phase.name !== "playing") return;
 
+      if (this.room.phase.name === "creating") {
+        // Loops `commitDraft` rather than writing `drafts` directly, so the
+        // cap, the trim and the readiness rule all still apply — the same
+        // arrangement the round's auto-fill has with `submitEntry`.
+        const quota = quotaOfRoom(this.room);
+        // Writers only, matching the quota just computed. `commitDraft` would
+        // refuse a waiting player anyway, so this is the loop agreeing with the
+        // rule rather than a second copy of it.
+        writersOf(this.room.players).forEach((player, seat) => {
+          for (let slot = 0; slot < quota; slot++) {
+            this.room = reduce(this.room!, {
+              t: "commitDraft",
+              playerId: player.id,
+              slot,
+              text: fillCategoryFor(seat, slot),
+              now,
+            });
+          }
+        });
+        await this.persist();
+        this.broadcastState();
+        this.pushPrivateAll();
+        return;
+      }
+
+      if (this.room.phase.name !== "playing") return;
       const scorers = this.fillEveryList(now);
       await this.persist();
       this.pushEntriesFor(scorers);
@@ -548,6 +590,7 @@ export class W104 extends Server<Env> {
       await this.persist();
       if (filled) this.pushEntriesFor(filled);
       this.broadcastState();
+      this.pushPrivateAll();
       return;
     }
 
@@ -617,9 +660,10 @@ export class W104 extends Server<Env> {
         this.room = reduce(this.room, {
           t: "setSettings",
           playerId,
-          // A hand-rolled message can omit `values` entirely; the rules layer
-          // expects an object to iterate.
+          // A hand-rolled message can omit `values`/`choices` entirely; the
+          // rules layer expects objects to iterate.
           values: msg.values ?? {},
+          choices: msg.choices ?? {},
           now,
         });
         break;
@@ -718,11 +762,33 @@ export class W104 extends Server<Env> {
           now,
         });
         break;
+      case "moveCursor":
+        this.room = reduce(this.room, {
+          t: "moveCursor", playerId, slot: Number(msg.slot), now,
+        });
+        break;
+      case "commitDraft":
+        this.room = reduce(this.room, {
+          t: "commitDraft",
+          playerId,
+          slot: Number(msg.slot),
+          // Bounded again in `reduce`; bounded here so a hostile message
+          // cannot make the room object enormous before it gets there.
+          text: String(msg.text ?? "").slice(0, MAX_CATEGORY_LEN * 4),
+          now,
+        });
+        break;
+      case "clearDraft":
+        this.room = reduce(this.room, {
+          t: "clearDraft", playerId, slot: Number(msg.slot), now,
+        });
+        break;
     }
 
     this.maybeArchiveBank(before, now);
     await this.persist();
     this.broadcastState();
+    this.pushPrivateAll();
   }
 
   async onClose(conn: Connection<ConnState>): Promise<void> {
@@ -778,6 +844,7 @@ export class W104 extends Server<Env> {
         }
         await this.persist();
         this.broadcastState();
+        this.pushPrivateAll();
         return;
       }
       case "touch":
@@ -948,6 +1015,36 @@ export class W104 extends Server<Env> {
     const results = withSelfStrikes(banked.phase.results, banked.phase.selfMarks);
 
     this.archiveInBackground((async () => {
+      // The game-start rows again, before the round's. `player` rows are
+      // written once at match start, but the roster can now *grow* mid-match —
+      // a latecomer admitted in round three writes word rows against a
+      // `player_id` with no parent, and D1 enforces foreign keys, so the whole
+      // 50-statement chunk carrying them would fail and the round's words would
+      // be lost silently. Re-emitting is free rather than clever: every
+      // statement in `archiveGameStart` is already idempotent by construction —
+      // `player` upserts `last_seen_at`, `game` and `participation` are DO
+      // NOTHING — which is the property being spent here.
+      await archiveGameStart(
+        this.env.DB,
+        // Seated players only. `participation` is DO NOTHING, so whatever lands
+        // first stands forever — and a waiting player archived at the bank
+        // *before* they were admitted would freeze a `team_id` of null against
+        // somebody who plays every remaining round in a team. Waiting for the
+        // first bank they are actually in costs nothing: that is the same bank
+        // their first words are written by, and the parent row still lands
+        // ahead of them.
+        gameStartRows({ ...banked, players: seatedPlayers(banked.players) }, {
+          gameId: state.gameId!,
+          lobbyCreatedAt: state.lobbyCreatedAt,
+          // The match's own start time is not recorded past `gameId`, and
+          // these rows only ever *insert* — `game` is DO NOTHING, so the real
+          // one written at `startGame` stands. This value reaches disk only as
+          // a newcomer's `first_seen_at`, where the bank they arrived for is
+          // the honest answer anyway.
+          startedAt: now,
+          scoringVersion: SCORING_VERSION,
+        }),
+      );
       await archiveRound(
         this.env.DB,
         roundRows(banked, results, placeRound(results), {
@@ -1036,6 +1133,13 @@ export class W104 extends Server<Env> {
    */
   private sendEntriesToTeam(playerId: PlayerId): void {
     if (!this.room) return;
+    // A waiting player is in no scorer, and the fallback below would hand them
+    // their own (empty) list — harmless in itself, but the guard is a privacy
+    // boundary rather than a tidy-up: it is what stops a latecomer being
+    // pushed their future team's live word list mid-round, which is secret
+    // from everybody not writing it.
+    const me = this.room.players.find((p) => p.id === playerId);
+    if (me && inWaitingRoom(me)) return;
     const scorer = rosterOf(this.room).find((s) => s.members.includes(playerId));
     const members = scorer?.members ?? [playerId];
     const entries = members
@@ -1047,6 +1151,35 @@ export class W104 extends Server<Env> {
         this.sendTo(conn, msg);
       }
     }
+  }
+
+  /**
+   * Sends a player the two things `toRoomState` strips: their own committed
+   * slots and their own hands. Same arrangement `yourEntries` has, and for the
+   * same reason — these are per-socket facts, not room facts.
+   *
+   * Called after every state change rather than only on the events that alter
+   * them: it is two small messages, and a missed push leaves a phone showing
+   * an empty hand with no way to recover short of a reconnect.
+   */
+  private pushPrivate(playerId: PlayerId): void {
+    if (!this.room) return;
+    // Nothing to push in a built-in-pool match, and the common case is worth
+    // not spending two messages per player per state change on.
+    if (!customEnabled(this.room.settings)) return;
+    const drafts = this.room.drafts[playerId] ?? [];
+    const hands = this.room.deal[playerId] ?? [];
+    for (const conn of this.getConnections<ConnState>()) {
+      if (conn.state?.playerId !== playerId) continue;
+      this.sendTo(conn, { type: "yourDrafts", drafts });
+      this.sendTo(conn, { type: "yourHands", hands });
+    }
+  }
+
+  /** Every seated player's private halves. */
+  private pushPrivateAll(): void {
+    if (!this.room) return;
+    for (const player of this.room.players) this.pushPrivate(player.id);
   }
 
   /**
