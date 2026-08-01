@@ -79,7 +79,12 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
         <span className="plaque plaque--over plaque--over-sm">MATCH OVER</span>
 
         {me && (
-          <section className="card win-card">
+          // The medal is the fill, matching the step this player is standing on
+          // over on the TV — the two screens are showing one result and should
+          // not disagree about what colour it is. 4th and below stay cream:
+          // there is no medal, and tinting every card would make the colour
+          // mean "a card" rather than "a place".
+          <section className="card win-card" data-medal={me.place <= 3 ? me.place : undefined}>
             {/* The result and the score share the top line, the score pinned
                 right. Below it the card is all name, which is what a player
                 holds a phone up to show somebody. */}

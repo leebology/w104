@@ -19,6 +19,11 @@
   --paper-lit: #FFF3C4;   /* the one cream card that is *yours* */
   --scroll-thumb: #C9B8A2;
   --gold-dim: #7A5A00;    /* secondary text INSIDE a gold card — the gold twin of --ink-dim */
+  /* The same job for the other two medals. `--ink-dim` is tuned for cream and
+     lands at about 1.9:1 on bronze, which is not secondary text, it is absent
+     text — so each medal gets its own dim the way gold already had one. */
+  --silver-dim: #4A4F57;
+  --bronze-dim: #4A2E17;
   --ink-veil: rgba(26, 7, 16, 0.35);     /* a translucent ink outline drawn ON the pink field */
   --cream-veil: rgba(255, 247, 232, 0.35); /* a surface that has emptied out — the dropped plinth */
 
@@ -35,7 +40,10 @@
   --plinth-lip-1: #E7D3BE;  /* = --card-rule; named separately so the ramp reads as a ramp */
   --plinth-lip-2: #E0CBB2;
   --plinth-lip-3: #DCC5A9;
-  --plinth-lip-gold: rgba(26, 7, 16, 0.18);
+  /* The lip under a *medal* plinth. Translucent ink rather than a mixed paper
+     tone, because it has to darken three different fills — the paper lips
+     above are each mixed for the one tier they sit under. */
+  --plinth-lip-medal: rgba(26, 7, 16, 0.18);
 
   /* Ready signalling on an ink pill. `--teal` is tuned for cream and pink and
      goes muddy on ink, so the chip gets a lifted pair: mint for the word,
@@ -3379,9 +3387,27 @@ ul, ol { list-style: none; }
   padding: 8px 6px 6px;
 }
 
+/* The top three are medals; everything below them is the paper ramp. Two
+   different systems on one staircase, deliberately: the ramp says "further
+   down" by getting dirtier, and a medal says *which* place outright. They meet
+   at 4th, which is the first step with no medal to win.
+
+   Ties share the tint because `data-rank` is the *place* — two players on 2nd
+   are both silver and nobody is bronze, which is what the ribbon and the step
+   height already say. */
 .podium-col[data-rank="1"] .podium-plinth {
   --plinth-fill: var(--gold);
-  box-shadow: inset 0 -10px 0 var(--plinth-lip-gold);
+  box-shadow: inset 0 -10px 0 var(--plinth-lip-medal);
+}
+
+.podium-col[data-rank="2"] .podium-plinth {
+  --plinth-fill: var(--silver);
+  box-shadow: inset 0 -10px 0 var(--plinth-lip-medal);
+}
+
+.podium-col[data-rank="3"] .podium-plinth {
+  --plinth-fill: var(--bronze);
+  box-shadow: inset 0 -10px 0 var(--plinth-lip-medal);
 }
 
 .podium-col[data-rank="4"] .podium-plinth { --plinth-fill: var(--plinth-2); }
@@ -3434,10 +3460,14 @@ ul, ol { list-style: none; }
 
 .podium-plinth__points { font-family: var(--display); }
 
-/* Inside a gold card, secondary text is the gold-dim twin of `--ink-dim` —
-   `--ink-dim` on gold is the one pairing in this palette that goes muddy. */
+/* Secondary text on a medal takes that medal's own dim: `--ink-dim` is tuned
+   for cream and goes muddy on gold and invisible on bronze. */
 .podium-col[data-rank="1"] .podium-plinth__note,
 .podium-col[data-rank="1"] .podium-plinth__points { color: var(--gold-dim); }
+.podium-col[data-rank="2"] .podium-plinth__note,
+.podium-col[data-rank="2"] .podium-plinth__points { color: var(--silver-dim); }
+.podium-col[data-rank="3"] .podium-plinth__note,
+.podium-col[data-rank="3"] .podium-plinth__points { color: var(--bronze-dim); }
 
 /* The strip has to survive a ten-round match on a ninth-place step, so it
    shrinks rather than wraps — a wrapped second row would push the place off
@@ -4408,12 +4438,14 @@ ul, ol { list-style: none; }
   min-width: 0;
 }
 
-/* The place itself, at the size the caption around it is not. Full ink, since
-   this is the sentence's subject and the words either side of it are framing. */
+/* The place itself, at the size the caption around it is not. It takes the
+   card's own ink rather than naming one, so it stays the full-strength colour
+   on all four fills — the caption around it is the dim, and this is the
+   sentence's subject. */
 .win-card__rank {
   font-size: 28px;
   letter-spacing: 0.06em;
-  color: var(--ink);
+  color: inherit;
 }
 
 .win-card__who { display: flex; align-items: center; gap: 14px; min-width: 0; }
@@ -4444,6 +4476,24 @@ ul, ol { list-style: none; }
 .win-card__points { font-family: var(--display); font-size: 34px; line-height: 1; }
 .win-card__unit { font-size: 12px; letter-spacing: 0.1em; color: var(--ink-dim); }
 .win-card .round-boxes { margin-top: 6px; }
+
+/* **The medal is the fill, and only for a medal.** 1st, 2nd and 3rd wear the
+   same three colours their step wears on the TV, so a player holding up a
+   phone and the room looking at the board are not shown one result in two
+   colours. 4th and below keep the cream above: if every card were tinted the
+   colour would mean "this is your card" rather than "this is your place".
+
+   Each fill brings its own dim for the secondary text — see `--silver-dim`. */
+.win-card[data-medal="1"] { background: var(--gold); color: var(--ink-gold); }
+.win-card[data-medal="2"] { background: var(--silver); }
+.win-card[data-medal="3"] { background: var(--bronze); }
+
+.win-card[data-medal="1"] .win-card__label,
+.win-card[data-medal="1"] .win-card__unit { color: var(--gold-dim); }
+.win-card[data-medal="2"] .win-card__label,
+.win-card[data-medal="2"] .win-card__unit { color: var(--silver-dim); }
+.win-card[data-medal="3"] .win-card__label,
+.win-card[data-medal="3"] .win-card__unit { color: var(--bronze-dim); }
 
 /* **Five to a row, always** — a fixed track count rather than `flex: 1`, which
    sized every box against how many there happened to be. A three-round match
