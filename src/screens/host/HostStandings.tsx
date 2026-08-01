@@ -87,8 +87,6 @@ export function HostStandings({ room, countdown }: Props) {
           <StandingsList room={room} standings={standings} />
         )}
 
-        <div className="host-standings__rule" />
-
         <footer className="host-standings__footer">
           {done ? (
             <>
@@ -101,25 +99,16 @@ export function HostStandings({ room, countdown }: Props) {
               </button>
             </>
           ) : (
-            <>
-              {/* No tally. Readiness is marked on the rows themselves now — a
-                  count says how many are left, and what a host actually wants
-                  off this screen is *which* ones. The scoring direction is
-                  stated once, by the list's own explainer, so this says the
-                  other thing a host needs: they do not have to press anything. */}
-              <div className="host-standings__count">
-                <p className="host-standings__hint">
-                  Everyone ready starts the next round on its own.
-                </p>
-              </div>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => roomStore.send({ type: "startGame" })}
-              >
-                Next round
-              </button>
-            </>
+            /* Readiness is marked on the rows themselves — a tally says how
+               many are left when what a host wants is *which*. Nothing else
+               is said down here: the board above is the screen. */
+            <button
+              type="button"
+              className="btn"
+              onClick={() => roomStore.send({ type: "startGame" })}
+            >
+              Next round
+            </button>
           )}
         </footer>
       </div>

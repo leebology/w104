@@ -3306,38 +3306,16 @@ ul, ol { list-style: none; }
 
 /* --------------------------------------------------------- host footer */
 
-.host-standings__rule {
-  height: 5px;
-  background: var(--ink);
-  flex: 0 0 auto;
-  margin-top: 10px;
-}
-
+/* The ink rule that used to sit above this is gone, along with the hint text
+   beside the button. Both branches of the footer are a single button now, so
+   it lands right rather than being spaced against something. */
 .host-standings__footer {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   align-items: center;
   gap: 16px;
   padding: 12px 26px 16px;
   flex: 0 0 auto;
-}
-
-.host-standings__count {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-  min-width: 0;
-}
-
-.host-standings__count > span {
-  font-family: var(--display);
-  font-size: clamp(12px, 1.3vw, 16px);
-  white-space: nowrap;
-}
-
-.host-standings__hint {
-  color: var(--cream-dim);
-  font-size: clamp(11px, 1.1vw, 14px);
 }
 
 /* ----------------------------------------------------------- countdown */
@@ -3452,30 +3430,9 @@ ul, ol { list-style: none; }
    round-by-round breakdown and its full points at any place, which the podium
    can only afford near the top of its ramp. */
 
-.list-explainer {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 26px 10px;
-  flex: 0 0 auto;
-  font-size: clamp(12px, 1.2vw, 15px);
-  color: var(--cream-dim);
-}
-
-/* Teal, not gold: it is a statement of the rules, and gold on this screen is
-   the button that starts the next round. */
-.list-explainer__pill {
-  background: var(--teal);
-  color: var(--cream);
-  border: var(--border);
-  border-radius: 99px;
-  padding: 4px 14px;
-  font-family: var(--display);
-  font-size: clamp(12px, 1.2vw, 15px);
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-  flex: 0 0 auto;
-}
+/* The explainer row that sat here — the teal HIGHEST TOTAL WINS pill and the
+   sentence about what a place pays — is gone. The board is the screen; a room
+   between rounds is reading places and totals, not the rulebook. */
 
 /* Rows grow to fill a short board and hold a floor on a full one, at which
    point this box — and never the screen — is what scrolls. */
@@ -3513,12 +3470,13 @@ ul, ol { list-style: none; }
   box-shadow: var(--shadow-btn);
 }
 
-/* The leader gets the gold. It gets the extra height too, but only in the
-   single-column board — see the `--rows` track list in `StandingsList`. */
+/* The leader is the same cream as every other row — the gold came off, because
+   on a board the room reads top to bottom the first row is already first and
+   the colour was saying it twice. What is left is size: a heavier stroke, a
+   deeper shadow, and the extra height, but only in the single-column board —
+   see the `--rows` track list in `StandingsList`. */
 .standings-row--lead {
   gap: 18px;
-  background: var(--gold);
-  color: var(--ink-gold);
   border: var(--border-heavy);
   border-radius: var(--radius);
   box-shadow: 7px 7px 0 var(--ink);
@@ -3534,19 +3492,20 @@ ul, ol { list-style: none; }
 .standings-rows--split .standings-row--lead .standings-row__ordinal {
   font-size: clamp(15px, 1.5vw, 21px);
 }
-.standings-rows--split .standings-row__sub,
-.standings-rows--split .standings-row--lead .standings-row__sub {
-  font-size: clamp(8px, 0.7vw, 9px);
-  letter-spacing: 0.1em;
-}
 .standings-rows--split .standings-row__avatar,
 .standings-rows--split .standings-row--lead .standings-row__avatar {
   font-size: clamp(20px, 2vw, 28px);
 }
 .standings-rows--split .standings-row__roster {
   font-size: clamp(13px, 1.3vw, 17px);
-  max-width: clamp(110px, 11vw, 170px);
+  max-width: 100%;
   gap: 2px 7px;
+}
+/* Two columns halve the width, so the team name comes down with everything
+   else — still the biggest thing in the block, just not a full-width one. */
+.standings-rows--split .team-badge--standings {
+  font-size: clamp(18px, 1.9vw, 26px);
+  padding: 4px 11px;
 }
 .standings-rows--split .standings-row__member-name { font-size: clamp(9px, 0.9vw, 11px); }
 .standings-rows--split .standings-row__name,
@@ -3604,17 +3563,9 @@ ul, ol { list-style: none; }
 
 .standings-row--lead .standings-row__ordinal { font-size: clamp(26px, 2.9vw, 38px); }
 
-.standings-row__sub {
-  font-size: clamp(9px, 0.85vw, 10px);
-  letter-spacing: 0.14em;
-  color: var(--ink-dim);
-}
-
-.standings-row--lead .standings-row__sub {
-  color: var(--gold);
-  letter-spacing: 0.16em;
-  font-size: clamp(9px, 0.9vw, 11px);
-}
+/* The LEADING / PLACE / TIED subtext under the ordinal is gone. The ordinal
+   says the place, the row's position says it again, and a word under it was a
+   third telling of one fact. */
 
 .standings-row__avatar {
   font-size: clamp(24px, 2.6vw, 34px);
@@ -3628,10 +3579,19 @@ ul, ol { list-style: none; }
    hid half a team behind a clipped edge would be hiding people who are in the
    room looking at it — and it is capped so a five-person team cannot push the
    points off the end of the row. */
+/* A team's members, face and name. It wraps rather than scrolling — a row that
+   hid half a team behind a clipped edge would be hiding people who are in the
+   room looking at it.
+
+   No width cap any more. It had one to stop a five-person team pushing the
+   points off the end of the row, which was a real risk while the roster sat
+   *beside* the name in a horizontal row. Stacked under it the score block is a
+   separate flex child with its own width, so the cap only forced wrapping the
+   column had the room not to need. */
 .standings-row__roster {
   font-size: clamp(16px, 1.7vw, 22px);
   line-height: 1.15;
-  max-width: clamp(150px, 17vw, 260px);
+  max-width: 100%;
   flex: 0 0 auto;
   display: flex;
   flex-wrap: wrap;
@@ -3665,6 +3625,22 @@ ul, ol { list-style: none; }
 }
 
 .standings-row--lead .standings-row__who { flex-wrap: wrap; }
+
+/* A team stacks instead of sitting in a line: the name on top at TV size, the
+   roster under it, the count under that. `--lead`'s flex-wrap is overridden
+   rather than inherited — wrap on a column axis breaks the stack into side-by-
+   side columns the moment a row is short of height, which is exactly what the
+   leader's taller row is not. */
+.standings-row__who--team {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.standings-row--lead .standings-row__who--team { flex-wrap: nowrap; }
 
 .standings-row__name {
   font-family: var(--display);
@@ -3732,6 +3708,16 @@ ul, ol { list-style: none; }
   padding: 2px 10px;
 }
 
+/* A team that is all in. Same chip, same words — "3/3 READY" rather than a
+   bare tag, because the count is what its members are acting on — but wearing
+   `ReadyMark`'s ink so a complete team does not read as still pending. */
+.list-chip--full {
+  border: 2px solid var(--ink);
+  background: var(--cream);
+  color: var(--ink);
+  padding: 2px 10px;
+}
+
 /* --------------------------------------------------------------- score */
 
 .standings-row__score {
@@ -3749,15 +3735,20 @@ ul, ol { list-style: none; }
   line-height: 0.95;
 }
 
-/* What the round just played paid, riding to the left of the total. Teal on
-   cream and deliberately small: it is the arithmetic behind the big number, not
-   a second score competing with it. */
+/* What the round just played paid, riding to the left of the total. Tilted off
+   the grid and centred against the big number rather than sitting on its
+   baseline — it is the one thing on this board that changed since last round,
+   and a room scanning for "what did I just get" should find it without reading
+   the total first. `align-self` rather than centring the whole score block:
+   the total and its PTS unit stay on one baseline. */
 .standings-row__delta {
   font-family: var(--display);
-  font-size: clamp(12px, 1.2vw, 16px);
+  font-size: clamp(17px, 1.8vw, 24px);
   line-height: 1;
   color: var(--teal);
   white-space: nowrap;
+  align-self: center;
+  transform: rotate(-4deg);
 }
 
 .standings-row--lead .standings-row__points {
@@ -3771,10 +3762,11 @@ ul, ol { list-style: none; }
   color: var(--ink-dim);
 }
 
+/* `--gold-dim` here was legible only against the gold row this no longer is. */
 .standings-row--lead .standings-row__unit {
   font-family: var(--display);
   font-size: clamp(13px, 1.3vw, 17px);
-  color: var(--gold-dim);
+  color: var(--ink-dim);
 }
 
 /* ------------------------------------------------------------- dropped */
@@ -4888,6 +4880,20 @@ ul, ol { list-style: none; }
   font-size: 13px;
   padding: 4px 10px;
   max-width: calc(100% - 20px);
+}
+
+/* `--sm`, up ~300%. The standings board leads each team's block with its name
+   rather than tucking it beside the roster, so this is the one badge in the app
+   sized to be read across a room at a glance. It sits in normal flow — see
+   `.standings-row__team .team-badge` — so the padding scales with it and there
+   is no negative offset to keep in step. */
+.team-badge--standings {
+  top: 0;
+  left: 0;
+  font-size: clamp(28px, 3vw, 40px);
+  padding: 6px 16px;
+  border-radius: 10px;
+  max-width: 100%;
 }
 
 /* `--sm`, up 25% — the round screen's badge is the only thing above the word
