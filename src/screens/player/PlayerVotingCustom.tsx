@@ -8,7 +8,9 @@ import type { Hand, PoolCard } from "../../../shared/customCategories";
 import { customShares } from "../../../shared/customCategories";
 import { votesSpent } from "../../../shared/voting";
 import { isWaiting } from "../../../shared/bots";
+import { currentRound } from "../../../shared/state";
 import type { PlayerId, RoomState } from "../../../shared/state";
+import { GetReady } from "../../components/GetReady";
 import { roomStore } from "../../net/room";
 import { TIMING, useCreatingTransition } from "../../transition";
 
@@ -64,11 +66,9 @@ export function PlayerVotingCustom({ room, playerId, hands, offset, countdown, d
   const shares = closed ? customShares(pool, room.votes) : {};
 
   const votingEndsAt = room.phase.name === "voting" ? room.phase.endsAt : 0;
-  const remaining = useRemaining(
-    closed ? countdown.endsAt : votingEndsAt,
-    closed ? countdown.offset : offset,
-    closed ? null : room.paused,
-  );
+  // The voting window only — the countdown card counts itself, in numerals
+  // that are not seconds. Same as the stock screen; see shared/countdown.ts.
+  const remaining = useRemaining(votingEndsAt, offset, room.paused);
 
   // The transition (§1c), same reconstruction `HostVotingCustom` uses — see
   // its comment. `hasSnapshot` is `drafts` being non-empty: the server pushes
@@ -306,9 +306,18 @@ export function PlayerVotingCustom({ room, playerId, hands, offset, countdown, d
         </div>
       )}
 
-      {closed ? (
-        <div className="player-voting__foot">
-          <p className="get-ready get-ready--small">Get ready… {remaining}</p>
+      {closed && countdown ? (
+        // The same card every other screen wears. It had been left behind on
+        // the old `.get-ready` plaque, whose CSS went with the last screen to
+        // drop it — so this one was rendering an unstyled line, and would now
+        // have been the one screen in the room counting from a different
+        // number as well.
+        <div className="countdown-pose">
+          <GetReady
+            endsAt={countdown.endsAt}
+            offset={countdown.offset}
+            label={`ROUND ${currentRound(room)}`}
+          />
         </div>
       ) : (
         <div className="timer-bar player-voting__bar">

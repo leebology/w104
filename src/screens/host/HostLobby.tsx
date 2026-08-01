@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { useRemaining } from "../../net/clock";
 import { PlayerPill } from "../../components/Roster";
 import { Wordmark } from "../../components/Wordmark";
 import { roomStore } from "../../net/room";
@@ -21,7 +20,6 @@ type Props = {
 type OpenDrawer = "modes" | "settings" | null;
 
 export function HostLobby({ room, countdown, onLeave }: Props) {
-  const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   const host = typeof location === "undefined" ? "" : location.host.toUpperCase();
   const waiting = room.players.length === 0;
   // Almost every time this screen is up it is round one's own waiting room,
@@ -195,7 +193,8 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
       {countdown && (
         <div className="countdown-pose">
           <GetReady
-            remaining={remaining}
+            endsAt={countdown.endsAt}
+            offset={countdown.offset}
             label="CATEGORY VOTE"
             onStop={() => roomStore.send({ type: "cancelStart" })}
           />
