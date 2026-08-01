@@ -47,19 +47,22 @@ function votersFor(room: RoomState, category: string): Array<[Player, number]> {
 }
 
 /**
- * The avatar strip and its total. Shared by the open grid and both rows of the
- * closed reveal — three renderings of the same thing, so it is one component.
+ * The avatar strip and its total. Shared by the open grid and the closed
+ * reveal — two renderings of the same thing, so it is one component.
  * `overflow: hidden` on the row means the avatars clip under pressure and the
  * total never does.
+ *
+ * No size override: the closed reveal's cards are one size, and `--total-size`
+ * on `.host-voting__row--all` sets it in CSS where the `30cqw` ceiling can
+ * still shrink a narrow card's figure.
  */
 function VoteFoot({
-  room, category, total, totalStyle,
+  room, category, total,
 }: {
   room: RoomState;
   category: string;
   /** Vote count while voting is open; the share percentage once it has closed. */
   total: string;
-  totalStyle?: { fontSize: string };
 }) {
   return (
     <span className="vote-card__foot">
@@ -71,7 +74,7 @@ function VoteFoot({
           </span>
         ))}
       </span>
-      <span className="vote-card__total" style={totalStyle}>{total}</span>
+      <span className="vote-card__total">{total}</span>
     </span>
   );
 }
@@ -209,17 +212,14 @@ function HostVotingClosed({
   const shares = voteShares(room.votes);
   // Survivors only, strongest first. Zero-vote options are gone. Off the
   // ballot, so a room that backed `random` sees its odds like any other.
+  // One row, no rank split. A card's share
+  // is carried by its width and by nothing else, so two categories on the same
+  // percentage are drawn identically however far down the order they sit. Type
+  // size comes from the CSS (see `--name-size` on `.host-voting__row--all`) so
+  // the container-query ceiling still governs a narrow card.
   const survivors = BALLOT
     .filter((c) => (totals[c] ?? 0) > 0)
     .sort((a, b) => (totals[b] ?? 0) - (totals[a] ?? 0));
-  const top = survivors.slice(0, 3);
-  const rest = survivors.slice(3);
-  // Rank-indexed rather than a continuous scale: `top` is always exactly 3
-  // slots by construction, so "2nd place" is a fixed thing to hand-tune
-  // rather than an open-ended scale that a 17th category could quietly
-  // perturb.
-  const rankNameSize = ["52px", "34px", "30px"];
-  const rankShareSize = ["36px", "26px", "24px"];
 
   // Computed once at mount, matching the custom fork's own closed reveal —
   // this component is a fresh mount every time voting closes, so there is
@@ -271,40 +271,22 @@ function HostVotingClosed({
               No one voted — the room gets a random category.
             </p>
           ) : (
-            <>
-              <div className="host-voting__row host-voting__row--top">
-                {top.map((category, i) => (
-                  <div
-                    className="vote-card"
-                    key={category}
-                    style={{ flexGrow: grown ? shares[category] : 0 }}
-                  >
-                    <span className="vote-card__name" style={{ fontSize: rankNameSize[i] }}>
-                      {cardLabel(category)}
-                    </span>
-                    <VoteFoot
-                      room={room}
-                      category={category}
-                      total={`${shares[category]}%`}
-                      totalStyle={{ fontSize: rankShareSize[i] }}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {rest.length > 0 && (
-                <div className="host-voting__row host-voting__row--rest">
-                  {rest.map((category) => (
-                    // Equal width below the top three: under ~10% the differences
-                    // are not worth a size difference.
-                    <div className="vote-card vote-card--small" key={category}>
-                      <span className="vote-card__name">{cardLabel(category)}</span>
-                      <VoteFoot room={room} category={category} total={`${shares[category]}%`} />
-                    </div>
-                  ))}
+            <div className="host-voting__row host-voting__row--all">
+              {survivors.map((category) => (
+                <div
+                  className="vote-card"
+                  key={category}
+                  // Equal share before the reflow, never 0: `.vote-card` is
+                  // `flex: 1 1 0`, so a grow of 0 leaves the card no width at
+                  // all and it collapses onto `min-width`. 1 is the same "all
+                  // equal" board the reflow reads as growing out of.
+                  style={{ flexGrow: grown ? shares[category] : 1 }}
+                >
+                  <span className="vote-card__name">{cardLabel(category)}</span>
+                  <VoteFoot room={room} category={category} total={`${shares[category]}%`} />
                 </div>
-              )}
-            </>
+              ))}
+            </div>
           )}
         </div>
 

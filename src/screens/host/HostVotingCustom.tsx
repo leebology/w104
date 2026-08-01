@@ -211,13 +211,6 @@ function HostVotingCustomClosed({
     .filter((c) => (shares[c.id] ?? 0) > 0)
     .sort((a, b) => (shares[b.id] ?? 0) - (shares[a.id] ?? 0));
   const zeroCards = shown.filter((c) => (shares[c.id] ?? 0) === 0);
-  const top = survivors.slice(0, 3);
-  const rest = survivors.slice(3);
-  // Same steps the stock reveal uses for the name; the chance/share figure
-  // gets its own, larger scale here — a deliberate difference the brief
-  // calls out, not the stock screen's `rankShareSize` reused.
-  const rankNameSize = ["52px", "34px", "30px"];
-  const rankChanceSize = ["46px", "34px", "30px"];
 
   // Computed once at mount, matching `PlayerScoring`'s own reveal — this
   // component is a fresh mount every time voting closes, so there is never a
@@ -236,7 +229,7 @@ function HostVotingCustomClosed({
   // row once the fade has had time to finish.
   const LEAVE_MS = 600;
 
-  // The reflow: survivors mount at flex-grow 0 and are pushed to their final
+  // The reflow: survivors mount at equal flex-grow and are pushed to their final
   // share after the look-up beat, so `.host-voting--closed .vote-card`'s
   // transition has something to animate from. Skipped under reduced motion —
   // cards land at their settled share on the very first frame instead.
@@ -312,36 +305,23 @@ function HostVotingCustomClosed({
             </p>
           ) : (
             <>
-              {top.length > 0 && (
-                <div className="host-voting__row host-voting__row--top">
-                  {top.map((card, i) => (
+              {survivors.length > 0 && (
+                // One row, one card size — see `.host-voting__row--all`. Two
+                // cards on the same chance are drawn the same however far down
+                // the order they sit; only the width says anything.
+                <div className="host-voting__row host-voting__row--all">
+                  {survivors.map((card, i) => (
                     <ResultCard
                       key={card.id}
                       card={card}
                       room={room}
                       votes={totals[card.id] ?? 0}
                       share={shares[card.id] ?? 0}
-                      flexGrow={grown ? shares[card.id] ?? 0 : 0}
-                      nameSize={rankNameSize[i]}
-                      chanceSize={rankChanceSize[i]}
+                      // Equal share before the reflow, never 0 — see the same
+                      // line in `HostVoting.tsx`: `.vote-card` is `flex: 1 1 0`,
+                      // so a grow of 0 collapses the card onto its `min-width`.
+                      flexGrow={grown ? shares[card.id] ?? 0 : 1}
                       chipIndex={i}
-                      stagger={stagger}
-                    />
-                  ))}
-                </div>
-              )}
-
-              {rest.length > 0 && (
-                <div className="host-voting__row host-voting__row--rest">
-                  {rest.map((card, i) => (
-                    <ResultCard
-                      key={card.id}
-                      card={card}
-                      room={room}
-                      votes={totals[card.id] ?? 0}
-                      share={shares[card.id] ?? 0}
-                      small
-                      chipIndex={3 + i}
                       stagger={stagger}
                     />
                   ))}
@@ -391,16 +371,13 @@ function HostVotingCustomClosed({
  * and not the field.
  */
 function ResultCard({
-  card, room, votes, share, small, flexGrow, nameSize: nameFontSize, chanceSize, chipIndex, stagger,
+  card, room, votes, share, flexGrow, chipIndex, stagger,
 }: {
   card: PoolCard;
   room: RoomState;
   votes: number;
   share: number;
-  small?: boolean;
-  flexGrow?: number;
-  nameSize?: string;
-  chanceSize?: string;
+  flexGrow: number;
   chipIndex: number;
   stagger: number;
 }) {
@@ -410,14 +387,7 @@ function ResultCard({
     : undefined;
 
   return (
-    <div
-      className={
-        small
-          ? "vote-card vote-card--custom vote-card--small"
-          : "vote-card vote-card--custom"
-      }
-      style={small ? undefined : { flexGrow }}
-    >
+    <div className="vote-card vote-card--custom" style={{ flexGrow }}>
       <div className="vote-card__top">
         {/* Reserved from the first frame — `animation-fill-mode: both` on
             `.author-chip` holds its 0%/opacity-0 frame for the whole delay,
@@ -438,24 +408,12 @@ function ResultCard({
             )}
           </span>
         )}
-        <span className="vote-card__name" style={nameFontSize ? { fontSize: nameFontSize } : undefined}>
-          {card.text}
-        </span>
+        <span className="vote-card__name">{card.text}</span>
       </div>
       <span className="vote-card__foot vote-card__foot--solo">
         <span className="vote-card__crossfade">
-          <span
-            className="vote-card__total vote-card__total--out"
-            style={chanceSize ? { fontSize: chanceSize } : undefined}
-          >
-            {votes}
-          </span>
-          <span
-            className="vote-card__total vote-card__total--in"
-            style={chanceSize ? { fontSize: chanceSize } : undefined}
-          >
-            {share}%
-          </span>
+          <span className="vote-card__total vote-card__total--out">{votes}</span>
+          <span className="vote-card__total vote-card__total--in">{share}%</span>
         </span>
       </span>
     </div>
