@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useCountdownNumber } from "../net/clock";
+import { useCountdownFace } from "../net/clock";
 
 type Props = {
   /** The countdown phase's deadline on the server's clock. */
@@ -37,21 +37,40 @@ type Props = {
  * whistle (see `tick` in shared/reduce.ts), so there is nothing to name until
  * the round is already running.
  *
- * **It takes the deadline, not a number**, and counts itself. The count is
- * five numbers over however long the audio makes the phase — not one a second
- * — so a screen that did its own arithmetic would be a screen that could get
- * it wrong, and there are eleven of them. `useRemaining` is whole seconds and
- * is deliberately not what feeds this; see `shared/countdown.ts`.
+ * **It takes the deadline, not a number**, and works its own face out. Five
+ * one-second numbers and then START, over a phase the audio makes longer than
+ * the five — so a screen that did its own arithmetic would be a screen that
+ * could get it wrong, and there are eleven of them. `useRemaining` is whole
+ * seconds of the *phase* and is deliberately not what feeds this; see
+ * `shared/countdown.ts`.
  */
 export function GetReady({ endsAt, offset, label, onStop, children }: Props) {
-  const remaining = useCountdownNumber(endsAt, offset);
+  const face = useCountdownFace(endsAt, offset);
+  const start = face === "start";
 
   return (
     <div className="get-ready-pose">
       <div className="get-ready-card">
         <span className="get-ready-card__tab">{label}</span>
-        <span className="get-ready-card__label">GET READY</span>
-        <span className="get-ready-card__count">{remaining}</span>
+        {/* The caption goes when the count does: once the card says START it is
+            no longer telling the room to get ready, it is telling them they are
+            off. Hidden rather than unmounted — it keeps its box, so the card
+            does not lose a line's height at the last beat and deflate on the
+            one frame that should land like a punch. */}
+        <span
+          className={
+            start ? "get-ready-card__label get-ready-card__label--spent" : "get-ready-card__label"
+          }
+        >
+          GET READY
+        </span>
+        <span
+          className={
+            start ? "get-ready-card__count get-ready-card__count--start" : "get-ready-card__count"
+          }
+        >
+          {start ? "START" : face}
+        </span>
       </div>
       {/* No caption. It read "Un-ready for more time" and nobody needs telling:
           the Ready button they just pressed is still under their thumb, still

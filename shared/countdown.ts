@@ -3,41 +3,57 @@ import { COUNTDOWN_MS } from "./reduce";
 /**
  * How many numbers the Get Ready card shows on its way down.
  *
- * Five, always — "5, 4, 3, 2, 1" is what a room chants, and it is what the
- * card said back when the phase was five seconds long and nothing was playing
- * over it. `COUNTDOWN_MS` is no longer five seconds and never will be again:
- * it is set by the lead-in clip (see the note on it in `shared/reduce.ts`), so
- * a card counting whole seconds would open on whatever number that file's
- * length happened to round up to — 8, today, and something else the next time
- * somebody swaps the music.
- *
- * So the count is decoupled from the clock. The card always opens on this
- * number and always lands on 1, and the *step* stretches to fill whatever the
- * audio needs — 1.48 seconds a number at the current pair. A beat longer than
- * a second is the right way round for a card being read across a room, and the
- * numbers land on the music rather than drifting against it.
+ * Five, always — "5, 4, 3, 2, 1" is what a room chants.
  */
 export const COUNTDOWN_TICKS = 5;
 
-/** How long each number is on screen. Not a whole second — see above. */
-export const TICK_MS = COUNTDOWN_MS / COUNTDOWN_TICKS;
+/**
+ * How long each number is on screen. **One second, exactly.**
+ *
+ * This used to be `COUNTDOWN_MS / COUNTDOWN_TICKS`, which stretched the step to
+ * whatever the lead-in clip needed — 1.48s a number at the current pair. The
+ * numbers landed on the music, but a room chanting along counts in seconds and
+ * nothing else, so a card counting in 1.48s beats is a card the room falls out
+ * of step with by about two numerals. A count is a count; the audio does not get
+ * to redefine the second.
+ */
+export const TICK_MS = 1_000;
 
 /**
- * The number on the Get Ready card, from the milliseconds left on the phase.
+ * The tail of the phase the count does not cover, held on START.
+ *
+ * `COUNTDOWN_MS` is set by the lead-in clip and is longer than five seconds
+ * (see the note on it in `shared/reduce.ts`), so decoupling the step from the
+ * phase leaves a gap. START is what fills it: the count runs out, the card
+ * stops counting and says what is about to happen instead, and the clip plays
+ * its last bars under a screen that is no longer pretending to measure them.
+ *
+ * It sits at the **end**, not the beginning: the numbers are what a room needs
+ * warning from, so they run first and the whistle lands on START. Floored at 0
+ * so a `COUNTDOWN_MS` of five seconds or less — a shorter clip, one day — simply
+ * has no START frame rather than a negative window that swallows the count.
+ */
+export const START_HOLD_MS = Math.max(0, COUNTDOWN_MS - COUNTDOWN_TICKS * TICK_MS);
+
+/** What the card shows: a numeral, or the word that replaces it. */
+export type CountdownFace = number | "start";
+
+/**
+ * The face of the Get Ready card, from the milliseconds left on the phase.
  *
  * Pure and shared so the TV and every phone map the same instant to the same
- * numeral: each device counts locally against its own `clockOffset` (nothing
- * about a countdown is ticked over the wire), and two devices dividing the
- * remaining time differently would have the room chanting out of step with
- * itself.
+ * face: each device counts locally against its own `clockOffset` (nothing about
+ * a countdown is ticked over the wire), and two devices dividing the remaining
+ * time differently would have the room chanting out of step with itself.
  *
  * Clamped at both ends. The top guards clock skew — a phone whose offset puts
  * it a hair before the phase opened must not flash a 6 — and the bottom is why
- * the card never shows 0: the whistle is the server's alarm, not this
- * function's arithmetic, and a card that hit 0 while the room was still waiting
- * on the tick would read as a stall.
+ * the card never shows 0: past the count there is START, and the whistle itself
+ * is the server's alarm rather than this function's arithmetic, so a card that
+ * hit 0 while the room was still waiting on the tick would read as a stall.
  */
-export function countdownNumber(msLeft: number): number {
-  const n = Math.ceil(msLeft / TICK_MS);
+export function countdownFace(msLeft: number): CountdownFace {
+  if (msLeft <= START_HOLD_MS) return "start";
+  const n = Math.ceil((msLeft - START_HOLD_MS) / TICK_MS);
   return Math.min(COUNTDOWN_TICKS, Math.max(1, n));
 }

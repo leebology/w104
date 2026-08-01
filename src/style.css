@@ -1420,6 +1420,15 @@ ul, ol { list-style: none; }
    uniform across the whole screen. */
 .vote-card--custom { min-width: 132px; }
 
+/* A merged card carries one chip per author (see `ResultCard`). Wrapping,
+   because two long names on a narrow card is the case that produced the merge
+   in the first place. */
+.vote-card__authors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
 /* No voter trail on this board — hands stay private until the reveal — so
    the lone total has nothing to sit opposite. `.vote-card__foot`'s own
    `space-between` would otherwise push a single child to the left. */
@@ -2723,9 +2732,10 @@ ul, ol { list-style: none; }
   to { opacity: 0; }
 }
 
-/* The round's time warnings. Shares .reject-banner's shape and reuses its
-   `reject-fade` timing on purpose: the two are the same kind of object — a
-   message that has to be read mid-round without being tappable. */
+/* The round's time warnings. Shares .reject-banner's shape, and the TV's copy
+   shares its `reject-fade` timing too: the two are the same kind of object — a
+   message that has to be read mid-round without being tappable. The phone's
+   copy holds a second first; see `.time-warning--player` below. */
 .time-warning {
   position: fixed;
   left: -20px;
@@ -2753,14 +2763,30 @@ ul, ol { list-style: none; }
   font-size: 34px;
   padding: 14px 20px 16px;
   z-index: 16;
-  /* A second longer than the TV's, and a second longer than the reject
-     banner it borrows its timing from: this one is read by somebody who is
-     head-down typing, so it has to survive the glance up. */
-  animation-duration: 3s;
+  /* A second at full opacity *before* the same two-second fade — the one place
+     the phone parts company with `.reject-banner`'s timing. A rejection is
+     about a word the player just typed and is still looking at; a time warning
+     arrives unannounced, over a screen they are head-down on, and the fade had
+     already started by the time it pulled their eye up. The extra second is a
+     hold and not a longer `animation-duration`: stretching the fade buys three
+     seconds of dissolving rather than one second of legible. */
+  animation: time-warning-fade 3s linear forwards;
+}
+
+/* Full opacity for the first third — see above — then away over the remaining
+   two seconds, which is `reject-fade`'s curve unchanged. */
+@keyframes time-warning-fade {
+  0%, 33.34% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* The TV is read across a room, so this is the one that gets big. Absolute
-   within .host-stage, which is already position: relative. */
+   within .host-stage, which is already position: relative.
+
+   **Nothing renders this today** — `HostPlaying` shows no warning at all, and
+   the note there says why. Kept because putting it back is then a one-line
+   decision on that screen rather than a redesign, the same reason `Podium`
+   keeps its `final` prop with one caller. */
 .time-warning--host {
   position: absolute;
   top: 8%;
@@ -2773,9 +2799,30 @@ ul, ol { list-style: none; }
 
 .player-scoring { gap: 16px; }
 
-.player-scoring .id-card { padding: 16px; }
-.player-scoring .id-card__avatar { font-size: 38px; }
-.player-scoring .id-card__name { font-size: 22px; }
+/* Both a step down from the handoff's 38/22. The stat pair is `flex: 0 0 auto`
+   and the avatar sits beside it, so between them they were taking most of a
+   phone's width and leaving the name about six characters — on the one screen
+   whose whole subject is *your* list. */
+.player-scoring .id-card {
+  padding: 16px;
+  --id-name-size: 18px;
+}
+
+/* The face is set from the name's own size rather than a number of its own:
+   it is an identifier sitting on the same line as the name, so the two should
+   stand the same height, and they cannot drift apart when one is retuned. */
+.player-scoring .id-card__avatar { font-size: var(--id-name-size); }
+.player-scoring .id-card__name { font-size: var(--id-name-size); }
+
+/* And what is left over travels rather than ellipsing, the same clip box the
+   TV's column gives a long name — an ellipsis on a phone hides the end of a
+   name the player typed themselves. `display: block` is what makes the run
+   inside measurable; `.id-card__name`'s own `text-overflow` goes inert once
+   that run is an inline-block, so it costs nothing to leave in place. */
+.player-scoring .id-card__name {
+  display: block;
+  min-width: 0;
+}
 /* The handoff draws this at 12px, where "ROOM JADE · ROUND 2" overruns the
    slot left by the stat pair by about two pixels and either wraps or clips.
    11px keeps it on the one line the design shows, with room for a two-digit
@@ -3487,6 +3534,23 @@ ul, ol { list-style: none; }
   font-family: var(--display);
   font-size: clamp(90px, 11vw, 150px);
   line-height: 1;
+}
+
+/* The caption's box, with nothing in it — see `GetReady.tsx`. */
+.get-ready-card__label--spent { visibility: hidden; }
+
+/* START, in the numeral's slot. Smaller type than a digit because it is five
+   glyphs rather than one, but it keeps the digit's *box* — `min-height` against
+   the same clamp — so the card holds the height it has had for the whole count.
+   The width is allowed to grow, and that is the one dimension that should: the
+   card is centred and rotated about its own middle, so a wider word reads as the
+   card opening out on the beat rather than as the layout shifting. */
+.get-ready-card__count--start {
+  font-size: clamp(52px, 6.4vw, 88px);
+  min-height: clamp(90px, 11vw, 150px);
+  display: flex;
+  align-items: center;
+  letter-spacing: 0.04em;
 }
 
 
