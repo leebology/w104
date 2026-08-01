@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import type { TouchEvent } from "react";
 import { roomStore } from "../../net/room";
-import { quotaOfRoom, MAX_CATEGORY_LEN, writersOf } from "../../../shared/customCategories";
+import { quotaOfRoom, writersOf } from "../../../shared/customCategories";
 import type { RoomState } from "../../../shared/state";
 import type { PlayerId } from "../../../shared/state";
 
@@ -80,6 +81,7 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
   };
 
   const handleChipTap = (slot: number) => {
+    if (slot < 0 || slot >= quota || slot === cursor) return;
     // Commit current slot if it has text
     if (text.trim() !== "") {
       roomStore.send({
@@ -97,15 +99,37 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
     moveCursorTimer.current = setTimeout(() => {
       roomStore.send({ type: "moveCursor", slot });
     }, 150);
+    // Same alternating flag `handleCommit` uses to force the slide animation
+    // to restart, so arrow taps and swipes animate the same as a commit-driven
+    // advance does.
+    setAdvanceParity((prev) => (prev === "a" ? "b" : "a"));
     // Same reason `handleCommit` reclaims it: the pager is a button, and a
     // click into it would otherwise blur the field and drop the keyboard for
     // a switch that is meant to stay mid-typing.
     inputRef.current?.focus();
   };
 
+  // Swipe left/right on the card moves between slots the same way the arrow
+  // buttons do — `handleChipTap` already guards bounds and commits in-flight
+  // text, so this only has to read the gesture.
+  const touchStartX = useRef<number | null>(null);
+  const SWIPE_THRESHOLD_PX = 40;
+  const handleTouchStart = (e: TouchEvent) => {
+    touchStartX.current = e.touches[0]?.clientX ?? null;
+  };
+  const handleTouchEnd = (e: TouchEvent) => {
+    const start = touchStartX.current;
+    touchStartX.current = null;
+    if (start === null) return;
+    const dx = (e.changedTouches[0]?.clientX ?? start) - start;
+    if (dx <= -SWIPE_THRESHOLD_PX) handleChipTap(cursor + 1);
+    else if (dx >= SWIPE_THRESHOLD_PX) handleChipTap(cursor - 1);
+  };
+
   const handleRewriteCard = (slot: number) => {
     setText(drafts[slot] ?? "");
     setCursor(slot);
+    roomStore.send({ type: "moveCursor", slot });
     roomStore.send({
       type: "clearDraft",
       slot,
@@ -141,6 +165,8 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
             // opens the keyboard, since the input is centred and no longer
             // fills the card's whole tap target.
             onClick={() => inputRef.current?.focus()}
+            onTouchStart={handleTouchStart}
+            onTouchEnd={handleTouchEnd}
           >
             {/* The card frame (border, shadow, padding) never moves — only
                 its contents do, on a commit-driven advance. */}
@@ -167,7 +193,6 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
                   e.preventDefault();
                   handleCommit();
                 }}
-                maxLength={MAX_CATEGORY_LEN}
                 autoComplete="off"
                 autoCorrect="off"
                 autoCapitalize="off"
@@ -175,33 +200,36 @@ export function PlayerCreating({ room, playerId, drafts }: Props) {
                 className="player-creating__input"
                 autoFocus={cursor === 0}
               />
-              <div className="player-creating__counter">
-                {text.length} / {MAX_CATEGORY_LEN}
-              </div>
             </div>
           </section>
 
           {quota > 1 && (
-            <div className="slot-strip">
-              {Array.from({ length: quota }, (_, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className={[
-                    "slot-strip__chip",
-                    i === cursor ? "slot-strip__chip--current" : "",
-                    (drafts[i] ?? "").trim() !== "" ? "slot-strip__chip--done" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  // Same reason the commit button holds one: a mousedown into
-                  // the pager would blur the input before its click fires.
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => handleChipTap(i)}
-                >
-                  {i + 1}
-                </button>
-              ))}
+            <div className="creating-pager">
+              <button
+                type="button"
+                className="creating-pager__arrow"
+                aria-label="Previous card"
+                disabled={cursor === 0}
+                // Same reason the commit button holds one: a mousedown into
+                // the pager would blur the input before its click fires.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleChipTap(cursor - 1)}
+              >
+                ‹
+              </button>
+              <span className="creating-pager__count">
+                {cursor + 1} / {quota}
+              </span>
+              <button
+                type="button"
+                className="creating-pager__arrow"
+                aria-label="Next card"
+                disabled={cursor === quota - 1}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => handleChipTap(cursor + 1)}
+              >
+                ›
+              </button>
             </div>
           )}
 

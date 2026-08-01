@@ -1,5 +1,6 @@
-import type { CSSProperties } from "react";
+import { useEffect, useState } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
+import { prefersReducedMotion } from "../../reveal";
 import { BALLOT, RANDOM_CATEGORY } from "../../../shared/categories";
 import { tallyVotes, voteBudget, voteShares } from "../../../shared/voting";
 import { teamsEnabled } from "../../../shared/teams";
@@ -100,66 +101,11 @@ export function VotingExit({ room }: { room: RoomState }) {
 }
 
 /**
- * Name size scales continuously with share of the leader rather than stepping,
- * so a card that just grew wide never sits half empty. The `17cqw` ceiling in
- * the CSS is the other half of this: a narrow card clamps its own name against
- * its own width, which is what keeps a long category from clipping in the
- * one-vote column. See `rankNameSize` below for why the closed reveal's fixed
- * 3-slot podium steps instead.
- */
-function nameSize(votes: number, max: number): string {
-  if (votes === 0) return "20px";
-  return `${Math.round(26 + 40 * (votes / max))}px`;
-}
-
-/**
  * What a card is called on the TV. Only the random option differs from its
  * ballot id, and it differs on every screen that renders it — see PlayerVoting.
  */
 function cardLabel(category: string): string {
   return category === RANDOM_CATEGORY ? "🎲 random" : category;
-}
-
-/**
- * The pool split into the two rows the TV shows, balanced so the rows carry
- * near-equal total grow.
- *
- * Width is the odds, but `flex-grow` is only ever relative to the row a card
- * is in — so without this a one-vote card in a quiet row comes out wider than
- * a two-vote card in a loud one, and the whole mechanic quietly lies. Heaviest
- * card to the lighter row, half the pool per row, then each row is put back
- * into its original order: the list itself never re-sorts, only which row a
- * card lands in.
- *
- * Generic over the card shape and exported: the custom fork's pool is a
- * `PoolCard`, not this file's inline ballot shape, and its "position" is a
- * board rank rather than a ballot index, so both are supplied by the caller
- * instead of assumed here. The stock caller passes `(c) => c.votes` and
- * `(c) => BALLOT.indexOf(...)`.
- */
-export function balancedRows<T>(
-  cards: readonly T[],
-  weightOf: (card: T) => number,
-  orderOf: (card: T) => number,
-): T[][] {
-  const rowA: T[] = [];
-  const rowB: T[] = [];
-  let sumA = 0;
-  let sumB = 0;
-  const half = Math.ceil(cards.length / 2);
-  for (const card of [...cards].sort((a, b) => weightOf(b) - weightOf(a))) {
-    const toA = rowB.length >= half || (rowA.length < half && sumA <= sumB);
-    if (toA) {
-      rowA.push(card);
-      sumA += weightOf(card) + 1;
-    } else {
-      rowB.push(card);
-      sumB += weightOf(card) + 1;
-    }
-  }
-  rowA.sort((a, b) => orderOf(a) - orderOf(b));
-  rowB.sort((a, b) => orderOf(a) - orderOf(b));
-  return rowB.length > 0 ? [rowA, rowB] : [rowA];
 }
 
 export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props) {
@@ -204,19 +150,6 @@ export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props)
     return <HostVotingClosed room={room} totals={totals} remaining={remaining} cast={cast} />;
   }
 
-  const cards = BALLOT.map((category) => ({
-    category,
-    votes: totals[category] ?? 0,
-  }));
-  // One scale across both rows, so a name's size means the same thing
-  // wherever the card sits.
-  const maxVotes = Math.max(1, ...cards.map((c) => c.votes));
-  const rows = balancedRows(
-    cards,
-    (c) => c.votes,
-    (c) => BALLOT.indexOf(c.category as (typeof BALLOT)[number]),
-  );
-
   return (
     <main className="screen screen--host host-voting">
       {/* No round marker: voting only ever happens before round one. */}
@@ -234,32 +167,12 @@ export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props)
         PICK YOUR CATEGORIES — {budget} {budget === 1 ? "VOTE" : "VOTES"} EACH
       </p>
 
-      <div className="host-voting__grid">
-        {rows.map((row, i) => (
-          <div className="host-voting__row" key={i}>
-            {row.map(({ category, votes }) => (
-              <div
-                key={category}
-                className={
-                  (votes > 0 ? "vote-card" : "vote-card vote-card--zero") +
-                  (category === RANDOM_CATEGORY ? " vote-card--random" : "")
-                }
-                // The whole mechanic: card width IS the odds. No measurement,
-                // no JS layout pass — flex-grow carries it. `--name-size` is
-                // the ideal; the CSS clamps it against the card's own width.
-                style={{
-                  flexGrow: votes + 1,
-                  "--name-size": nameSize(votes, maxVotes),
-                } as CSSProperties}
-              >
-                <span className="vote-card__name">{cardLabel(category)}</span>
-                {votes > 0 && (
-                  <VoteFoot room={room} category={category} total={String(votes)} />
-                )}
-              </div>
-            ))}
-          </div>
-        ))}
+      {/* The board itself stays hidden while voting is open — showing it
+          live would let the room watch categories reorder and resize as
+          votes land, mid-vote. It appears once for everyone, all at once,
+          in the closed reveal below. */}
+      <div className="host-voting__grid host-voting__grid--waiting">
+        <p className="host-voting__no-votes">Categories reveal once voting closes.</p>
       </div>
 
       <div className="host-voting__footer">
@@ -301,13 +214,31 @@ function HostVotingClosed({
     .sort((a, b) => (totals[b] ?? 0) - (totals[a] ?? 0));
   const top = survivors.slice(0, 3);
   const rest = survivors.slice(3);
-  // Rank-indexed, not a step function like `nameSize` above. That's a
-  // deliberate difference, not the same mechanism done twice: `top` is
-  // always exactly 3 slots by construction, so "2nd place" is a fixed thing
-  // to hand-tune rather than an open-ended scale that a 17th category could
-  // quietly perturb.
+  // Rank-indexed rather than a continuous scale: `top` is always exactly 3
+  // slots by construction, so "2nd place" is a fixed thing to hand-tune
+  // rather than an open-ended scale that a 17th category could quietly
+  // perturb.
   const rankNameSize = ["52px", "34px", "30px"];
   const rankShareSize = ["36px", "26px", "24px"];
+
+  // Computed once at mount, matching the custom fork's own closed reveal —
+  // this component is a fresh mount every time voting closes, so there is
+  // never a stale reading to worry about.
+  const [reduced] = useState(prefersReducedMotion);
+
+  // The board sits still for a beat before the top three grow into their
+  // share — the same 3s look-up beat `HostVotingCustomClosed` gives the
+  // custom board, so both closed reveals settle on the same unhurried pace.
+  // This board never shows a zero-vote card (they are filtered out of
+  // `survivors` before render), so there is no leaving row to stagger —
+  // growing the top three is the only thing this delay has to cover.
+  const LOOK_UP_MS = 3000;
+  const [grown, setGrown] = useState(reduced);
+  useEffect(() => {
+    if (reduced) return;
+    const t = setTimeout(() => setGrown(true), LOOK_UP_MS);
+    return () => clearTimeout(t);
+  }, [reduced]);
 
   return (
     <main className="screen screen--host host-voting host-voting--closed">
@@ -343,7 +274,11 @@ function HostVotingClosed({
             <>
               <div className="host-voting__row host-voting__row--top">
                 {top.map((category, i) => (
-                  <div className="vote-card" key={category} style={{ flexGrow: shares[category] }}>
+                  <div
+                    className="vote-card"
+                    key={category}
+                    style={{ flexGrow: grown ? shares[category] : 0 }}
+                  >
                     <span className="vote-card__name" style={{ fontSize: rankNameSize[i] }}>
                       {cardLabel(category)}
                     </span>

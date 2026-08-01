@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { Player } from "../../shared/state";
 import { isWaiting } from "../../shared/bots";
+import { useMarquee } from "../marquee";
 import { ReadyMark } from "./ReadyMark";
 
 /**
@@ -16,16 +17,19 @@ export function pulseInterval(id: string): string {
 
 type PillProps = {
   player: Player;
-  /** `lobby` shows readiness; `playing` is the name and the face alone;
-      `creating` shows readiness too, but also spells out the not-ready state
-      as "··· WRITING" — the writing phase's author columns, unlike the lobby,
-      have something to say about a waiting player besides "not yet". */
+  /** `lobby` and `creating` show readiness; `playing` is the name and the
+      face alone. */
   variant: "playing" | "lobby" | "creating";
   onKick?: (id: string) => void;
 };
 
 
 export function PlayerPill({ player, variant, onKick }: PillProps) {
+  // Travels a long name instead of ellipsing it, same as a long team name —
+  // on the two variants that show readiness, the lobby and the write-
+  // categories columns, where a pill sits in one fixed slot for a whole
+  // phase. `playing` isn't read the same way, so it keeps the ellipsis.
+  const nameRef = useMarquee<HTMLSpanElement>([player.name]);
   const classes = ["pill", "player-pill"];
   // Readiness is the whole pill, not a glyph beside the name: a ready player
   // lifts off the page in gold and a waiting one sits flat and sunken, so the
@@ -50,18 +54,18 @@ export function PlayerPill({ player, variant, onKick }: PillProps) {
       >
         {player.emoji}
       </span>
-      <span className="player-pill__name">{player.name || "…"}</span>
+      {showsReadiness ? (
+        <span className="player-pill__name" ref={nameRef} data-marquee="">
+          <span className="marquee">{player.name || "…"}</span>
+        </span>
+      ) : (
+        <span className="player-pill__name">{player.name || "…"}</span>
+      )}
       {/* Nothing trails the name during a round. The pulsing dot that used to
           sit here said only "somebody is writing", which every pill said at
           once — ten of them blinking out of step were the busiest thing on a
           screen whose job is the category. */}
-      {variant === "lobby" && ready && <ReadyMark />}
-      {/* The writing phase is the one place the *not*-ready state is worth
-          naming: an author column with nothing under it reads as broken,
-          where an unmarked lobby pill just reads as unmarked. Ready still
-          draws the one `ReadyMark` the whole app draws. */}
-      {variant === "creating" &&
-        (ready ? <ReadyMark /> : <span className="player-pill__mark">··· WRITING</span>)}
+      {(variant === "lobby" || variant === "creating") && ready && <ReadyMark />}
     </>
   );
 
