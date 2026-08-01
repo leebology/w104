@@ -3331,8 +3331,13 @@ ul, ol { list-style: none; }
   font-size: 20px;
 }
 
-.podium-col[data-rank="2"] .podium-ribbon { --ribbon: var(--teal); }
-.podium-col[data-rank="2"] .podium-ribbon__medal { color: var(--cream); }
+/* The ribbon wears the same metal as the step under it. `data-rank` is the
+   *place* on both, so a tie takes one medal across the ribbon and the plinth
+   with no second rule — and 2nd stopped being teal, which was the one accent
+   on this board that named nothing. The numeral goes back to ink: it was cream
+   for contrast against teal, and silver is a light fill. */
+.podium-col[data-rank="2"] .podium-ribbon { --ribbon: var(--silver); }
+.podium-col[data-rank="3"] .podium-ribbon { --ribbon: var(--bronze); }
 
 /* ------------------------------------------------------------ podium chip */
 
