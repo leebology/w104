@@ -1538,6 +1538,37 @@ describe("setTeamName", () => {
     expect(room.teams.find((t) => t.id === "t0")!.name).toHaveLength(MAX_TEAM_NAME_LEN);
   });
 
+  test("an open name editor holds the countdown out of team select", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "setTeamNaming", playerId: "p0", naming: true, now: 2150 });
+    // The join that would otherwise be the last one in.
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
+    expect(room.phase.name).toBe("teams");
+
+    // Closing it lets the very next event derive the countdown, with nothing
+    // else having to happen — the same way closing a host drawer does.
+    room = reduce(room, { t: "setTeamNaming", playerId: "p0", naming: false, now: 2300 });
+    expect(room.phase.name).toBe("countdown");
+  });
+
+  test("a namer who drops off does not hold it", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "setTeamNaming", playerId: "p0", naming: true, now: 2150 });
+    room = reduce(room, { t: "disconnect", playerId: "p0", now: 2200 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2250 });
+    expect(room.phase.name).toBe("countdown");
+  });
+
+  test("leaving the team closes the editor with it", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "setTeamNaming", playerId: "p0", naming: true, now: 2150 });
+    room = reduce(room, { t: "leaveTeam", playerId: "p0", now: 2200 });
+    expect(room.players.find((p) => p.id === "p0")!.naming).toBe(false);
+  });
+
   test("renaming to the same name is a no-op", () => {
     let room = inTeams(2);
     room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });

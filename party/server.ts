@@ -769,6 +769,11 @@ export class W104 extends Server<Env> {
           now,
         });
         break;
+      case "setTeamNaming":
+        this.room = reduce(this.room, {
+          t: "setTeamNaming", playerId, naming: msg.naming === true, now,
+        });
+        break;
       case "moveCursor":
         this.room = reduce(this.room, {
           t: "moveCursor", playerId, slot: Number(msg.slot), now,

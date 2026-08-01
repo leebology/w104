@@ -155,6 +155,7 @@ export function PlayerScoring({
   // word that may now fit.
   const list = useMarquee<HTMLDivElement>([me?.entries, step, marks]);
   const emojiOf = (id: string) => room.players.find((p) => p.id === id)?.emoji ?? "";
+  const nameOf = (id: string) => room.players.find((p) => p.id === id)?.name ?? "";
   // Exactly the trail the TV draws — a face, or the team's swatch. The two must
   // agree: the room is looking at both copies of the same word.
   const labelFor = (id: string) => {
@@ -176,6 +177,43 @@ export function PlayerScoring({
 
   const card = cardView(schedule, me, step, marks);
   const direction = uniqueDirection(schedule, card, startedAt);
+
+  /**
+   * UNIQUE and TOTAL. Lifted out because the two layouts below put the same
+   * pair in different corners — beside the avatar on a solo card, in the
+   * card's bottom-right on a team's, which is where the TV keeps it.
+   */
+  const stats = (
+    <div className="id-card__stats">
+      <div className="stat">
+        {/* Opens at TOTAL and counts down as the TV strikes words through,
+            blinking on each one. Keyed on the count of things that have moved
+            it — revealed strikes plus manual marks — for the same reason the
+            host's is, see HostScoring.
+
+            The green blink is the one the round cannot cause: only taking a
+            word back moves this number up. */}
+        <span
+          key={`${card.strikeCount}:${card.selfMarkCount}`}
+          className={
+            "stat__num stat__num--unique" +
+            (direction === "up"
+              ? " stat__num--flash-up"
+              : direction === "down"
+                ? " stat__num--flash"
+                : "")
+          }
+        >
+          {card.unique}
+        </span>
+        <span className="stat__label">UNIQUE</span>
+      </div>
+      <div className="stat">
+        <span className="stat__num">{me.total}</span>
+        <span className="stat__label">TOTAL</span>
+      </div>
+    </div>
+  );
 
   /**
    * Every row, always — `revealed` is deliberately ignored. A row the TV has not
@@ -219,49 +257,38 @@ export function PlayerScoring({
             className="team-badge--sm"
           />
         )}
-        <div className="id-card__row">
-          {me.colorIndex === null && <span className="id-card__avatar">{me.emoji}</span>}
-          <div className="id-card__who">
-            {me.colorIndex === null && <span className="id-card__name">{me.name}</span>}
-          </div>
-          <div className="id-card__stats">
-            <div className="stat">
-              {/* Opens at TOTAL and counts down as the TV strikes words
-                  through, blinking on each one. Keyed on the count of things
-                  that have moved it — revealed strikes plus manual marks — for
-                  the same reason the host's is, see HostScoring.
-
-                  The green blink is the one the round cannot cause: only taking
-                  a word back moves this number up. */}
-              <span
-                key={`${card.strikeCount}:${card.selfMarkCount}`}
-                className={
-                  "stat__num stat__num--unique" +
-                  (direction === "up"
-                    ? " stat__num--flash-up"
-                    : direction === "down"
-                      ? " stat__num--flash"
-                      : "")
-                }
-              >
-                {card.unique}
-              </span>
-              <span className="stat__label">UNIQUE</span>
+        {me.colorIndex === null ? (
+          <div className="id-card__row">
+            <span className="id-card__avatar">{me.emoji}</span>
+            <div className="id-card__who">
+              <span className="id-card__name">{me.name}</span>
             </div>
-            <div className="stat">
-              <span className="stat__num">{me.total}</span>
-              <span className="stat__label">TOTAL</span>
-            </div>
+            {stats}
           </div>
-        </div>
-        {/* Who the team is, under the card — the round and the match both
-            score the team, so this is the only place a player's own face
-            appears on the results screen. */}
-        {me.colorIndex !== null && (
-          <div className="id-card__members">
-            {me.members.map((id) => (
-              <span key={id}>{emojiOf(id)}</span>
-            ))}
+        ) : (
+          // The TV's team column, at the size the phone gives it: who the team
+          // is along the top — faces *and* names, because a row of bare emoji
+          // says how many people a team is and not which of them wrote that —
+          // and the pair of numbers pinned to the bottom-right under them. Two
+          // screens showing one scorer's round should not be laid out
+          // differently, and the name is already in the tab above both.
+          <div className="id-card__head">
+            <div className="id-card__members">
+              {me.members.map((id) => (
+                <span className="id-card__member" key={id}>
+                  <span className="id-card__member-emoji">{emojiOf(id)}</span>
+                  <span className="id-card__member-name">{nameOf(id)}</span>
+                </span>
+              ))}
+            </div>
+            {/* The empty left slot is what pins the stats right, exactly as it
+                does on the TV — there it holds the ready tag, and here there is
+                nothing to hold, since this card's own Ready button is in the
+                footer six inches below it. */}
+            <div className="id-card__foot">
+              <span className="id-card__status" />
+              {stats}
+            </div>
           </div>
         )}
       </div>

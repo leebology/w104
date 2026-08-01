@@ -395,6 +395,15 @@ computed while nobody was looking.
   `leaveTeam` own the flag and the `ready` event is rejected there — the same
   arrangement `castVote`/`resetVotes` have during voting. This is why there is
   no unready button: leaving a team *is* the unready.
+- **An open team-name editor holds the countdown, exactly as an open host
+  drawer holds the lobby's.** `Player.naming` is set on focus and cleared on
+  blur, and `settle` refuses to open the `teams` countdown while any *connected*
+  player has it. Membership alone would count a player who is mid-rename as
+  ready and take the phase out from under the word — the failure `commitDraft`
+  avoids in `creating` by making the commit be the ready, which renaming cannot
+  do because joining is what readied you. It can only ever hold: a locked phone
+  is already outside `everyoneReady`, the host's Continue skips `settle`, and
+  the flag clears on disconnect, on `leaveTeam` and at `enterTeams`.
 - **Stragglers are auto-assigned at the host's Continue, and again at the tick
   that opens `voting`.** Assigning at Continue is what keeps `ready` honest —
   it means "on a team", and a force-ready over a teamless player is a flag with

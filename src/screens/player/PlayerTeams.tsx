@@ -96,9 +96,16 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
               maxLength={MAX_TEAM_NAME_LEN}
               aria-label="Team name — shared with your teammates"
               onChange={(e) => setDraft(e.target.value)}
-              onBlur={() =>
-                roomStore.send({ type: "setTeamName", teamId: mine.id, name: draft })
-              }
+              // Opening the editor holds the countdown out of team select, and
+              // closing it lets `settle` derive one — the same arrangement the
+              // host's drawers have with the lobby. Without it a room where
+              // everybody has a team counts down while you are still typing,
+              // and the phase goes out from under the word.
+              onFocus={() => roomStore.send({ type: "setTeamNaming", naming: true })}
+              onBlur={() => {
+                roomStore.send({ type: "setTeamName", teamId: mine.id, name: draft });
+                roomStore.send({ type: "setTeamNaming", naming: false });
+              }}
               onKeyDown={(e) => {
                 if (e.key !== "Enter") return;
                 e.preventDefault();
