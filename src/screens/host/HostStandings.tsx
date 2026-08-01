@@ -30,28 +30,21 @@ export function HostStandings({ room, countdown }: Props) {
           it: the standings are what the room is still talking about, and the
           count is an interruption laid over them. */}
       <div className={countdown ? "host-standings__stage host-standings__stage--dimmed" : "host-standings__stage"}>
-        {/* The chip leads and the screen's own title takes the far end, which
-            is the arrangement every other host screen uses — this one had them
-            the other way round, so the one thing on a TV that has to be in the
-            same corner every time moved on the one screen a room sits longest
-            on. The final board keeps its plaque on the left: there is no chip
-            on it to lead with, the match being over. */}
+        {/* The chip leads and the screen's own title takes the far end, on
+            every host screen without exception now — the final board used to
+            be the one that broke it, leading with a plaque and pushing the
+            room code into a line of small caps on the far side. The join
+            instruction is the one thing on a TV that has to be in the same
+            corner every time, and "the match is over" is not a reason for it
+            to move. */}
         <HostHeader
-          left={
-            done ? (
-              <span className="plaque plaque--over">MATCH OVER</span>
-            ) : (
-              <RoomChip room={room} />
-            )
-          }
+          left={<RoomChip room={room} />}
           right={
             <HostHeaderRight>
               {done ? (
-                <span className="host-standings__meta">
-                  {room.settings.roundCount}{" "}
-                  {room.settings.roundCount === 1 ? "ROUND" : "ROUNDS"} · {standings.length}{" "}
-                  {standings.length === 1 ? "PLAYER" : "PLAYERS"} · ROOM {room.code}
-                </span>
+                <div className="host-standings__title">
+                  <h1>Match over</h1>
+                </div>
               ) : (
                 <>
                   <div className="host-standings__title">
@@ -87,17 +80,25 @@ export function HostStandings({ room, countdown }: Props) {
           <StandingsList room={room} standings={standings} />
         )}
 
-        <footer className="host-standings__footer">
+        {/* Centred on the final board and right-aligned between rounds. The
+            difference is what the button is for: mid-match it is the forward
+            action in the corner every other host screen keeps one in, and at
+            the end it is the only thing left on the screen to press. */}
+        <footer
+          className={
+            done
+              ? "host-standings__footer host-standings__footer--final"
+              : "host-standings__footer"
+          }
+        >
           {done ? (
-            <>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => roomStore.send({ type: "backToLobby" })}
-              >
-                Back to room
-              </button>
-            </>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => roomStore.send({ type: "backToLobby" })}
+            >
+              Back to room
+            </button>
           ) : (
             /* Readiness is marked on the rows themselves — a tally says how
                many are left when what a host wants is *which*. Nothing else

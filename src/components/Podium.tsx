@@ -2,7 +2,6 @@ import type { CSSProperties } from "react";
 import type { Player, RoomState } from "../../shared/state";
 import type { Standing } from "../../shared/standings";
 import { ordinal } from "../ordinal";
-import { BadgeStrip } from "./BadgeStrip";
 import { ReadyMark } from "./ReadyMark";
 import { TeamBadge } from "./TeamBadge";
 
@@ -40,19 +39,10 @@ function readinessOf(members: Player[]): Readiness {
   return here.every((p) => p.ready) ? "ready" : "waiting";
 }
 
-/**
- * The line under the place. "TIED" is the one that matters — a shared step is
- * visible from across the room but ambiguous with a rounding error, so it gets
- * said out loud. A clean sweep is worth naming; everything else stays quiet
- * rather than inventing a superlative for 6th.
- */
-function noteOf(s: Standing, tied: boolean): string | null {
-  if (tied) return "TIED";
-  if (s.place === 1 && s.badges.length > 1 && s.badges.every((b) => b === 1)) {
-    return "WON EVERY ROUND";
-  }
-  return null;
-}
+/* The note under the place is "TIED" and nothing else now. A shared step is
+   visible from across the room but ambiguous with a rounding error, so it is
+   worth saying out loud; the clean-sweep line that used to sit beside it is
+   gone. */
 
 type Props = {
   room: RoomState;
@@ -91,7 +81,7 @@ export function Podium({ room, standings, final }: Props) {
           .map((id) => room.players.find((p) => p.id === id))
           .filter((p): p is Player => p !== undefined);
         const state = readinessOf(members);
-        const note = noteOf(s, shared.has(s.place));
+        const note = shared.has(s.place) ? "TIED" : null;
         const team = s.colorIndex !== null;
         // Capped so an 11th place — impossible at a cap of 10, but cheap to
         // hold — still lands on the last tier rather than falling off the ramp.
@@ -128,11 +118,17 @@ export function Podium({ room, standings, final }: Props) {
                 ))}
               </span>
             ) : (
-              <span className="podium-col__avatar">{s.emoji}</span>
+              /* Face and name on one line, the face leading — the same
+                 arrangement a team's members already had, and the reading
+                 order everywhere else in the app. Stacked, the emoji read as
+                 decoration sitting on top of a label rather than as the
+                 player. A team is named by its badge on the plinth, never
+                 twice, so this branch is the only one that carries a name. */
+              <span className="podium-col__who">
+                <span className="podium-col__avatar">{s.emoji}</span>
+                <span className="podium-col__name">{s.name}</span>
+              </span>
             )}
-
-            {/* A team is named by its badge, on the plinth — never twice. */}
-            {!team && <span className="podium-col__name">{s.name}</span>}
 
             {final && state !== "dropped" ? null : state === "ready" ? (
               // The lobby's tag, the same one the standings list and the results
@@ -166,11 +162,10 @@ export function Podium({ room, standings, final }: Props) {
               {rank <= NOTE_LIMIT && (
                 <span className="podium-plinth__points">{s.points} PTS</span>
               )}
-              <BadgeStrip
-                places={s.badges}
-                categories={room.history.map((h) => h.category)}
-                className="badge-strip--plinth"
-              />
+              {/* The per-round place chips that sat here are gone. The plinth
+                  carries the result — place, total — and the round-by-round
+                  itemisation was a second, smaller scoreboard inside the one
+                  the room is already reading. */}
             </div>
           </li>
         );

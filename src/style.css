@@ -2956,12 +2956,9 @@ ul, ol { list-style: none; }
   white-space: nowrap;
 }
 
-.host-standings__meta {
-  font-size: clamp(11px, 1.1vw, 14px);
-  letter-spacing: 0.16em;
-  color: var(--cream-dim);
-  white-space: nowrap;
-}
+/* `.host-standings__meta` — the "N ROUNDS · N PLAYERS · ROOM CODE" line on the
+   final board — is gone. The room code it carried is in the chip on the left
+   now, where every other host screen keeps it. */
 
 /* The plaque family's teal member. Teal and not gold because gold is "go
    forward" everywhere in this app, the gold button in the footer is still
@@ -3018,6 +3015,20 @@ ul, ol { list-style: none; }
 
 .podium-col[data-state="dropped"] { opacity: 0.55; }
 .podium-col[data-state="dropped"] .podium-col__avatar { filter: grayscale(1); }
+
+/* Face and name on one line, the face leading. Stacked, the emoji read as
+   decoration above a label rather than as the player — and it is the same
+   arrangement a team's members already used two rules down, so the board no
+   longer draws one idea two ways. */
+.podium-col__who {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 0 auto;
+}
 
 .podium-col__avatar {
   font-size: clamp(18px, 2.1vw, 28px);
@@ -3316,6 +3327,13 @@ ul, ol { list-style: none; }
   gap: 16px;
   padding: 12px 26px 16px;
   flex: 0 0 auto;
+}
+
+/* The match is over and this is the only control left on the screen, so it
+   sits under the middle of the staircase rather than in the forward-action
+   corner it occupies between rounds. */
+.host-standings__footer--final {
+  justify-content: center;
 }
 
 /* ----------------------------------------------------------- countdown */
