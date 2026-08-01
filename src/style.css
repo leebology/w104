@@ -2753,6 +2753,10 @@ ul, ol { list-style: none; }
   font-size: 34px;
   padding: 14px 20px 16px;
   z-index: 16;
+  /* A second longer than the TV's, and a second longer than the reject
+     banner it borrows its timing from: this one is read by somebody who is
+     head-down typing, so it has to survive the glance up. */
+  animation-duration: 3s;
 }
 
 /* The TV is read across a room, so this is the one that gets big. Absolute
