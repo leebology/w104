@@ -80,13 +80,30 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
 
         {me && (
           <section className="card win-card">
-            <span className="win-card__label">
-              {me.place === 1
-                ? tiedWith(me)
-                  ? "YOU TIED FOR THE WIN"
-                  : "YOU WON"
-                : `YOU FINISHED ${ordinal(me.place)}`}
-            </span>
+            {/* The result and the score share the top line, the score pinned
+                right. Below it the card is all name, which is what a player
+                holds a phone up to show somebody. */}
+            <div className="win-card__head">
+              <span className="win-card__label">
+                {me.place === 1 ? (
+                  tiedWith(me) ? "YOU TIED FOR THE WIN" : "YOU WON"
+                ) : (
+                  <>
+                    YOU FINISHED{" "}
+                    {/* The one word on this line worth reading from across a
+                        table, so it is set at its own size rather than at the
+                        caption's. */}
+                    <span className="win-card__rank">{ordinal(me.place)}</span>
+                  </>
+                )}
+              </span>
+              <span className="win-card__score">
+                <span className="win-card__points">{me.points}</span>
+                <span className="win-card__unit">
+                  {me.points === 1 ? "POINT" : "POINTS"}
+                </span>
+              </span>
+            </div>
             <div className="win-card__who">
               {me.colorIndex !== null ? (
                 <TeamBadge name={me.name} colorIndex={me.colorIndex} className="team-badge--lg" />
@@ -97,12 +114,6 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
                 </>
               )}
             </div>
-            <div className="win-card__score">
-              <span className="win-card__points">{me.points}</span>
-              <span className="win-card__unit">
-                {me.place === 1 ? "POINTS · MOST IN THE ROOM" : "POINTS"}
-              </span>
-            </div>
             <RoundBoxes badges={me.badges} room={room} />
           </section>
         )}
@@ -110,11 +121,14 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
         <ol className="final-table" ref={finalList}>
           <li className="final-table__label">FINAL TABLE</li>
           {standings.map((s) => (
-            <li
-              key={s.id}
-              className={s.members.includes(playerId) ? "is-you" : undefined}
-              data-first={s.place === 1 ? "" : undefined}
-            >
+            // Your own row is boxed rather than flagged. `(you)` was a word
+            // competing with a name for the same strip of a phone-width row,
+            // and the one thing a player is scanning this table for is which
+            // line is theirs — an outline answers that before it is read.
+            // No `data-first`: the place column already says 1ST, and golding
+            // it made the winner's row the loudest thing on a screen whose
+            // subject is the card above.
+            <li key={s.id} className={s.members.includes(playerId) ? "is-you" : undefined}>
               <span className="final-table__place">{ordinal(s.place)}</span>
               {emojiOf(s) && <span className="final-table__avatar">{emojiOf(s)}</span>}
               <span
@@ -127,9 +141,6 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
                   <span className="marquee">{s.name}</span>
                 )}
               </span>
-              {s.colorIndex === null && s.members.includes(playerId) && (
-                <em className="final-table__flag"> (you)</em>
-              )}
               <span className="final-table__score">
                 <span className="final-table__points">{s.points}</span>
                 <span className="final-table__unit">PTS</span>
