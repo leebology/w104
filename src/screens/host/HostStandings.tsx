@@ -38,38 +38,35 @@ export function HostStandings({ room, countdown }: Props) {
         <HostHeader
           left={<RoomChip room={room} />}
           right={
-            <HostHeaderRight>
-              {done ? (
-                // Centred in the header rather than parked on the right end:
-                // the match is over and there is nothing to count against it,
-                // so it takes the middle slot the round marker keeps on every
-                // other host screen — the same top-centre the lobby gives the
-                // room code.
-                <div className="host-standings__title host-standings__title--center">
-                  <h1>Match over</h1>
+            done ? null : (
+              <HostHeaderRight>
+                <div className="host-standings__title">
+                  <h1>Standings</h1>
+                  {/* The list states the scoring direction in its own
+                      explainer row, so the subtitle counts rounds instead of
+                      saying it twice. */}
+                  <p>
+                    ROUND {played} OF {room.settings.roundCount}
+                  </p>
                 </div>
-              ) : (
-                <>
-                  <div className="host-standings__title">
-                    <h1>Standings</h1>
-                    {/* The list states the scoring direction in its own
-                        explainer row, so the subtitle counts rounds instead of
-                        saying it twice. */}
-                    <p>
-                      AFTER ROUND {played} OF {room.settings.roundCount} ·{" "}
-                      {room.settings.roundCount - played} TO GO
-                    </p>
-                  </div>
-                  {/* The match has no other exit between rounds — see the
-                      standings brief. Absent on the final screen, where the
-                      gold button already does exactly this and ends nothing
-                      that is still running. */}
-                  <HostBackToRoom />
-                </>
-              )}
-            </HostHeaderRight>
+                {/* The match has no other exit between rounds — see the
+                    standings brief. Absent on the final screen, where the
+                    gold button already does exactly this and ends nothing
+                    that is still running. */}
+                <HostBackToRoom />
+              </HostHeaderRight>
+            )
           }
         />
+
+        {/* Below the header rather than inside it, which is where the lobby
+            puts the room code: the title of the last screen of a match is the
+            first thing on the stage, not a label riding the bar. */}
+        {done && (
+          <div className="host-standings__over">
+            <h1>Match over</h1>
+          </div>
+        )}
 
         {/* Each shape does the job it is best at, and which one is up is fixed
             by the state rather than chosen: between rounds the room wants

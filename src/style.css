@@ -2962,14 +2962,20 @@ ul, ol { list-style: none; }
   margin: 0;
 }
 
-/* Absolute so it centres on the *header*, not on whatever is left over beside
-   the room chip — the same trick `.host-header__round` uses, and the same
-   position, because on the final board it is standing in for that marker. */
-.host-standings__title--center {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
+/* The final board's title, on the stage under the header — the slot the lobby
+   gives the room code. Centred on the screen rather than on what is left over
+   beside the room chip, which is what a header slot would have given it. */
+.host-standings__over {
+  flex: 0 0 auto;
+  text-align: center;
+  padding: 6px 34px 0;
+}
+
+.host-standings__over h1 {
+  font-family: var(--display);
+  font-size: clamp(26px, 3.2vw, 44px);
+  line-height: 1.1;
+  margin: 0;
 }
 
 /* Says which direction is good, in the one place everybody looks first. Golf
