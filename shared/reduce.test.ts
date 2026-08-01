@@ -1552,6 +1552,19 @@ describe("setTeamName", () => {
     expect(room.phase.name).toBe("countdown");
   });
 
+  test("opening the editor mid-countdown drops back to team select", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: "t1", now: 2200 });
+    expect(room.phase.name).toBe("countdown");
+
+    room = reduce(room, { t: "setTeamNaming", playerId: "p0", naming: true, now: 2300 });
+    expect(room.phase.name).toBe("teams");
+    // Everyone is still on a team, so closing it counts straight back in.
+    room = reduce(room, { t: "setTeamNaming", playerId: "p0", naming: false, now: 2400 });
+    expect(room.phase.name).toBe("countdown");
+  });
+
   test("a namer who drops off does not hold it", () => {
     let room = inTeams(2);
     room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: "t0", now: 2100 });

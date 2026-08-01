@@ -617,6 +617,18 @@ function settle(room: Room, now: number): Room {
     // here already not-ready, and tearing the countdown down would drop it back
     // through `backPhase` to the *lobby*, abandoning the match.
     if (phase.to === "playing" && room.history.length === 0) return room;
+    // Opening the name editor takes the room back to team select, the same
+    // brake leaving a team is. Renaming is legal throughout the countdown, so
+    // without this the phase would turn over mid-word and take the editor with
+    // it — the thing the hold on the `teams` edge exists to prevent, arrived at
+    // five seconds later. Only where the fall-back *is* team select: nowhere
+    // else is `naming` even settable.
+    if (
+      backPhase(room).name === "teams" &&
+      room.players.some((p) => p.connected && p.naming === true)
+    ) {
+      return { ...room, phase: backPhase(room) };
+    }
     // Every other countdown answers for the phase it would fall back to, so
     // "would this phase have opened it?" and "does it stay open?" cannot
     // disagree. That is what lets a solo running match hold its own countdown

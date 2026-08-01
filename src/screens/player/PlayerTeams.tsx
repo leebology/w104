@@ -65,11 +65,6 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
   const [draft, setDraft] = useState(mine?.name ?? "");
   useEffect(() => setDraft(mine?.name ?? ""), [mine?.name]);
 
-  // The tiles step back behind the card once the count is running; the Leave
-  // button below does not, for the same reason the lobby keeps Ready lit —
-  // leaving a team is this room's only brake on the countdown.
-  const dim = countdown ? " countdown-dim" : "";
-
   return (
     <main className="screen screen--mobile screen--locked player-teams">
       {/* One slot at the top of the screen, holding the title *or* the name
@@ -78,7 +73,13 @@ export function PlayerTeams({ room, playerId, countdown }: Props) {
           says the same thing better, so the room the two would have taken
           between them goes to the grid instead. Its height is fixed to the
           plaque's, so the swap does not move the tiles below. */}
-      <div className={`player-teams__title-slot${dim}`}>
+      {/* Never dimmed, countdown or not. `countdown-dim` carries
+          `pointer-events: none`, so dimming this slot made the name editor
+          unreachable for the five seconds it was most likely to be wanted —
+          and renaming stays legal throughout, exactly as leaving a team does.
+          An editor opened here holds the count down while it is open, so
+          nothing is lost to the clock mid-word. */}
+      <div className="player-teams__title-slot">
         {mine ? (
           <div
             className="team-badge player-teams__title"
