@@ -104,6 +104,22 @@ export type Player = {
    * `isBot` this one is *cleared*: returning to the lobby seats everybody.
    */
   waiting?: boolean;
+  /**
+   * This player has their team's name open in the editor, in team select.
+   *
+   * A hold on the countdown out of `teams` and nothing else. `ready` there
+   * means "on a team", so somebody renaming their team is fully ready by that
+   * measure and the room would count down and take the phase away mid-word —
+   * the same failure `commitDraft` avoids in `creating` by making the commit
+   * *be* the ready. Renaming cannot use that trick, because being on the team
+   * is what readied you and the name is optional, so the hold is its own flag.
+   *
+   * It can only ever hold: `everyoneReady` counts connected players, so a
+   * phone locked mid-rename is already out of the reckoning, and the host's
+   * Continue skips `settle` outright. Optional and absent everywhere else,
+   * which keeps it off the persistence-migration list.
+   */
+  naming?: boolean;
 };
 
 export type Phase =

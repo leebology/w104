@@ -2763,12 +2763,13 @@ ul, ol { list-style: none; }
   font-size: 34px;
   padding: 14px 20px 16px;
   z-index: 16;
-  /* A second at full opacity before the same two-second fade — the one place
+  /* A second at full opacity *before* the same two-second fade — the one place
      the phone parts company with `.reject-banner`'s timing. A rejection is
      about a word the player just typed and is still looking at; a time warning
      arrives unannounced, over a screen they are head-down on, and the fade had
-     already started by the time it pulled their eye up. Holding first is what
-     makes it a message rather than a flicker. */
+     already started by the time it pulled their eye up. The extra second is a
+     hold and not a longer `animation-duration`: stretching the fade buys three
+     seconds of dissolving rather than one second of legible. */
   animation: time-warning-fade 3s linear forwards;
 }
 
@@ -2831,6 +2832,14 @@ ul, ol { list-style: none; }
 .player-scoring .stat__num { font-size: 30px; }
 .player-scoring .stat__label { font-size: 10px; }
 .player-scoring .list-card { padding: 16px; }
+
+/* The team card's two rows, same order the TV's column has them in: the roster
+   along the top, the stats pinned bottom-right beneath it. The gap is what
+   keeps the numbers off the names on a card this narrow — the TV's column has
+   a rule between them and this one does not. */
+.player-scoring .id-card__head { gap: 10px; }
+.player-scoring .id-card__members { padding-top: 0; font-size: 22px; }
+.player-scoring .id-card__member-name { font-size: 13px; max-width: 12ch; }
 
 .player-scoring__footer {
   flex: 0 0 auto;
@@ -5140,7 +5149,76 @@ ul, ol { list-style: none; }
   overflow-y: auto;
   gap: 56px 12px;
   width: 100%;
-  padding: 18px 34px 8px;
+  /* The top padding clears the writing tag on the first row, which sits above
+     a badge that already overhangs by 21px. The row gap was always wide enough
+     for the rows below it. */
+  padding: 56px 34px 8px;
+}
+
+/* "Somebody is writing this name", on the line above the badge. Absolute, so
+   it costs the card no height and nothing on the screen moves as it comes and
+   goes — the one thing team select must never do is shift a target out from
+   under a thumb. The grids above it carry the clearance it needs; see the
+   padding on `.team-grid` and `.player-teams__grid`. */
+.team-naming {
+  position: absolute;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--display);
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  border-radius: 999px;
+  transform: rotate(-2.5deg);
+}
+
+.team-naming__pen {
+  width: 1em;
+  height: 1em;
+  flex: 0 0 auto;
+}
+
+/* Three dots on their own timer: the tag has to read as something happening
+   rather than as a label somebody left up. */
+.team-naming__dots {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+}
+
+.team-naming__dots span {
+  width: 0.22em;
+  height: 0.22em;
+  border-radius: 50%;
+  background: currentColor;
+  animation: naming-dot 1.2s steps(1, end) infinite;
+}
+
+.team-naming__dots span:nth-child(2) { animation-delay: 0.4s; }
+.team-naming__dots span:nth-child(3) { animation-delay: 0.8s; }
+
+@keyframes naming-dot {
+  0%, 75% { opacity: 0; }
+  25%, 74% { opacity: 1; }
+}
+
+/* Sized and offset to clear the badge beside it, per badge size — the two are
+   set together or the tag lands on the name. */
+.team-naming--sm {
+  top: -33px;
+  left: 10px;
+  font-size: 10px;
+  padding: 4px 9px;
+}
+
+.team-naming--lg {
+  top: -53px;
+  left: 18px;
+  font-size: 14px;
+  padding: 5px 13px;
 }
 
 .team-panel {
@@ -5165,14 +5243,21 @@ ul, ol { list-style: none; }
 .player-teams__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 22px 12px;
+  /* Both numbers are the writing tag's clearance: it hangs 33px above a tile,
+     so the row gap has to be at least that or it lands on the tile above, and
+     the first row needs the same room from the padding. */
+  gap: 36px 12px;
   list-style: none;
   margin: 0 -7px;
-  padding: 14px 7px 8px;
+  padding: 36px 7px 8px;
   overflow-y: auto;
   overflow-x: hidden;
   min-height: 0;
 }
+
+/* The writing tag hangs off the tile inside, so the cell is what it is
+   positioned against. */
+.player-teams__grid > li { position: relative; }
 
 .team-tile {
   position: relative;

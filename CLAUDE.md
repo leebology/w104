@@ -267,7 +267,7 @@ replaced wholesale on each `state` push; every client action is a *request*.
   hand-written test pins that; the property tests cannot, because the buggy
   form yields a single-element list that satisfies all of them.
 - **`useRoundWarning` has no round identity of its own, and that is deliberate.**
-  It seeds once per mount and relies on `HostView`/`PlayerView` rendering a
+  It seeds once per mount and relies on `PlayerView` rendering a
   *different component type* per phase, which React unmounts on regardless of
   key — between rounds the phase passes through `timesup`, `scoring`,
   `standings` and `countdown`. Hoisting the band to an overlay above that
@@ -277,8 +277,8 @@ replaced wholesale on each `state` push; every client action is a *request*.
   paused round is not a new round — an earlier design keyed on `phase.endsAt`,
   which resume rewrites, and cut a band short every time the host resumed.
 - **The band is keyed on its mark, and the key is load-bearing.** Every mark of
-  a round fires inside one mount, and `reject-fade` is `opacity 1 → 0` with
-  `forwards` — it plays once on insertion then holds at zero. A static key
+  a round fires inside one mount, and `time-warning-fade` is `forwards` — it
+  plays once on insertion then holds at zero. A static key
   would flash the first warning and silently update text under an invisible
   node for the rest. Same reason `.reject-banner` is keyed on `rejectedSeq`.
 
@@ -402,6 +402,27 @@ computed while nobody was looking.
   `leaveTeam` own the flag and the `ready` event is rejected there — the same
   arrangement `castVote`/`resetVotes` have during voting. This is why there is
   no unready button: leaving a team *is* the unready.
+- **An open team-name editor holds the countdown, exactly as an open host
+  drawer holds the lobby's.** `Player.naming` is set on focus and cleared on
+  blur, and `settle` refuses to open the `teams` countdown while any *connected*
+  player has it. Membership alone would count a player who is mid-rename as
+  ready and take the phase out from under the word — the failure `commitDraft`
+  avoids in `creating` by making the commit be the ready, which renaming cannot
+  do because joining is what readied you. It can only ever hold: a locked phone
+  is already outside `everyoneReady`, the host's Continue skips `settle`, and
+  the flag clears on disconnect, on `leaveTeam` and at `enterTeams`. **It also
+  brakes a countdown already running**, the way leaving a team does: renaming is
+  legal throughout team select, countdown included, so without that the phase
+  would turn over mid-word five seconds later. Only where `backPhase` is
+  `teams`; `naming` is not settable anywhere else. The phone therefore never
+  dims its name editor — `countdown-dim` carries `pointer-events: none`, which
+  had made it unreachable for exactly the five seconds it was most wanted.
+- **A team being renamed wears `TeamNaming`**, above its badge on the TV panels
+  and the phone tiles alike. `isBeingNamed` in `shared/teams.ts` derives it from
+  *connected* members, the same population the hold counts, so the tag and the
+  hold cannot disagree. It is absolutely positioned and the two grids carry its
+  clearance in their padding and row gap: a tag that took height would move the
+  tile a thumb was already reaching for.
 - **Stragglers are auto-assigned at the host's Continue, and again at the tick
   that opens `voting`.** Assigning at Continue is what keeps `ready` honest —
   it means "on a team", and a force-ready over a teamless player is a flag with

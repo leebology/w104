@@ -55,6 +55,11 @@ export type ClientMessage =
   | { type: "joinTeam"; teamId: TeamId }
   | { type: "leaveTeam" }
   | { type: "setTeamName"; teamId: TeamId; name: string }
+  /**
+   * Opening and closing the team-name editor. Holds the countdown out of team
+   * select for as long as it is open — see `Player.naming`.
+   */
+  | { type: "setTeamNaming"; naming: boolean }
   | { type: "balanceTeams" }
   /**
    * The phone publishing which slot it is on. Cheap and frequent; the only

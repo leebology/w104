@@ -117,6 +117,7 @@ export type RoomEvent =
   | { t: "joinTeam"; playerId: PlayerId; teamId: TeamId; now: number }
   | { t: "leaveTeam"; playerId: PlayerId; now: number }
   | { t: "setTeamName"; playerId: PlayerId; teamId: TeamId; name: string; now: number }
+  | { t: "setTeamNaming"; playerId: PlayerId; naming: boolean; now: number }
   /**
    * The phone publishing which slot it is on. Cheap and frequent; the only
    * thing that drives the writing state on the TV, and it carries no text.
@@ -389,7 +390,10 @@ function enterTeams(room: Room): Room {
     // a placeholder has nothing to pick with and an empty panel is the one
     // thing this screen is dressed to avoid.
     players: seatBots(
-      room.players.map((p) => ({ ...p, ready: false, teamId: null })),
+      // `naming` clears with membership: the editor belongs to a team nobody
+      // is on any more, and a flag left set from a previous visit would hold
+      // the countdown of this one with no editor open anywhere to explain it.
+      room.players.map((p) => ({ ...p, ready: false, teamId: null, naming: false })),
       teams,
     ),
   };
@@ -559,6 +563,13 @@ function settle(room: Room, now: number): Room {
     //
     // `afterLobby`, not a literal "voting": a custom match writes its own pool
     // first, so team select hands off to `creating` instead.
+    //
+    // Somebody with the name editor open holds this edge shut, the way an open
+    // host drawer holds the lobby's: they are "on a team" and so ready by the
+    // only measure this phase has, but the phase is still doing something for
+    // them. Connected only — a phone locked mid-rename is out of `everyoneReady`
+    // already and must not be able to wedge the room from there.
+    if (room.players.some((p) => p.connected && p.naming === true)) return room;
     return everyoneReady(room, readyFloor(room))
       ? openCountdown(room, now, afterLobby(room))
       : room;
@@ -606,6 +617,18 @@ function settle(room: Room, now: number): Room {
     // here already not-ready, and tearing the countdown down would drop it back
     // through `backPhase` to the *lobby*, abandoning the match.
     if (phase.to === "playing" && room.history.length === 0) return room;
+    // Opening the name editor takes the room back to team select, the same
+    // brake leaving a team is. Renaming is legal throughout the countdown, so
+    // without this the phase would turn over mid-word and take the editor with
+    // it — the thing the hold on the `teams` edge exists to prevent, arrived at
+    // five seconds later. Only where the fall-back *is* team select: nowhere
+    // else is `naming` even settable.
+    if (
+      backPhase(room).name === "teams" &&
+      room.players.some((p) => p.connected && p.naming === true)
+    ) {
+      return { ...room, phase: backPhase(room) };
+    }
     // Every other countdown answers for the phase it would fall back to, so
     // "would this phase have opened it?" and "does it stay open?" cannot
     // disagree. That is what lets a solo running match hold its own countdown
@@ -1122,7 +1145,13 @@ function apply(room: Room, ev: RoomEvent): Room {
     case "disconnect":
       return {
         ...room,
-        players: mapPlayer(room.players, ev.playerId, (p) => ({ ...p, connected: false })),
+        // `naming` goes with the socket for the same reason `configuring` goes
+        // with the host's: a flag nobody is left to clear is a flag that only
+        // ever holds. `everyoneReady` ignores the disconnected anyway, so this
+        // is belt and braces against a reconnect arriving back mid-hold.
+        players: mapPlayer(room.players, ev.playerId, (p) => ({
+          ...p, connected: false, naming: false,
+        })),
         // The host is not a player, so the line above is a no-op for them and
         // nothing else in the room would record that they left. Stamping the
         // moment is what arms the grace-period reap in `alarmOutcome`.
@@ -1269,7 +1298,10 @@ function apply(room: Room, ev: RoomEvent): Room {
       return {
         ...room,
         players: mapPlayer(room.players, ev.playerId, (p) => ({
-          ...p, teamId: null, ready: false,
+          // Leaving takes the editor off screen with the team, so the hold it
+          // was holding goes with it — otherwise leaving mid-rename would keep
+          // the room in team select with nothing on screen to explain why.
+          ...p, teamId: null, ready: false, naming: false,
         })),
       };
     }
@@ -1289,6 +1321,23 @@ function apply(room: Room, ev: RoomEvent): Room {
       return {
         ...room,
         teams: room.teams.map((t) => (t.id === ev.teamId ? { ...t, name } : t)),
+      };
+    }
+
+    case "setTeamNaming": {
+      if (!inTeamSelect(room)) return room;
+      const me = room.players.find((p) => p.id === ev.playerId);
+      if (!me) return room;
+      // Only a member has an editor to open. Nothing else guards this: the
+      // flag holds a countdown and can never open one, so the worst a bogus
+      // one does is keep team select up until the host presses Continue.
+      if (me.teamId === null && ev.naming) return room;
+      // Identity on a no-op, which is what stops a phone that re-focuses its
+      // own input rebroadcasting the room.
+      if ((me.naming === true) === ev.naming) return room;
+      return {
+        ...room,
+        players: mapPlayer(room.players, ev.playerId, (p) => ({ ...p, naming: ev.naming })),
       };
     }
 

@@ -4,7 +4,8 @@ import { RoomChip } from "../../components/RoomChip";
 import { TeamBadge } from "../../components/TeamBadge";
 import { pulseInterval } from "../../components/Roster";
 import { roomStore } from "../../net/room";
-import { TEAM_COLORS, membersOf } from "../../../shared/teams";
+import { TeamNaming } from "../../components/TeamNaming";
+import { TEAM_COLORS, isBeingNamed, membersOf } from "../../../shared/teams";
 import { seatedPlayers } from "../../../shared/waiting";
 import type { RoomState } from "../../../shared/state";
 import { HostBackToRoom, HostHeader } from "./HostHeader";
@@ -66,6 +67,11 @@ export function HostTeams({ room, countdown }: Props) {
                 border, so the ink outline stays unbroken on all four sides.
                 Same badge on every screen that names a team — see TeamBadge.
                 `--lg`: the panel is wide enough now to read at TV distance. */}
+            {/* Above the tab, on the line the panel keeps clear for it. A
+                rename lands on every screen at once when it is committed;
+                this is what stops it arriving out of nowhere, and it is the
+                visible half of the countdown that is not starting. */}
+            {isBeingNamed(room, team.id) && <TeamNaming size="lg" />}
             <TeamBadge name={team.name} colorIndex={team.colorIndex} className="team-badge--lg" />
             <ul className="team-panel__members">
               {membersOf(room, team.id).map((p) => (

@@ -89,6 +89,20 @@ export function membersOf(view: TeamView, teamId: TeamId): Player[] {
   return view.players.filter((p) => p.teamId === teamId);
 }
 
+/**
+ * Whether somebody has this team's name open in the editor right now.
+ *
+ * Connected members only, the same population `settle` holds the countdown
+ * for — a flag stranded on a locked phone holds nothing, so it must not be
+ * drawn on the TV either. Derived here rather than in the two screens that
+ * show it, so the tag and the hold can never disagree about who is typing.
+ */
+export function isBeingNamed(view: TeamView, teamId: TeamId): boolean {
+  return view.players.some(
+    (p) => p.teamId === teamId && p.connected && p.naming === true,
+  );
+}
+
 /** A PlayerId or a TeamId — whichever owns the word list being scored. */
 export type ScorerId = string;
 

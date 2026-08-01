@@ -1,6 +1,7 @@
 import { roomStore } from "../net/room";
 import { TeamBadge } from "./TeamBadge";
-import { membersOf } from "../../shared/teams";
+import { TeamNaming } from "./TeamNaming";
+import { isBeingNamed, membersOf } from "../../shared/teams";
 import type { PlayerId, RoomState } from "../../shared/state";
 
 type Props = {
@@ -39,6 +40,10 @@ export function TeamGrid({ room, playerId, dim }: Props) {
         const members = membersOf(room, team.id);
         return (
           <li key={team.id}>
+            {/* Outside the button, not in it: a `<button>` takes phrasing
+                content only, and this tag overhangs the tile's top edge
+                rather than sitting inside its box. */}
+            {isBeingNamed(room, team.id) && <TeamNaming size="sm" />}
             <button
               type="button"
               className={joined ? "team-tile team-tile--mine" : "team-tile"}
