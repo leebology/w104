@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { TICK_MS, countdownNumber } from "../../shared/countdown";
 
 /**
  * Whole seconds until `endsAt` on the server's clock. Ticks locally rather
@@ -37,6 +38,33 @@ export function useRemaining(
   }, [endsAt, offset, frozen]);
 
   return remaining;
+}
+
+/**
+ * The numeral on the Get Ready card — 5 down to 1, on the phase's own clock.
+ *
+ * A separate hook from `useRemaining` rather than a formatting of it, because
+ * a step is not a second (`TICK_MS`) and whole seconds cannot express one. The
+ * arithmetic itself lives in `shared/countdown.ts` so the TV and the phones
+ * cannot drift apart on it; this is only the ticking.
+ *
+ * There is no `pausedMs` argument, and there is nothing to add: `countdown` is
+ * not in `isHoldable` (see the debug menu notes), so this deadline is never
+ * stale the way a round's is.
+ */
+export function useCountdownNumber(endsAt: number, offset: number): number {
+  const compute = () => countdownNumber(endsAt - (Date.now() + offset));
+  const [count, setCount] = useState(compute);
+
+  useEffect(() => {
+    setCount(compute());
+    // A quarter of a step, so a number is never more than that late arriving.
+    const id = setInterval(() => setCount(compute()), TICK_MS / 4);
+    return () => clearInterval(id);
+    // `compute` excluded for the reason it is in `useRemaining` above.
+  }, [endsAt, offset]);
+
+  return count;
 }
 
 /** `m:ss` — the form the host timer's big numerals are drawn in. */

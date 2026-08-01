@@ -766,9 +766,11 @@ Entries render optimistically and reconcile on `entryAck` (a 30s round cannot
 wait on a round trip); `seq` is present only while an entry is unacked.
 
 **Every countdown in the game is one card** (`src/components/GetReady.tsx`), on
-the TV and on the phones, with no exceptions left — team select was the last
-screen wearing the old `.get-ready` plaque, which made the count a room reads
-from furthest away the one drawn smallest, and that class is gone. The lobby's
+the TV and on the phones, with no exceptions left — the phone's custom-ballot
+close was the last screen wearing the old `.get-ready` plaque, which made the
+count a room reads from furthest away the one drawn smallest, and that class is
+gone (its CSS had already gone with team select, so that one screen was drawing
+an unstyled line). The lobby's
 count into the vote, the one after voting closes, the one out of team select,
 the one between rounds and the one a latecomer is admitted on are the same
 moment, so they are the same
@@ -782,6 +784,19 @@ Which parts dim is stated per screen and is not incidental: the phones keep thei
 Ready button lit through the count, because un-readying is the room's brake on
 it, and team select dims its panels on both devices but not the Leave button or
 the host's Auto sort, which stay legal through the count.
+
+**The card is five numbers long and its step is not a second**
+(`shared/countdown.ts`). `COUNTDOWN_MS` is set by the lead-in clip, not by the
+design — so a card counting whole seconds opened on whatever that file's length
+rounded up to (8, at 7.4s) and would change what the room chants every time
+somebody swapped the music. `countdownNumber` divides the phase into
+`COUNTDOWN_TICKS` instead: always 5 down to 1, each held ~1.48s, clamped at both
+ends so clock skew can flash neither a 6 nor a 0. **`GetReady` therefore takes
+the deadline, not a number**, and counts itself through `useCountdownNumber` —
+eleven screens render it, and a screen doing its own arithmetic is a screen that
+can get it wrong. `useRemaining` is whole seconds and is deliberately not what
+feeds it; the voting screens still use it for their own clock, which is a real
+seconds clock.
 
 **The closed category vote is the one screen the card is laid out on rather than
 posed over** (`.host-voting__countdown`), and it is the exception that states the

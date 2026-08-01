@@ -1,4 +1,3 @@
-import { useRemaining } from "../../net/clock";
 import { computeStandings } from "../../../shared/standings";
 import { currentRound, matchComplete } from "../../../shared/state";
 import { GetReady } from "../../components/GetReady";
@@ -18,7 +17,6 @@ type Props = {
 
 export function HostStandings({ room, countdown }: Props) {
   const standings = computeStandings(rosterOf(room), room.history);
-  const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   const done = matchComplete(room);
   // On the final screen the round marker would otherwise read one past the
   // last round played, because `currentRound` names the round about to start.
@@ -119,7 +117,8 @@ export function HostStandings({ room, countdown }: Props) {
       {countdown && (
         <div className="host-standings__countdown">
           <GetReady
-            remaining={remaining}
+            endsAt={countdown.endsAt}
+            offset={countdown.offset}
             label={`ROUND ${currentRound(room)}`}
             onStop={() => roomStore.send({ type: "cancelStart" })}
           />

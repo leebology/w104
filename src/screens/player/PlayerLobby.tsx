@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useRemaining } from "../../net/clock";
 import { AVATARS, AvatarPicker } from "../../components/AvatarPicker";
 import { GetReady } from "../../components/GetReady";
 import { saveProfile } from "../../net/identity";
@@ -16,7 +15,6 @@ type Props = {
 
 export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
   const me = room.players.find((p) => p.id === playerId);
-  const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   const [name, setName] = useState(me?.name ?? "");
   const [emoji, setEmoji] = useState(me?.emoji ?? AVATARS[0]);
 
@@ -89,7 +87,7 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
       {/* The same card the TV is showing, over the same dimmed screen. */}
       {countdown && (
         <div className="countdown-pose">
-          <GetReady remaining={remaining} label="CATEGORY VOTE" />
+          <GetReady endsAt={countdown.endsAt} offset={countdown.offset} label="CATEGORY VOTE" />
         </div>
       )}
 

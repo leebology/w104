@@ -1,4 +1,3 @@
-import { useRemaining } from "../../net/clock";
 import { roomStore } from "../../net/room";
 import { GetReady } from "../../components/GetReady";
 import { TeamBadge } from "../../components/TeamBadge";
@@ -83,7 +82,6 @@ export function PlayerWaiting({ room, playerId, countdown }: Props) {
   const teams = teamsEnabled(room.settings);
   const mine = teamOf(room, playerId);
   const eligible = !teams || mine !== undefined;
-  const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   const done = room.phase.name === "standings" && matchComplete(room);
 
   // The card only goes up for somebody it is actually about. An ineligible
@@ -138,9 +136,13 @@ export function PlayerWaiting({ room, playerId, countdown }: Props) {
 
       {/* Literally the same card the TV and every other screen wear, with no
           Stop: that prop is the host's cancel and never appears on a phone. */}
-      {counting && (
+      {counting && countdown && (
         <div className="player-waiting__countdown">
-          <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
+          <GetReady
+            endsAt={countdown.endsAt}
+            offset={countdown.offset}
+            label={`ROUND ${currentRound(room)}`}
+          />
         </div>
       )}
 

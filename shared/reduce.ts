@@ -42,6 +42,10 @@ import { inWaitingRoom, isSeated, seatedPlayers } from "./waiting";
  * Rounded up from the clip rather than matched exactly: the hand-off to the
  * round's music fires off the clip's own `ended` event, so a little slack here
  * is inaudible, while too little clips the last note.
+ *
+ * **The card's numerals are not seconds of this.** It always counts five, and
+ * the step stretches to fill whatever this is — see `shared/countdown.ts`, and
+ * change nothing here to change that number.
  */
 export const COUNTDOWN_MS = 7_400;
 /** One voting window per match, whatever the round count. */

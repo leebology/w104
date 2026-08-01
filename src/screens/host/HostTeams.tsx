@@ -1,5 +1,4 @@
 import type { CSSProperties } from "react";
-import { useRemaining } from "../../net/clock";
 import { GetReady } from "../../components/GetReady";
 import { RoomChip } from "../../components/RoomChip";
 import { TeamBadge } from "../../components/TeamBadge";
@@ -28,7 +27,6 @@ type Props = {
  * offered throughout, countdown included.
  */
 export function HostTeams({ room, countdown }: Props) {
-  const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   // Seated players only. A latecomer without a team is not a straggler this
   // screen can do anything about — the host's Continue does not place them and
   // Auto sort does not deal them — so listing them here would say Continue is
@@ -133,7 +131,7 @@ export function HostTeams({ room, countdown }: Props) {
           (see `cancelStart`), and leaving a team on a phone is the brake. */}
       {countdown && (
         <div className="countdown-pose">
-          <GetReady remaining={remaining} label="CATEGORY VOTE" />
+          <GetReady endsAt={countdown.endsAt} offset={countdown.offset} label="CATEGORY VOTE" />
         </div>
       )}
     </main>

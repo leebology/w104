@@ -1,4 +1,3 @@
-import { useRemaining } from "../../net/clock";
 import { computeStandings } from "../../../shared/standings";
 import type { Standing } from "../../../shared/standings";
 import { currentRound, matchComplete } from "../../../shared/state";
@@ -53,7 +52,6 @@ function RoundBoxes({ badges, room }: { badges: number[]; room: RoomState }) {
 
 export function PlayerStandings({ room, playerId, countdown }: Props) {
   const standings = computeStandings(rosterOf(room), room.history);
-  const remaining = useRemaining(countdown?.endsAt ?? 0, countdown?.offset ?? 0);
   // Absent for someone who joined mid-match and has no standing yet.
   const me = standings.find((s) => s.members.includes(playerId));
   const ready = room.players.find((p) => p.id === playerId)?.ready ?? false;
@@ -226,7 +224,11 @@ export function PlayerStandings({ room, playerId, countdown }: Props) {
           drawn at the whistle, so there is nothing to name yet. */}
       {countdown && (
         <div className="player-standings__countdown">
-          <GetReady remaining={remaining} label={`ROUND ${currentRound(room)}`} />
+          <GetReady
+            endsAt={countdown.endsAt}
+            offset={countdown.offset}
+            label={`ROUND ${currentRound(room)}`}
+          />
         </div>
       )}
 
