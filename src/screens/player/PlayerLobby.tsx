@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { AboutLink, AboutPanel } from "../../components/About";
 import { AVATARS, AvatarPicker } from "../../components/AvatarPicker";
 import { GetReady } from "../../components/GetReady";
 import { saveProfile } from "../../net/identity";
@@ -17,6 +18,45 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
   const me = room.players.find((p) => p.id === playerId);
   const [name, setName] = useState(me?.name ?? "");
   const [emoji, setEmoji] = useState(me?.emoji ?? AVATARS[0]);
+
+  /**
+   * The about section below the two cards, and the scroll that shows it.
+   *
+   * The phone screen is locked to the visual viewport and never scrolls as a
+   * page, so this is a box that asked for it — the same arrangement the word
+   * list and the avatar strip have. Opening the section makes the box taller
+   * than its frame, which is what gives the thumb something to pull.
+   *
+   * Closing is the scroll, not a button: back at the top, with the name field
+   * in view, the section is behind you and the link comes back. That is why
+   * `armed` exists — the container is *at* the top for the frame between the
+   * state flip and the programmatic scroll leaving it, and an unguarded
+   * listener would read that as "scrolled back" and close what had not opened.
+   */
+  const [about, setAbout] = useState(false);
+  const scroller = useRef<HTMLDivElement>(null);
+  const armed = useRef(false);
+
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    if (!about) {
+      armed.current = false;
+      // Nothing may be left scrolled behind a closed section — the cards would
+      // come back sitting half off the top of the screen.
+      el.scrollTop = 0;
+      return;
+    }
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    const onScroll = () => {
+      // Armed by the trip down, so only a genuine return to the top closes it.
+      // A pixel of slack, the same reason the host roster's edge test has one.
+      if (el.scrollTop > 24) armed.current = true;
+      else if (armed.current && el.scrollTop <= 1) setAbout(false);
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, [about]);
 
   // No name/emoji were chosen before joining — a player picks their profile
   // here instead, and every edit is sent immediately rather than staged
@@ -57,32 +97,57 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
         <span className="room-chip__code">{room.code}</span>
       </div>
 
-      <section className={`card${dim}`}>
-        <label className="field__label" htmlFor="player-name">Your name</label>
-        <input
-          id="player-name"
-          className="field__input"
-          value={name}
-          placeholder="Type a name"
-          onChange={(e) => {
-            const next = e.target.value;
-            setName(next);
-            updateProfile(next, emoji);
-          }}
-          maxLength={20}
-        />
-      </section>
+      {/* The two profile cards and the about section share one scrolling box.
+          Both cards keep their place in it, so opening the section moves them
+          up rather than replacing them — a player mid-way through typing a
+          name has not lost the field, only pushed it above the fold. */}
+      <div
+        ref={scroller}
+        className={
+          about
+            ? "player-lobby__scroll player-lobby__scroll--about"
+            : "player-lobby__scroll"
+        }
+      >
+        <section className={`card${dim}`}>
+          <label className="field__label" htmlFor="player-name">Your name</label>
+          <input
+            id="player-name"
+            className="field__input"
+            value={name}
+            placeholder="Type a name"
+            onChange={(e) => {
+              const next = e.target.value;
+              setName(next);
+              updateProfile(next, emoji);
+            }}
+            maxLength={20}
+          />
+        </section>
 
-      <section className={`card${dim}`}>
-        <span className="field__label">Pick an avatar</span>
-        <AvatarPicker
-          value={emoji}
-          onChange={(next) => {
-            setEmoji(next);
-            updateProfile(name, next);
-          }}
-        />
-      </section>
+        <section className={`card${dim}`}>
+          <span className="field__label">Pick an avatar</span>
+          <AvatarPicker
+            value={emoji}
+            onChange={(next) => {
+              setEmoji(next);
+              updateProfile(name, next);
+            }}
+          />
+        </section>
+
+        {/* The link goes when the section it opens arrives: it says "there is
+            more below", and below is where you now are. Scrolling back to the
+            top brings both facts back at once. */}
+        {!about && (
+          <AboutLink
+            className={`about-link--player${dim}`}
+            onClick={() => setAbout(true)}
+          />
+        )}
+
+        {about && <AboutPanel variant="player" />}
+      </div>
 
       {/* The same card the TV is showing, over the same dimmed screen. */}
       {countdown && (

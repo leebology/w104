@@ -1001,6 +1001,39 @@ nothing: `id-card__head` is `flex: 0 0 auto` above a list that takes the rest, s
 a line that came and went would push a whole column of words down the instant
 somebody readied, mid-reveal, on the screen built not to move under the eye.
 
+**"About the game" is one body of copy in three containers**
+(`src/components/About.tsx`). The prose and the credits live in `AboutContent`
+and nowhere else; Landing, `HostLobby` and `PlayerLobby` each own only how it
+arrives on screen. Three things about it are load-bearing:
+
+- **`WIDE_ABOUT` in `Landing.tsx` mirrors a media query in `style.css`, and
+  the two must agree.** The link reads it to decide which gesture it is: wide
+  and landscape, it raises a flag and CSS slides the pair sideways; anything
+  else, there *is* no flag — the panel is already the second pane of a
+  scroll-snapping column and the link only scrolls to it. That is the whole of
+  "swipe up and down to show and hide it"; nothing listens for a gesture. So
+  the panel is always mounted on Landing — rendering it only when open would
+  leave a phone with nothing to scroll to.
+- **The host panel is a push, not a `Drawer`.** A drawer is an overlay over a
+  lobby that keeps its exact sizing, which is right for the settings and wrong
+  here: the room is still joining, so nothing may be covered. `.host-shell`
+  makes the lobby a flex child that narrows. It sends **no `setConfiguring`** —
+  reading the credits is not configuring the match, and holding the countdown
+  down for it would stop a room that is ready to play.
+- **On the player lobby the scroll *is* the close**, which is why the effect
+  keeps an `armed` ref. The container sits at scroll top for the frame between
+  the state flip and the programmatic scroll leaving it, and an unguarded
+  listener reads that as "scrolled back" and shuts what had not opened.
+  `.about-pane--player`'s `min-height` is what guarantees there is always
+  something to scroll, and therefore a way back.
+
+`TRACKS` in that file is the one place in the audio system where **the
+filename matters**: `src/audio/tracks.ts` globs the folders precisely so a
+track can be swapped by dragging a file in, and a swap that does not also
+update `TRACKS` leaves the wrong attribution on screen. A missing `by`/`from`
+renders nothing rather than a placeholder — an unverified credit does not
+discharge a licence obligation.
+
 Screens are a pure `switch` on `room.phase.name` in `HostView`/`PlayerView`.
 Both have an explicit `ReactElement` return type — **that annotation is what
 makes tsc flag an unhandled phase**; deleting a `default` branch alone does not
