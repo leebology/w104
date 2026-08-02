@@ -49,10 +49,13 @@ function pickUntriedCode(tried: ReadonlySet<string>): string {
 }
 
 export default function App() {
-  // Seeded from storage, so a page that was discarded while backgrounded — or
-  // simply refreshed — comes back into the room it was in rather than at the
-  // front door. The connect itself happens in the effect below; this only says
-  // which screen we are heading for.
+  // Seeded from storage, so a *host* page that was discarded while
+  // backgrounded — or simply refreshed — comes back into the room it opened
+  // rather than at the front door. Only ever a host: `getSession` refuses to
+  // hand back anything else, so a player who refreshes starts here at null and
+  // lands on Landing with the code boxes empty, which is the point. The
+  // connect itself happens in the effect below; this only says which screen we
+  // are heading for.
   const [session, setSession] = useState<Session | null>(() => getSession());
   /**
    * Whether the connection in flight is a resumed one rather than a fresh
@@ -77,12 +80,21 @@ export default function App() {
   const [endedNotice, setEndedNotice] =
     useState<"kicked" | "host-left" | "expired" | null>(null);
 
-  /** Bookkeeping every deliberate create or join does. */
+  /**
+   * Bookkeeping every deliberate create or join does.
+   *
+   * A host is written down; a player *clears* what is written, and that is not
+   * the same as skipping the write. A device that hosted a room and then joined
+   * a different one as a player would otherwise still be carrying the old host
+   * code, and its next refresh would reclaim a room it has walked away from.
+   * Joining is this device saying it is done with whatever it had.
+   */
   const newSession = (next: Session) => {
     resuming.current = false;
     setEndedNotice(null);
     setSession(next);
-    saveSession(next);
+    if (next.role === "host") saveSession({ code: next.code, role: "host" });
+    else clearSession();
   };
   // A bad code or a mid-round join attempt shown inline on the Join screen
   // itself, not as a separate terminal ErrorScreen the player has to back out
@@ -93,32 +105,27 @@ export default function App() {
   const client = useRoom();
 
   /**
-   * The resume itself, once, on a cold start.
+   * The host's reclaim, once, on a cold start.
    *
    * Deliberately an effect and not part of the initializer above: `connect`
    * opens a socket, which is not something a render is allowed to do. The
    * server is the only gate on whether the room is still there — if it is not,
    * the failure effect below turns this into a trip back to Landing with the
    * game reported ended.
+   *
+   * There is no player branch, and its absence is the feature. A phone that
+   * refreshes gets Landing and an empty set of code boxes: it is the device
+   * somebody picks up to join *the next* room, and it keeps its seat in the old
+   * one regardless — `playerId` is stable, so a player who did mean to come
+   * back types the same code and finds their words still there.
    */
   useEffect(() => {
     const saved = getSession();
     if (!saved) return;
-    if (saved.role === "host") {
-      // No `intent: "create"`: this is a reclaim of a room that already exists,
-      // and creating would be how a host who slept through the reap silently
-      // opens an empty second room on the same code.
-      roomStore.connect({ code: saved.code, playerId: getPlayerId(), role: "host" });
-      return;
-    }
-    const profile = getProfile();
-    roomStore.connect({
-      code: saved.code,
-      playerId: getPlayerId(),
-      role: "player",
-      name: profile.name,
-      emoji: profile.emoji || AVATARS[0],
-    });
+    // No `intent: "create"`: this is a reclaim of a room that already exists,
+    // and creating would be how a host who slept through the reap silently
+    // opens an empty second room on the same code.
+    roomStore.connect({ code: saved.code, playerId: getPlayerId(), role: "host" });
     // Mount only. `session` is already seeded from the same storage read, and
     // re-running this on any later change would re-open the socket underneath
     // a game in progress.

@@ -363,19 +363,35 @@ Known gap, pre-existing: kicking a player who is *already disconnected* records
 no sessions, so their next connect finds an empty array, matches nothing, and
 lifts the ban immediately.
 
-**The room this device is in is persisted too** (`getSession` in
-`src/net/identity.ts`), and `App` seeds its `session` state from it and
-reconnects on mount. That is what survives a *discarded page*: a locked phone
-keeps its socket and partysocket retries on its own, but iOS is free to throw
-the tab away, and a discarded tab comes back as a cold load with no React state
-at all. `RoomStore.connect` also re-dials on `visibilitychange`/`pageshow`/
-`online`, because a suspended tab's retry timer fires late and on a backoff
-computed while nobody was looking.
+**The room this device is in is persisted too, and only for a host**
+(`getSession` in `src/net/identity.ts`), and `App` seeds its `session` state
+from it and reconnects on mount. That is what survives a *discarded page*: a
+locked TV keeps its socket and partysocket retries on its own, but a browser is
+free to throw the tab away, and a discarded tab comes back as a cold load with
+no React state at all — which without this strands a room full of people on a
+screen nothing is driving. `RoomStore.connect` also re-dials on
+`visibilitychange`/`pageshow`/`online`, because a suspended tab's retry timer
+fires late and on a backoff computed while nobody was looking. That re-dial is
+within a live page and is untouched by any of this: a locked phone still keeps
+its seat and its socket, and only a genuine reload goes to Landing.
 
+- **A player refreshing always lands on Landing, code boxes empty.** The phone
+  is the device somebody picks up to join *the next* room, so resuming into the
+  last one is the app making that call for them. `SavedSession["role"]` is
+  narrowed to `"host"` so a player session is *unwritable* rather than
+  written-and-ignored, `getSession` refuses one off an older build's key
+  anyway, and `newSession` **clears** on a player join rather than skipping the
+  write — a device that hosted and then joined elsewhere would otherwise still
+  carry the old host code and reclaim it on the next refresh. Nothing is lost
+  by the trip: `playerId` is stable and a disconnect leaves the seat greyed out
+  rather than empty, so retyping the same code returns the player to their own
+  words.
 - **A failed resume is not a failed join.** Nobody typed the code, so
   `no-such-room` sends the device to Landing with the ended banner rather than
-  an error beside the code boxes — the same trip a host now makes when their own
-  room is reaped out from under them, which used to be a dead-end `ErrorScreen`.
+  an error beside the code boxes — the trip a host makes when their own room is
+  reaped out from under them, which used to be a dead-end `ErrorScreen`. With
+  the resume host-only this is now the *only* way `resuming.current` is ever
+  true, and the `typed` test in that effect reads correctly either way.
 - **A resumed host connect carries no `intent: "create"`,** or a host who slept
   through the reap would silently open a second empty room on the same code. The
   connect gate refuses a `role=host` connect to a room with a different `hostId`
