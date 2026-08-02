@@ -45,11 +45,19 @@
   // account sharing this number shares its counters. Staging therefore uses a
   // DIFFERENT one below, or an afternoon of phone testing would spend the
   // budget real players are using. `period` accepts only 10 or 60.
+  //
+  // 180/min, raised with `MAX_PLAYERS` from 10 to 30. The budget has to sit
+  // above what a whole room behind one household NAT can need, and the room
+  // tripled — at the old 60 a party of thirty phones had two connects each per
+  // minute to cover a join plus every partysocket reconnect flaky wifi asks
+  // for, and the people it locked out would be the ones with the worst signal.
+  // Still three orders of magnitude under a walk of the ~800-word code space,
+  // which is the only thing this is defending against.
   "ratelimits": [
     {
       "name": "JOIN_LIMITER",
       "namespace_id": "1001",
-      "simple": { "limit": 60, "period": 60 }
+      "simple": { "limit": 180, "period": 60 }
     }
   ],
   // `new_sqlite_classes` (not `new_classes`) is required for Durable Objects on
@@ -88,7 +96,7 @@
         {
           "name": "JOIN_LIMITER",
           "namespace_id": "1002",
-          "simple": { "limit": 60, "period": 60 }
+          "simple": { "limit": 180, "period": 60 }
         }
       ]
     }

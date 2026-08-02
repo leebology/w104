@@ -723,10 +723,14 @@ can see a crowded screen.
   every real player, which is what keeps it off the persistence-migration list.
   Everything downstream — `rosterOf`, the reveal grid, the podium, auto-fill —
   treats a bot as a seat with no special case, and that is the feature.
-- **`MAX_BOTS` is double `MAX_PLAYERS`, and bots hold no seat against the cap.**
-  The join gate counts humans only, in `reduce` *and* at the connect gate, so a
-  room dressed with twenty of them still takes real phones. The panel says which
-  layouts are over their design limit rather than leaving it to look like a bug.
+- **`MAX_BOTS` is 20 and bots hold no seat against the cap.** The join gate
+  counts humans only, in `reduce` *and* at the connect gate, so a room dressed
+  with twenty of them still takes real phones. Twenty was once "double
+  `MAX_PLAYERS`"; that reading died when the cap went to 30, and the bench
+  deliberately did not follow it — the layouts it exists to look at all break
+  by ten, and `BOT_ROSTER` is exactly twenty names long, so raising it means
+  writing more. The panel says which layouts are over their design limit rather
+  than leaving it to look like a bug.
 - **`debugBots` sets the population absolutely, and is *not* exempt from
   `settle`** — it needs no exemption, because inert scenery gives `settle`
   nothing to open or tear down. Trimmed bots take their `entries` with them, the

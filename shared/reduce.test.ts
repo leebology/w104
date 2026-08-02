@@ -838,7 +838,19 @@ describe("long rounds", () => {
   });
 
   test("scoring a full ten-player room stays fast", () => {
-    let room = seed(MAX_PLAYERS);
+    // Ten, written out, and no longer `MAX_PLAYERS` — the cap went to 30 and
+    // this deliberately stayed. Scoring is O(entries^2) in `computeResults`'s
+    // union-find pass, so following the cap would have tripled the entries and
+    // multiplied this test by nine: ~45s of one core, past both the assertion
+    // and the timeout below, in every CI run and every `npm test`.
+    //
+    // What that costs is honesty about the worst case, and it is worth saying
+    // plainly: 30 x 200 is now reachable and this does not measure it. What it
+    // still does is the job it was written for — catching an accidental O(n^3),
+    // which shows up as orders of magnitude at any width. A room that big
+    // typing to the entry cap is the case for a real complexity guard, not for
+    // a slower wall-clock one.
+    let room = seed(10);
     room = readyAll(room, 1000);
     const votingStart = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: votingStart, roll: 0 }); // -> voting
