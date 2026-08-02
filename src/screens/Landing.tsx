@@ -103,6 +103,7 @@ export function Landing({ onCreate, onJoin, joinError }: Props) {
    * mobile half, and the link's job differs accordingly — see `showAbout`.
    */
   const [about, setAbout] = useState(false);
+  const shell = useRef<HTMLDivElement>(null);
   const aboutPane = useRef<HTMLDivElement>(null);
   // Guards against re-firing for the same completed code — e.g. if this
   // component re-renders for an unrelated reason while the code is still
@@ -143,12 +144,28 @@ export function Landing({ onCreate, onJoin, joinError }: Props) {
     aboutPane.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
+  /**
+   * The ✕, which both layouts now carry — and which therefore has to undo
+   * whichever of the two gestures got here. Stacked, that is the scroll back
+   * up to the main screen; the panel is a pane, not a thing that closes.
+   */
+  const hideAbout = () => {
+    if (window.matchMedia(WIDE_ABOUT).matches) {
+      setAbout(false);
+      return;
+    }
+    shell.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
   return (
     // The shell owns the viewport — the fixed, keyboard-aware sizing that was
     // `.screen--locked`'s job on the main element until there was a second
     // pane to hold beside (or below) it. `.landing` itself is now a pane that
     // fills the shell rather than a screen that fills the window.
-    <div className={about ? "landing-shell landing-shell--about" : "landing-shell"}>
+    <div
+      ref={shell}
+      className={about ? "landing-shell landing-shell--about" : "landing-shell"}
+    >
       <main className="screen screen--mobile landing">
         <Wordmark />
 
@@ -171,13 +188,11 @@ export function Landing({ onCreate, onJoin, joinError }: Props) {
           </button>
         </section>
 
-        {/* One line in the bottom-left corner: the build, then the way in to
-            what it is. Same quiet type for both — the underline is what tells a
-            label apart from a control at this size. */}
-        <div className="landing__footline">
-          <span className="version">v{__APP_VERSION__}</span>
-          <AboutLink onClick={showAbout} />
-        </div>
+        {/* The two ends of the bottom edge: the way in on the left, the build
+            on the right. Same quiet type for both — the underline is what
+            tells a control from a label at this size. */}
+        <AboutLink className="about-link--landing" onClick={showAbout} />
+        <span className="version">v{__APP_VERSION__}</span>
       </main>
 
       {/* Always mounted, in both layouts. Wide, it is parked off the right
@@ -185,7 +200,7 @@ export function Landing({ onCreate, onJoin, joinError }: Props) {
           scroll-snaps between the two. Rendering it only when open would mean
           nothing to scroll to on a phone, where there is no open. */}
       <div className="landing-shell__about" ref={aboutPane}>
-        <AboutPanel variant="landing" onClose={() => setAbout(false)} />
+        <AboutPanel variant="landing" onClose={hideAbout} />
       </div>
     </div>
   );

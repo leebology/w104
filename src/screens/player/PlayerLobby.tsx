@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { AboutLink, AboutPanel } from "../../components/About";
+import { ABOUT_FADE_MS, AboutLink, AboutPanel } from "../../components/About";
 import { AVATARS, AvatarPicker } from "../../components/AvatarPicker";
 import { GetReady } from "../../components/GetReady";
 import { saveProfile } from "../../net/identity";
@@ -27,36 +27,86 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
    * list and the avatar strip have. Opening the section makes the box taller
    * than its frame, which is what gives the thumb something to pull.
    *
-   * Closing is the scroll, not a button: back at the top, with the name field
-   * in view, the section is behind you and the link comes back. That is why
-   * `armed` exists — the container is *at* the top for the frame between the
-   * state flip and the programmatic scroll leaving it, and an unguarded
-   * listener would read that as "scrolled back" and close what had not opened.
+   * There are two ways out — the ✕ and scrolling back to the top — and both go
+   * through `closeAbout`, because the panel does not vanish: it fades, and
+   * that means it outlives the flag that opened it. `leaving` is what keeps it
+   * mounted for the fade; `about` alone decides whether the link is up.
    */
   const [about, setAbout] = useState(false);
+  const [leaving, setLeaving] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
+  /**
+   * Whether the trip *down* has happened yet.
+   *
+   * The container is at scroll top for the frame between the state flip and
+   * the programmatic scroll leaving it, and an unguarded listener would read
+   * that as "scrolled back" and close what had not opened.
+   */
   const armed = useRef(false);
+  // Read by the scroll listener, which is attached once and must not be
+  // re-subscribed on every state change — a mid-scroll re-attach would drop
+  // the events the close is derived from.
+  const openRef = useRef(false);
+  openRef.current = about;
+  const closingRef = useRef(false);
 
+  /** Fades the panel out and takes the box back to the top with it. */
+  const closeAbout = () => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setLeaving(true);
+    scroller.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // The fade's own length, after which the panel is really gone. Nothing may
+  // be left scrolled behind a closed section — the smooth scroll above has
+  // arrived by now, and this is the backstop for a browser that skipped it.
+  useEffect(() => {
+    if (!leaving) return;
+    const t = setTimeout(() => {
+      setLeaving(false);
+      setAbout(false);
+      armed.current = false;
+      closingRef.current = false;
+      if (scroller.current) scroller.current.scrollTop = 0;
+    }, ABOUT_FADE_MS);
+    return () => clearTimeout(t);
+  }, [leaving]);
+
+  // Attached once, for the lifetime of the screen: everything it needs to
+  // decide with is a ref.
   useEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    if (!about) {
-      armed.current = false;
-      // Nothing may be left scrolled behind a closed section — the cards would
-      // come back sitting half off the top of the screen.
-      el.scrollTop = 0;
-      return;
-    }
-    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
     const onScroll = () => {
-      // Armed by the trip down, so only a genuine return to the top closes it.
+      if (!openRef.current || closingRef.current) return;
       // A pixel of slack, the same reason the host roster's edge test has one.
       if (el.scrollTop > 24) armed.current = true;
-      else if (armed.current && el.scrollTop <= 1) setAbout(false);
+      else if (armed.current && el.scrollTop <= 1) closeAbout();
     };
     el.addEventListener("scroll", onScroll, { passive: true });
     return () => el.removeEventListener("scroll", onScroll);
-  }, [about]);
+  }, []);
+
+  /**
+   * Opens it, and lands the panel's *top* edge at the top of the box.
+   *
+   * Not the bottom of the scroll: the panel is the thing being opened, so the
+   * screen should arrive at the start of it. Measured off the two rects rather
+   * than `offsetTop`, which is relative to the nearest positioned ancestor and
+   * is not this box.
+   */
+  const openAbout = () => {
+    setAbout(true);
+    requestAnimationFrame(() => {
+      const el = scroller.current;
+      const pane = el?.querySelector(".about-pane");
+      if (!el || !pane) return;
+      const top =
+        el.scrollTop + pane.getBoundingClientRect().top - el.getBoundingClientRect().top;
+      el.scrollTo({ top, behavior: "smooth" });
+    });
+  };
 
   // No name/emoji were chosen before joining — a player picks their profile
   // here instead, and every edit is sent immediately rather than staged
@@ -140,13 +190,12 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
             more below", and below is where you now are. Scrolling back to the
             top brings both facts back at once. */}
         {!about && (
-          <AboutLink
-            className={`about-link--player${dim}`}
-            onClick={() => setAbout(true)}
-          />
+          <AboutLink className={`about-link--player${dim}`} onClick={openAbout} />
         )}
 
-        {about && <AboutPanel variant="player" />}
+        {about && (
+          <AboutPanel variant="player" leaving={leaving} onClose={closeAbout} />
+        )}
       </div>
 
       {/* The same card the TV is showing, over the same dimmed screen. */}

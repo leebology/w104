@@ -1020,12 +1020,18 @@ arrives on screen. Three things about it are load-bearing:
   makes the lobby a flex child that narrows. It sends **no `setConfiguring`** —
   reading the credits is not configuring the match, and holding the countdown
   down for it would stop a room that is ready to play.
-- **On the player lobby the scroll *is* the close**, which is why the effect
-  keeps an `armed` ref. The container sits at scroll top for the frame between
-  the state flip and the programmatic scroll leaving it, and an unguarded
-  listener reads that as "scrolled back" and shuts what had not opened.
-  `.about-pane--player`'s `min-height` is what guarantees there is always
-  something to scroll, and therefore a way back.
+- **On the player lobby scrolling back to the top is a close**, which is why
+  the effect keeps an `armed` ref. The container sits at scroll top for the
+  frame between the state flip and the programmatic scroll leaving it, and an
+  unguarded listener reads that as "scrolled back" and shuts what had not
+  opened. `.about-pane--player`'s `min-height: 100%` does two jobs: opening
+  lands the panel's *top* edge at the top of the frame rather than dropping to
+  the bottom of the scroll, and there is always something left to scroll, so
+  there is always a way back. That panel is the only one that **fades**, so it
+  outlives the flag that opened it — `leaving` keeps it mounted for exactly
+  `ABOUT_FADE_MS`, which is **mirrored by `aboutFade` in style.css**. A
+  stylesheet that disagreed would either cut the fade off or leave a fully
+  transparent panel holding the scroll box open behind it.
 
 `TRACKS` in that file is the one place in the audio system where **the
 filename matters**: `src/audio/tracks.ts` globs the folders precisely so a

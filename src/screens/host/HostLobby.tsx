@@ -188,14 +188,12 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
       >
         Game settings
       </button>
-      {/* Under the settings tab, in the same corner. Text on the field rather
-          than a second tab: two pills side by side in the lobby's corner would
-          read as two halves of one decision, and this one leads nowhere near
-          the match. */}
-      <AboutLink
-        className="about-link--host"
-        onClick={() => setAbout(true)}
-      />
+      {/* Opposite corner from the settings tab, and text on the field rather
+          than a second tab: two pills in the same corner would read as two
+          halves of one decision, and this one leads nowhere near the match.
+          The left is also the side the panel comes in from, so the link and
+          what it opens are on the same side of the screen. */}
+      <AboutLink className="about-link--host" onClick={() => setAbout(true)} />
 
       {/* The footer keeps its shape through the count rather than swapping its
           contents: it steps back with the rest of the screen and the countdown

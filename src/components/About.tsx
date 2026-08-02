@@ -157,6 +157,16 @@ export function AboutContent() {
   );
 }
 
+/**
+ * How long the panel takes to fade in or out, in milliseconds.
+ *
+ * **Mirrored by `aboutFade` in style.css.** The player lobby holds the panel
+ * mounted for exactly this long after it is closed, so a stylesheet that
+ * disagreed would either cut the fade off or leave a fully transparent panel
+ * holding the scroll box open after it.
+ */
+export const ABOUT_FADE_MS = 240;
+
 type PanelProps = {
   /**
    * Which placement this is. Only ever a class hook — the copy is identical
@@ -164,12 +174,13 @@ type PanelProps = {
    * arrives on screen.
    */
   variant: "landing" | "host" | "player";
-  /**
-   * Renders the ✕. Omitted where the panel has no close button of its own
-   * because something else dismisses it — the player lobby, where scrolling
-   * back to the top is the close.
-   */
+  /** Renders the ✕ in the panel's top-right corner. */
   onClose?: () => void;
+  /**
+   * Playing its fade-out and about to be unmounted. Only the player lobby has
+   * one to play — the other two either slide or unmount outright.
+   */
+  leaving?: boolean;
 };
 
 /**
@@ -179,9 +190,11 @@ type PanelProps = {
  * label, so the section announces as what it is on the two screens where it
  * shares the viewport with the thing it opened from.
  */
-export function AboutPanel({ variant, onClose }: PanelProps) {
+export function AboutPanel({ variant, onClose, leaving }: PanelProps) {
+  const classes = ["about-pane", `about-pane--${variant}`];
+  if (leaving) classes.push("about-pane--leaving");
   return (
-    <aside className={`about-pane about-pane--${variant}`}>
+    <aside className={classes.join(" ")}>
       <div className="about-pane__card">
         <header className="about-pane__head">
           <h2 className="about-pane__title">About the game</h2>

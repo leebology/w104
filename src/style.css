@@ -470,9 +470,11 @@ ul, ol { list-style: none; }
   margin-bottom: 12px;
 }
 
-/* Sits on `.landing__footline` — which owns the corner — rather than being
-   positioned itself: it shares that line with the about link now. */
+/* The other end of Landing's bottom edge from the about link. */
 .version {
+  position: absolute;
+  right: 22px;
+  bottom: 16px;
   font-size: 11px;
   letter-spacing: 0.12em;
   color: var(--cream-dim);
@@ -7518,18 +7520,18 @@ ul, ol { list-style: none; }
 
 .landing-shell__about .about-pane__card { flex: 1; }
 
-/* No ✕ in the stacked layout: the scroll that brought the pane up is the
-   scroll that takes it away, and a close button that only scrolls is a second
-   control for a gesture the thumb is already making. */
-.landing-shell__about .about-pane__close { display: none; }
+/* The ✕ is on both layouts. In the stacked one it does not close anything —
+   there is nothing closed to be — it scrolls back to the main screen, which
+   is the same trip the thumb would make. `hideAbout` in Landing.tsx is what
+   knows the difference. */
 
-.landing__footline {
+/* The two ends of the bottom edge — the way in on the left, the build on the
+   right. Both are pinned to the screen rather than sitting in its flex column,
+   which has the cards in it. */
+.about-link--landing {
   position: absolute;
   left: 22px;
   bottom: 16px;
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
 }
 
 /* Side by side.
@@ -7548,7 +7550,7 @@ ul, ol { list-style: none; }
   }
 
   /* The main screen keeps its own centred width and slides half the panel's
-     width to the left, which lands it centred in what is left of the shell. */
+     width to the right, which lands it centred in what is left of the shell. */
   .landing-shell > .landing {
     flex: 0 0 auto;
     width: 100%;
@@ -7558,21 +7560,21 @@ ul, ol { list-style: none; }
   }
 
   .landing-shell--about > .landing {
-    transform: translateX(calc(var(--about-w) / -2));
+    transform: translateX(calc(var(--about-w) / 2));
   }
 
-  /* Out of the flex flow entirely, parked on the right edge — in flow it
+  /* Out of the flex flow entirely, parked off the left edge — in flow it
      would push the main screen rather than let it slide, and its arrival
      would be a width change instead of a movement. */
   .landing-shell__about {
     position: absolute;
     top: 0;
-    right: 0;
+    left: 0;
     height: 100%;
     width: var(--about-w);
     flex: none;
-    padding: 26px 26px 26px 0;
-    transform: translateX(100%);
+    padding: 26px 0 26px 26px;
+    transform: translateX(-100%);
     transition: transform 0.42s cubic-bezier(0.22, 0.61, 0.36, 1);
   }
 
@@ -7588,8 +7590,6 @@ ul, ol { list-style: none; }
     max-width: none;
     margin: 0;
   }
-
-  .landing-shell__about .about-pane__close { display: flex; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7615,39 +7615,38 @@ ul, ol { list-style: none; }
   height: 100%;
 }
 
+/* `order`, not DOM order: the panel is rendered after the lobby so that its
+   absence is the plain case, and it comes in on the same side as the link
+   that opens it. */
 .about-pane--host {
+  order: -1;
   flex: 0 0 auto;
   display: flex;
   width: min(400px, 34vw);
   min-height: 0;
-  padding: 26px 26px 26px 0;
+  padding: 26px 0 26px 26px;
   animation: aboutPushIn 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
 .about-pane--host .about-pane__card { flex: 1; }
 
 @keyframes aboutPushIn {
-  from { opacity: 0; transform: translateX(16px); }
+  from { opacity: 0; transform: translateX(-16px); }
   to { opacity: 1; transform: none; }
 }
 
-/* Under the Game settings tab, which moves up to make room. Both are pinned
-   to the lobby's own corner, so both travel with it when the panel squeezes
-   the lobby narrower. */
-.host-lobby .drawer-tab--right { bottom: 54px; }
-
+/* The lobby's other bottom corner from the Game settings tab. */
 .about-link--host {
   position: absolute;
-  right: 26px;
+  left: 26px;
   bottom: 26px;
   z-index: 5;
   font-size: 12px;
 }
 
 @media (max-width: 900px) {
-  .about-pane--host { width: min(320px, 42vw); padding: 16px 16px 16px 0; }
-  .host-lobby .drawer-tab--right { bottom: 48px; }
-  .about-link--host { right: 16px; bottom: 22px; }
+  .about-pane--host { width: min(320px, 42vw); padding: 16px 0 16px 16px; }
+  .about-link--host { left: 16px; bottom: 22px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -7681,21 +7680,48 @@ ul, ol { list-style: none; }
   scrollbar-color: var(--scroll-thumb) transparent;
 }
 
-/* Its own line under the avatar card, left-aligned with it. */
+/* Its own line under the avatar card. Indented to the card's own text rather
+   than to its edge — it is a caption on the pair above it, not a control on
+   the field. */
 .about-link--player {
   align-self: flex-start;
+  padding-left: 12px;
   font-size: 12px;
   margin-top: -2px;
 }
 
-/* Tall enough that opening it always leaves something to scroll, which is
-   what makes the return trip — and therefore the close — possible on a
-   screen where the cards alone already fit. */
+/* Fills the box, so opening it lands the panel's top edge at the top of the
+   frame with the whole panel below — and so there is always something to
+   scroll, which is what makes the return trip, and therefore the close,
+   possible on a screen where the two cards alone already fit.
+
+   `aboutFade` is mirrored by `ABOUT_FADE_MS` in src/components/About.tsx,
+   which is how long the panel is held mounted after it is closed. */
 .about-pane--player {
   display: flex;
   flex: 0 0 auto;
-  min-height: 78%;
+  min-height: 100%;
   padding-bottom: 4px;
+  animation: aboutFade 240ms ease-out both;
+}
+
+.about-pane--player.about-pane--leaving {
+  animation: aboutFade 240ms ease-in both reverse;
+}
+
+@keyframes aboutFade {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-pane--player { animation-name: aboutFadeFlat; }
+  .about-pane--player.about-pane--leaving { animation-name: aboutFadeFlat; }
+}
+
+@keyframes aboutFadeFlat {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .about-pane--player .about-pane__card { flex: 1; }
