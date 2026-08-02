@@ -26,9 +26,16 @@ export const LEAVE_STAGGER = 46;
 /**
  * How long the outgoing scoring screen stays mounted, worst case.
  *
- * Ten columns is `MAX_PLAYERS`, so this covers the widest board the game can
- * make. A smaller room finishes early and simply holds an empty transparent
- * layer for the remainder — cheaper than measuring, and invisible either way.
+ * Ten columns, which is the results grid's design limit rather than
+ * `MAX_PLAYERS` — the cap is 30 now and the grid balances a room that size
+ * into fifteen columns. Deliberately not raised with the cap: this figure only
+ * holds an empty transparent layer over the arriving standings, so being short
+ * on a crowded board costs the last few cards their tail and being long costs
+ * every board an extra second of dead overlay. Ten is where the stagger was
+ * tuned and where all but the biggest rooms sit.
+ *
+ * A smaller room finishes early and simply holds that layer for the remainder —
+ * cheaper than measuring, and invisible either way.
  */
 export const LEAVE_MS = LEAVE_CARD_MS + 9 * LEAVE_STAGGER;
 

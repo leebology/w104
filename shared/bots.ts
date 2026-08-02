@@ -21,9 +21,15 @@ import type { Team } from "./teams";
 import { assignStragglers } from "./teams";
 
 /**
- * Deliberately double MAX_PLAYERS. Twenty seats is past anything a real room
- * can reach, which is the point: the layouts that break under crowding are the
- * ones worth being able to look at on purpose.
+ * Twenty seats of scenery, and the roster below is exactly that long — the two
+ * are one number, so raising this means writing more names.
+ *
+ * It used to be stated as "double MAX_PLAYERS", and that reading is dead: the
+ * cap is 30 now and this deliberately did not follow it there. What the bench
+ * is for is looking at the layouts that break under crowding, and every one of
+ * them breaks well before twenty — the results grid's design limit is ten. A
+ * bench that could fill a thirty-player room would be forty more fellowship
+ * names bought to reach a case the first twenty already show.
  */
 export const MAX_BOTS = 20;
 

@@ -420,9 +420,10 @@ function BotBench({ state }: { state: ReturnType<typeof useRoom> }) {
           {bots.map((b) => `${b.emoji} ${b.name}`).join("  ")}
         </p>
       )}
-      {/* The cap is deliberately past MAX_PLAYERS, and the results grid is laid
-          out for ten columns — so say which way it will break rather than
-          leaving it to look like a bug. */}
+      {/* The bench stops short of MAX_PLAYERS (30) on purpose — see MAX_BOTS —
+          and the results grid is laid out for ten columns, well short of both.
+          Say which way it will break rather than leaving it to look like a
+          bug. */}
       <p className="debug-section__detail">
         Past 10 the round and results layouts are over their design limit.
       </p>

@@ -71,11 +71,26 @@ export const MAX_ENTRIES = 200;
 export const MIN_FLUSH_LEN = 5;
 export const MIN_PLAYERS = 2;
 /**
- * The host results screen lays players out as at most two rows of five, and
- * past ten columns the words stop being readable across a room. The cap is a
- * legibility limit, not a capacity one.
+ * How many humans a room seats. Bots do not count against it — the join gate
+ * filters by `isHuman`, here and at the connect gate in `party/server.ts`.
+ *
+ * This used to be 10, and the 10 was a *legibility* limit rather than a
+ * capacity one: the host results screen lays scorers out as at most two rows
+ * of five, and past ten columns the words stop being readable across a room.
+ * That layout limit has not moved — `columnsFor` in `HostScoring` still
+ * balances into two rows, so a thirty-player room draws fifteen columns and
+ * the words on the TV get small. What moved is the decision about which of the
+ * two limits the *cap* should be: a party is whoever is in the room, and
+ * turning the eleventh person away is worse than a crowded board. Teams are
+ * the answer to the crowding — ten teams of three read exactly as ten columns
+ * always did.
+ *
+ * Two things are sized off this and must be re-read if it moves again: the
+ * `JOIN_LIMITER` budget in `wrangler.jsonc` (this many phones plus a host can
+ * share one address behind household NAT) and `LEAVE_MS` in
+ * `src/scoringleave.ts` (the widest board's stagger).
  */
-export const MAX_PLAYERS = 10;
+export const MAX_PLAYERS = 30;
 /**
  * Re-exported, not re-declared: the bounds now live beside the descriptors
  * that quote them in `shared/gamemodes.ts`. Every existing import site and
