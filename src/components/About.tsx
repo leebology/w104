@@ -40,7 +40,7 @@ type Track = {
   /** The track as it should be credited. */
   title: string;
   /** Where in the game it plays, in words a player would recognise. */
-  where: string;
+  license?: string;
   /** Artist. Omitted until confirmed. */
   by?: string;
   /** Library or site it came from. Omitted until confirmed. */
@@ -48,12 +48,11 @@ type Track = {
 };
 
 const TRACKS: Track[] = [
-  { title: "Awesome Call", where: "The room and team select" },
-  { title: "Game-main", where: "The category vote and the round" },
-  { title: "Game-lead", where: "The countdown into a round" },
-  { title: "Podcast Outro Stinger", where: "Time's up" },
-  { title: "Boogie Party", where: "The scoring reveal and the standings" },
-  { title: "Brass Funk Jingle", where: "The final podium" },
+  { title: "Awesome Call", by: "Kevin MacLeod (incompetech.com)", license: "Licensed under Creative Commons: By Attribution 4.0" },
+  { title: "Private Eye", by: "Kevin MacLeod (incompetech.com)", license: "Licensed under Creative Commons: By Attribution 4.0" },
+  { title: "Boogie Party", by: "Kevin MacLeod (incompetech.com)", license: "Licensed under Creative Commons: By Attribution 4.0" },
+  { title: "Brass Funk Jingle", by: "SergeQuadrado via Pixabay" },
+  { title: "Podcast Outro Stinger", by: "openMindAudio via Pixabay" },
 ];
 
 function TrackCredit({ track }: { track: Track }) {
@@ -62,7 +61,7 @@ function TrackCredit({ track }: { track: Track }) {
     <li className="about__credit">
       <span className="about__credit-title">{track.title}</span>
       <span className="about__credit-meta">
-        {track.where}
+        {track.license}
         {attribution ? ` — ${attribution}` : ""}
       </span>
     </li>
@@ -86,43 +85,45 @@ function AboutSection({ title, children }: { title: string; children: ReactNode 
 export function AboutContent() {
   return (
     <div className="about">
-      <AboutSection title="What this is">
+      {/* <AboutSection title="What this is"> */}
         <p className="about__p">
-          Ok, Name One is a party game for a room and their phones. One device
-          — a TV, a laptop, anything with a big screen — opens a room and shows
-          it; everyone else joins from a phone. The room votes on the
-          categories, then races to name things in them before the timer runs
-          out.
+          Created by Aidan, Akshay, and Liam (and Claude)
         </p>
-        <p className="about__p">
+        {/* <p className="about__p">
           The catch is that you only score for a word <em>nobody else wrote</em>.
           The obvious answer is the one everybody has. Being right is not the
           game; being the only one who was is.
+        </p> */}
+      {/* </AboutSection> */}
+
+      <AboutSection title="How to play">
+        <p className="about__p">
+          1. On a laptop, create a new room and screenshare to a TV so everyone can see it. Players will join this room on their phone.
+        </p>
+        <p className="about__p">
+          2. Start the game and vote on a category.
+        </p>
+        <p className="about__p">
+          3. When the game begins, type in as many words in that category as you can within the time limit. Highest number of unique words wins!
         </p>
       </AboutSection>
 
-      <AboutSection title="How it was built">
+      <AboutSection title="Why does this exist">
         <p className="about__p">
-          It started as a question about whether a whole realtime party game
-          could be built and run without paying for anything, and it still runs
-          entirely on free tiers. The screen you're reading is a React app; the
-          rooms themselves live on Cloudflare, one small server object per room,
-          which is why the room code is all you need to find your way back in.
+          We saw a thumbnail of a youtuber trying to name 100 women and thought we could easily do that, so a timer was set for a generous 10 minutes and we each wrote down a list on our phones.
         </p>
         <p className="about__p">
-          Every rule of the game — scoring, the category draw, teams, the
-          reveal — is kept apart from both of those and covered by around seven
-          hundred and fifty tests, so the parts that decide who won can be
-          checked in a second rather than by getting six people in a room.
-          Which is not to say we didn't also do that.
+          Between the three of us, we did manage to name 104 unique names (though our contributions were <em>not</em> equal).
         </p>
         <p className="about__p">
-          It was written with the help of Claude Code, over rather more evenings
-          than originally planned.
+          Instead of buying a book on feminism, we decided the best way to absolve ourselves of this embarassment was to create a digital version of this game for our friends to play.
+        </p>
+        <p className="about__p">
+          Over two weeks and 3 Claude Code accounts later, we released version 1.0.0 live on August 1st 2026 and playtested somewhat successfully with a group of 25 people. 
         </p>
       </AboutSection>
 
-      <AboutSection title="Music and sound">
+      <AboutSection title="Music and sound credits">
         <ul className="about__credits">
           {TRACKS.map((t) => (
             <TrackCredit key={t.title} track={t} />
@@ -130,7 +131,7 @@ export function AboutContent() {
         </ul>
       </AboutSection>
 
-      <AboutSection title="Type">
+      <AboutSection title="font credits">
         <ul className="about__credits">
           <li className="about__credit">
             <span className="about__credit-title">Bungee</span>
@@ -152,6 +153,28 @@ export function AboutContent() {
           React · Vite · TypeScript · Cloudflare Workers and Durable Objects ·
           Vercel
         </p>
+      </AboutSection>
+
+      <AboutSection title="Data and privacy">
+        <p className="about__p">
+          The game keeps a record of the matches played on it — the words, the
+          scores and the votes. It is never used to identify anyone and never
+          goes anywhere else.
+        </p>
+        {/* A real link to a real page, not a button that swaps a panel: this
+            opens in its own tab, on its own URL, so it can be sent to somebody
+            and read without a game running. `public/privacy/index.html` is a
+            standalone file for the same reason — see the note at the top of
+            it. `rel` is what stops the new tab reaching back through
+            `window.opener`. */}
+        <a
+          className="about__link"
+          href="/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Read what is stored and why
+        </a>
       </AboutSection>
     </div>
   );

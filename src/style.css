@@ -7363,6 +7363,21 @@ ul, ol { list-style: none; }
 
 .about__p em { font-style: normal; font-weight: 600; }
 
+/* The one link out of the panel. Sized as a control rather than as body copy
+   — it leaves the app, on all three screens the panel appears on. */
+.about__link {
+  align-self: flex-start;
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 2px 0;
+}
+
+.about__link:hover { color: var(--gold-dim); }
+
 .about__credits { display: flex; flex-direction: column; gap: 10px; }
 
 /* Title over source rather than beside it: the attributions are of wildly

@@ -1045,6 +1045,20 @@ arrives on screen. Three things about it are load-bearing:
   stylesheet that disagreed would either cut the fade off or leave a fully
   transparent panel holding the scroll box open behind it.
 
+**The panel's one link out is `/privacy`, and that page is a promise about the
+schema.** `public/privacy/index.html` is a standalone static file, not a screen:
+it opens in its own tab, it has to scroll — which the app's stylesheet forbids
+everywhere, rightly, since a phone screen has a Ready button pinned to the
+bottom of it — and it must not break when the app does. It carries its own copy
+of the design tokens for that reason, and sets its headings in the fallback
+stack rather than duplicating a 40KB font asset with no update path.
+**`migrations/0001_create_archive.sql` and `shared/archive.ts` are what it
+describes**, and both carry a pointer back to it: a column that captures
+something new about a person makes that page untrue, so it changes in the same
+commit. `PlayerMeta` is the live example — the page tells players their browser
+details and country are not stored, which is true only because nothing passes
+`meta`.
+
 `TRACKS` in that file is the one place in the audio system where **the
 filename matters**: `src/audio/tracks.ts` globs the folders precisely so a
 track can be swapped by dragging a file in, and a swap that does not also
