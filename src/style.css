@@ -7603,6 +7603,7 @@ ul, ol { list-style: none; }
    code somebody is still typing in. The lobby is the flexible half and the
    panel is fixed, so what gives is the stage, which is built to. */
 .host-shell {
+  --about-host-w: min(400px, 34vw);
   display: flex;
   align-items: stretch;
   height: 100dvh;
@@ -7615,25 +7616,46 @@ ul, ol { list-style: none; }
   height: 100%;
 }
 
-/* `order`, not DOM order: the panel is rendered after the lobby so that its
-   absence is the plain case, and it comes in on the same side as the link
-   that opens it. */
+/* Slides rather than appears, and the slide *is* the resize: the panel is
+   always in the flex row at its full width and closed it hangs off the left
+   edge on a negative margin of exactly that width, contributing nothing. The
+   margin is what animates, so the row re-lays out on every frame of it and
+   the lobby narrows continuously — one transition, both halves. A transform
+   would have moved the panel and left the lobby to snap.
+   `.host-shell`'s `overflow: hidden` is what swallows the parked panel.
+
+   `order`, not DOM order: the panel is rendered after the lobby so the lobby
+   stays first in the reading order, and it comes in on the same side as the
+   link that opens it. */
 .about-pane--host {
   order: -1;
   flex: 0 0 auto;
   display: flex;
-  width: min(400px, 34vw);
+  width: var(--about-host-w);
+  margin-left: calc(var(--about-host-w) * -1);
   min-height: 0;
-  padding: 26px 0 26px 26px;
-  animation: aboutPushIn 0.34s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  /* Right padding is not a gutter — it is the card's own 6px offset shadow,
+     which lands outside the card box. Without room for it inside the panel
+     the lobby, which paints after, covers the shadow's right edge: it reads
+     as a clipped shadow and is really an occluded one. */
+  padding: 26px 12px 26px 26px;
+  visibility: hidden;
+  transition:
+    margin-left 0.34s cubic-bezier(0.22, 0.61, 0.36, 1),
+    visibility 0s linear 0.34s;
+}
+
+/* Held visible for the whole of the slide out, and hidden the instant it is
+   parked — an off-screen panel must not keep its ✕ in the tab order. */
+.host-shell--about .about-pane--host {
+  margin-left: 0;
+  visibility: visible;
+  transition:
+    margin-left 0.34s cubic-bezier(0.22, 0.61, 0.36, 1),
+    visibility 0s;
 }
 
 .about-pane--host .about-pane__card { flex: 1; }
-
-@keyframes aboutPushIn {
-  from { opacity: 0; transform: translateX(-16px); }
-  to { opacity: 1; transform: none; }
-}
 
 /* The lobby's other bottom corner from the Game settings tab. */
 .about-link--host {
@@ -7645,12 +7667,18 @@ ul, ol { list-style: none; }
 }
 
 @media (max-width: 900px) {
-  .about-pane--host { width: min(320px, 42vw); padding: 16px 0 16px 16px; }
+  /* On the shell, not the panel: the panel's own width and its parked margin
+     are both derived from it and must not be able to disagree. */
+  .host-shell { --about-host-w: min(320px, 42vw); }
+  .about-pane--host { padding: 16px 12px 16px 16px; }
   .about-link--host { left: 16px; bottom: 22px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .about-pane--host { animation: none; }
+  /* Only the margin goes — the visibility delay is what keeps the ✕ out of
+     the tab order while parked, and is not motion. */
+  .about-pane--host { transition: visibility 0s linear 0.34s; }
+  .host-shell--about .about-pane--host { transition: visibility 0s; }
 }
 
 /* -------------------------------------------- placement: player lobby */

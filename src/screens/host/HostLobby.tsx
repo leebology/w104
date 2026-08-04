@@ -249,10 +249,13 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
       )}
     </main>
 
-      {/* Mounted only while open, the way `Drawer` is: it holds no state worth
-          keeping across a close, and an unmounted panel cannot be a flex child
-          taking width from the lobby. */}
-      {about && <AboutPanel variant="host" onClose={() => setAbout(false)} />}
+      {/* Always mounted, unlike `Drawer` — a panel that unmounts has nothing to
+          slide, and the slide here *is* the lobby's resize: the panel is a flex
+          child parked off the left edge on a negative margin, and animating
+          that margin re-lays the row out on every frame. Closed it contributes
+          no width and is `visibility: hidden`, so it is out of the tab order
+          the moment it finishes travelling. */}
+      <AboutPanel variant="host" onClose={() => setAbout(false)} />
     </div>
   );
 }

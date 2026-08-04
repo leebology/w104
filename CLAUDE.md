@@ -1019,7 +1019,15 @@ arrives on screen. Three things about it are load-bearing:
   here: the room is still joining, so nothing may be covered. `.host-shell`
   makes the lobby a flex child that narrows. It sends **no `setConfiguring`** —
   reading the credits is not configuring the match, and holding the countdown
-  down for it would stop a room that is ready to play.
+  down for it would stop a room that is ready to play. It is also the one
+  panel that is **always mounted**: closed it is parked off the left edge on a
+  negative `margin-left` of exactly its own width, and animating that margin is
+  what makes the slide and the lobby's resize one transition rather than a
+  slide beside a snap. Hence `--about-host-w` lives on the shell — the width
+  and the parked margin are derived from it and must not disagree — and hence
+  the panel carries right padding: the card's 6px offset shadow falls outside
+  the card box, and with no room for it inside the panel the lobby, which
+  paints after, covers it.
 - **On the player lobby scrolling back to the top is a close**, which is why
   the effect keeps an `armed` ref. The container sits at scroll top for the
   frame between the state flip and the programmatic scroll leaving it, and an
