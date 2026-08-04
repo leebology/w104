@@ -1027,7 +1027,11 @@ arrives on screen. Three things about it are load-bearing:
   and the parked margin are derived from it and must not disagree — and hence
   the panel carries right padding: the card's 6px offset shadow falls outside
   the card box, and with no room for it inside the panel the lobby, which
-  paints after, covers it.
+  paints after, covers it. **On a phone hosting a room (≤600px) the lobby
+  leaves instead of narrowing** — there is no width to squeeze it into — and
+  that is one declaration, `flex: 0 0 100%` on the lobby, not a second
+  animation: at full basis the panel's arrival pushes it out of the shell's
+  `overflow: hidden` on the same margin.
 - **On the player lobby scrolling back to the top is a close**, which is why
   the effect keeps an `armed` ref. The container sits at scroll top for the
   frame between the state flip and the programmatic scroll leaving it, and an

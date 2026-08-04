@@ -7657,13 +7657,26 @@ ul, ol { list-style: none; }
 
 .about-pane--host .about-pane__card { flex: 1; }
 
-/* The lobby's other bottom corner from the Game settings tab. */
+/* The lobby's other bottom corner from the Game settings tab.
+
+   It goes while the panel is out: it is the way in, and the way back is the
+   ✕. Faded rather than unmounted so the DOM under the lobby's corner does not
+   change mid-slide, and delayed on the way back in so it returns after the
+   panel has left rather than under it. */
 .about-link--host {
   position: absolute;
   left: 26px;
   bottom: 26px;
   z-index: 5;
   font-size: 12px;
+  opacity: 1;
+  transition: opacity 0.18s ease-out 0.2s, visibility 0s;
+}
+
+.host-shell--about .about-link--host {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.14s ease-out, visibility 0s linear 0.14s;
 }
 
 @media (max-width: 900px) {
@@ -7672,6 +7685,22 @@ ul, ol { list-style: none; }
   .host-shell { --about-host-w: min(320px, 42vw); }
   .about-pane--host { padding: 16px 12px 16px 16px; }
   .about-link--host { left: 16px; bottom: 22px; }
+}
+
+/* A phone hosting a room. There is no width to squeeze the lobby into, so the
+   panel takes the whole screen and the lobby leaves rather than narrowing —
+   the difference is `flex`, not a second animation. At `0 0 100%` the lobby
+   keeps its full width and the panel's arrival pushes it out of the shell's
+   `overflow: hidden`; the same margin still drives both, so the two move as
+   one piece.
+
+   Below the 900px "laptop-sized TV" band deliberately, not inside it: a
+   700px window still has room for a lobby beside a panel, and a squish is
+   the better answer wherever it fits. */
+@media (max-width: 600px) {
+  .host-shell { --about-host-w: 100%; }
+  .host-shell > .host-lobby { flex: 0 0 100%; }
+  .about-pane--host { padding: 14px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
