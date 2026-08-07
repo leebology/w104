@@ -115,7 +115,7 @@ describe("voteRows", () => {
     const { categories } = voteRows(r, "g");
     expect(categories).toHaveLength(BALLOT.length);
     expect(categories.find((c) => c.category === "movie")!.vote_total).toBe(3);
-    expect(categories.find((c) => c.category === "car")!.vote_total).toBe(0);
+    expect(categories.find((c) => c.category === "car make/model")!.vote_total).toBe(0);
   });
 
   test("the random option gets a row like everything else on the ballot", () => {

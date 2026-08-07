@@ -44,9 +44,9 @@ describe("tallyVotes", () => {
   test("adds every player's row together", () => {
     const votes: VoteMap = {
       p0: { song: 2, movie: 1 },
-      p1: { song: 1, car: 3 },
+      p1: { song: 1, "car make/model": 3 },
     };
-    expect(tallyVotes(votes)).toEqual({ song: 3, movie: 1, car: 3 });
+    expect(tallyVotes(votes)).toEqual({ song: 3, movie: 1, "car make/model": 3 });
   });
 
   test("an empty pool tallies to nothing", () => {
@@ -66,7 +66,7 @@ describe("voteShares", () => {
   test("shares always sum to exactly 100", () => {
     // 3 categories at 1 vote each is 33.33% apiece — largest remainder has to
     // hand the spare point to somebody.
-    const shares = voteShares({ p0: { song: 1, movie: 1, car: 1 } });
+    const shares = voteShares({ p0: { song: 1, movie: 1, "car make/model": 1 } });
     expect(Object.values(shares).reduce((a, b) => a + b, 0)).toBe(100);
   });
 
@@ -83,15 +83,16 @@ describe("voteShares", () => {
   });
 
   test("ties in the remainder break by pool order, deterministically", () => {
-    // Insertion order is car, song, movie — the opposite of pool order — so
-    // this only passes if the tie-break actually consults CATEGORIES rather
-    // than riding Array.prototype.sort's stability over insertion order.
+    // Insertion order is car make/model, song, movie — the opposite of pool
+    // order — so this only passes if the tie-break actually consults
+    // CATEGORIES rather than riding Array.prototype.sort's stability over
+    // insertion order.
     // song is earliest in CATEGORIES among the three, so it takes the spare
     // point regardless of the order votes were entered in.
-    const shares = voteShares({ p0: { car: 1, song: 1, movie: 1 } });
+    const shares = voteShares({ p0: { "car make/model": 1, song: 1, movie: 1 } });
     expect(shares.song).toBe(34);
     expect(shares.movie).toBe(33);
-    expect(shares.car).toBe(33);
+    expect(shares["car make/model"]).toBe(33);
   });
 
   test("no votes yields no shares rather than a divide by zero", () => {
@@ -103,9 +104,9 @@ describe("spentCategories", () => {
   test("reads the categories out of history, oldest first", () => {
     const history = [
       { category: "song", places: {} },
-      { category: "car", places: {} },
+      { category: "car make/model", places: {} },
     ];
-    expect(spentCategories({ history })).toEqual(["song", "car"]);
+    expect(spentCategories({ history })).toEqual(["song", "car make/model"]);
   });
 
   test("a fresh match has spent nothing", () => {
@@ -162,10 +163,11 @@ describe("pickCategory", () => {
   });
 
   test("shares recalculate once a category is spent", () => {
-    const three: VoteMap = { p0: { song: 2, movie: 1, car: 1 } };
-    // With song spent the pool is movie:1 car:1 — an even split at 0.5.
+    const three: VoteMap = { p0: { song: 2, movie: 1, "car make/model": 1 } };
+    // With song spent the pool is movie:1 car make/model:1 — an even split
+    // at 0.5.
     expect(pickCategory(three, ["song"], 0.49)).toBe("movie");
-    expect(pickCategory(three, ["song"], 0.51)).toBe("car");
+    expect(pickCategory(three, ["song"], 0.51)).toBe("car make/model");
   });
 
   test("once the voted categories are spent it draws from the unvoted ones", () => {

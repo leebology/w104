@@ -25,9 +25,9 @@ export const CATEGORIES = [
   "song",
   "movie",
   "country",
-  "colour",
+  "color",
   "sport",
-  "car",
+  "car make/model",
   "food",
   "job",
 ] as const;
