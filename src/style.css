@@ -470,9 +470,10 @@ ul, ol { list-style: none; }
   margin-bottom: 12px;
 }
 
+/* The other end of Landing's bottom edge from the about link. */
 .version {
   position: absolute;
-  left: 22px;
+  right: 22px;
   bottom: 16px;
   font-size: 11px;
   letter-spacing: 0.12em;
@@ -7332,3 +7333,472 @@ ul, ol { list-style: none; }
     transform: rotate(-2.5deg);
   }
 }
+
+/* ------------------------------------------------------- about the game */
+
+/* One body of copy in three placements. The copy's own type and rhythm are
+   shared (`.about`); everything below the divider is the three containers,
+   which have nothing in common but the card they hold. */
+
+.about { display: flex; flex-direction: column; gap: 22px; }
+
+.about__section { display: flex; flex-direction: column; gap: 10px; }
+
+.about__heading {
+  font-family: var(--display);
+  font-size: 15px;
+  letter-spacing: 0.1em;
+  color: var(--ink);
+}
+
+/* Body copy, not display type: this is the one place in the app with more
+   than a sentence to read at a time, and Bungee is a poster face. */
+.about__p {
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink);
+}
+
+.about__p--quiet { color: var(--ink-dim); }
+
+.about__p em { font-style: normal; font-weight: 600; }
+
+/* The one link out of the panel. Sized as a control rather than as body copy
+   — it leaves the app, on all three screens the panel appears on. */
+.about__link {
+  align-self: flex-start;
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  padding: 2px 0;
+}
+
+.about__link:hover { color: var(--gold-dim); }
+
+.about__credits { display: flex; flex-direction: column; gap: 10px; }
+
+/* Title over source rather than beside it: the attributions are of wildly
+   different lengths and a two-column list would ragged out at every row. */
+.about__credit { display: flex; flex-direction: column; gap: 2px; }
+
+.about__credit-title {
+  font-family: var(--display);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+.about__credit-meta {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-dim);
+}
+
+/* The link that opens it. Quiet cream type on the pink field in all three
+   corners it appears in, underlined — on Landing it shares a line with the
+   version number in the same size and colour, and the underline is the only
+   thing distinguishing a control from a label at 11px. */
+.about-link {
+  font-family: inherit;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--cream-dim);
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.about-link:hover { color: var(--cream); }
+
+/* The panel's card. The same cream card every other surface in the app is,
+   with its own scroll — the copy is longer than any screen it appears on, and
+   the page still never scrolls. */
+.about-pane__card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--cream);
+  color: var(--ink);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+
+.about-pane__head {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 18px 14px;
+  border-bottom: var(--border);
+}
+
+.about-pane__title {
+  font-family: var(--display);
+  font-size: 18px;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+}
+
+/* Drawn ✕, matching `.host-exit`'s — a glyph in a one-weight font sits a
+   pixel or two off-centre in a round button and cannot be made heavier. */
+.about-pane__close {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.about-pane__close:hover { background: var(--gold); color: var(--ink-gold); }
+
+.about-pane__close svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  fill: none;
+}
+
+.about-pane__body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 18px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+/* ---------------------------------------------- placement: landing */
+
+/* The shell took over `.screen--locked`'s job when Landing gained a second
+   pane — same fixed, visual-viewport sizing, one level up, so the two panes
+   are measured against the same box.
+
+   Stacked by default (phones, and any window too narrow or too tall for a
+   panel beside the screen): a scroll-snapping column of two full-height
+   panes. The swipe is the browser doing what it does; nothing here listens
+   for a gesture, and the link's `scrollIntoView` performs the same movement
+   rather than a second one. */
+.landing-shell {
+  position: fixed;
+  top: var(--vv-top, 0px);
+  left: 0;
+  width: 100%;
+  height: var(--vv-height, 100dvh);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scroll-snap-type: y mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* `.screen`'s own `min-height: 100dvh` would make each pane taller than the
+   shell the moment a keyboard shrinks it. */
+.landing-shell > .landing,
+.landing-shell__about {
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  height: 100%;
+  min-height: 0;
+  flex: 0 0 100%;
+}
+
+.landing-shell__about {
+  display: flex;
+  padding: 24px;
+}
+
+.landing-shell__about .about-pane {
+  display: flex;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 0;
+}
+
+.landing-shell__about .about-pane__card { flex: 1; }
+
+/* The ✕ is on both layouts. In the stacked one it does not close anything —
+   there is nothing closed to be — it scrolls back to the main screen, which
+   is the same trip the thumb would make. `hideAbout` in Landing.tsx is what
+   knows the difference. */
+
+/* The two ends of the bottom edge — the way in on the left, the build on the
+   right. Both are pinned to the screen rather than sitting in its flex column,
+   which has the cards in it. */
+.about-link--landing {
+  position: absolute;
+  left: 22px;
+  bottom: 16px;
+}
+
+/* Side by side.
+
+   Mirrors `WIDE_ABOUT` in src/screens/Landing.tsx, which is what the link
+   reads to decide whether to raise the flag or scroll. Change one, change the
+   other, or the link performs the gesture the screen is not drawn for. */
+@media (min-width: 900px) and (orientation: landscape) {
+  .landing-shell {
+    --about-w: min(460px, 40vw);
+    display: flex;
+    align-items: stretch;
+    justify-content: center;
+    overflow: hidden;
+    scroll-snap-type: none;
+  }
+
+  /* The main screen keeps its own centred width and slides half the panel's
+     width to the right, which lands it centred in what is left of the shell. */
+  .landing-shell > .landing {
+    flex: 0 0 auto;
+    width: 100%;
+    max-width: 480px;
+    transform: translateX(0);
+    transition: transform 0.42s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
+  .landing-shell--about > .landing {
+    transform: translateX(calc(var(--about-w) / 2));
+  }
+
+  /* Out of the flex flow entirely, parked off the left edge — in flow it
+     would push the main screen rather than let it slide, and its arrival
+     would be a width change instead of a movement. */
+  .landing-shell__about {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    width: var(--about-w);
+    flex: none;
+    padding: 26px 0 26px 26px;
+    transform: translateX(-100%);
+    transition: transform 0.42s cubic-bezier(0.22, 0.61, 0.36, 1);
+  }
+
+  .landing-shell--about .landing-shell__about { transform: translateX(0); }
+
+  /* Parked off the edge it is still in the DOM, so it is taken out of the tab
+     order and off the accessibility tree until it is actually out. */
+  .landing-shell:not(.landing-shell--about) .landing-shell__about {
+    visibility: hidden;
+  }
+
+  .landing-shell__about .about-pane {
+    max-width: none;
+    margin: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-shell > .landing,
+  .landing-shell__about { transition: none; }
+}
+
+/* ---------------------------------------------- placement: host lobby */
+
+/* Push, not overlay — the one thing this panel may not do is cover a room
+   code somebody is still typing in. The lobby is the flexible half and the
+   panel is fixed, so what gives is the stage, which is built to. */
+.host-shell {
+  --about-host-w: min(400px, 34vw);
+  display: flex;
+  align-items: stretch;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.host-shell > .host-lobby {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+}
+
+/* Slides rather than appears, and the slide *is* the resize: the panel is
+   always in the flex row at its full width and closed it hangs off the left
+   edge on a negative margin of exactly that width, contributing nothing. The
+   margin is what animates, so the row re-lays out on every frame of it and
+   the lobby narrows continuously — one transition, both halves. A transform
+   would have moved the panel and left the lobby to snap.
+   `.host-shell`'s `overflow: hidden` is what swallows the parked panel.
+
+   `order`, not DOM order: the panel is rendered after the lobby so the lobby
+   stays first in the reading order, and it comes in on the same side as the
+   link that opens it. */
+.about-pane--host {
+  order: -1;
+  flex: 0 0 auto;
+  display: flex;
+  width: var(--about-host-w);
+  margin-left: calc(var(--about-host-w) * -1);
+  min-height: 0;
+  /* Right padding is not a gutter — it is the card's own 6px offset shadow,
+     which lands outside the card box. Without room for it inside the panel
+     the lobby, which paints after, covers the shadow's right edge: it reads
+     as a clipped shadow and is really an occluded one. */
+  padding: 26px 12px 26px 26px;
+  visibility: hidden;
+  transition:
+    margin-left 0.34s cubic-bezier(0.22, 0.61, 0.36, 1),
+    visibility 0s linear 0.34s;
+}
+
+/* Held visible for the whole of the slide out, and hidden the instant it is
+   parked — an off-screen panel must not keep its ✕ in the tab order. */
+.host-shell--about .about-pane--host {
+  margin-left: 0;
+  visibility: visible;
+  transition:
+    margin-left 0.34s cubic-bezier(0.22, 0.61, 0.36, 1),
+    visibility 0s;
+}
+
+.about-pane--host .about-pane__card { flex: 1; }
+
+/* The lobby's other bottom corner from the Game settings tab.
+
+   It goes while the panel is out: it is the way in, and the way back is the
+   ✕. Faded rather than unmounted so the DOM under the lobby's corner does not
+   change mid-slide, and delayed on the way back in so it returns after the
+   panel has left rather than under it. */
+.about-link--host {
+  position: absolute;
+  left: 26px;
+  bottom: 26px;
+  z-index: 5;
+  font-size: 12px;
+  opacity: 1;
+  transition: opacity 0.18s ease-out 0.2s, visibility 0s;
+}
+
+.host-shell--about .about-link--host {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.14s ease-out, visibility 0s linear 0.14s;
+}
+
+@media (max-width: 900px) {
+  /* On the shell, not the panel: the panel's own width and its parked margin
+     are both derived from it and must not be able to disagree. */
+  .host-shell { --about-host-w: min(320px, 42vw); }
+  .about-pane--host { padding: 16px 12px 16px 16px; }
+  .about-link--host { left: 16px; bottom: 22px; }
+}
+
+/* A phone hosting a room. There is no width to squeeze the lobby into, so the
+   panel takes the whole screen and the lobby leaves rather than narrowing —
+   the difference is `flex`, not a second animation. At `0 0 100%` the lobby
+   keeps its full width and the panel's arrival pushes it out of the shell's
+   `overflow: hidden`; the same margin still drives both, so the two move as
+   one piece.
+
+   Below the 900px "laptop-sized TV" band deliberately, not inside it: a
+   700px window still has room for a lobby beside a panel, and a squish is
+   the better answer wherever it fits. */
+@media (max-width: 600px) {
+  .host-shell { --about-host-w: 100%; }
+  .host-shell > .host-lobby { flex: 0 0 100%; }
+  .about-pane--host { padding: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Only the margin goes — the visibility delay is what keeps the ✕ out of
+     the tab order while parked, and is not motion. */
+  .about-pane--host { transition: visibility 0s linear 0.34s; }
+  .host-shell--about .about-pane--host { transition: visibility 0s; }
+}
+
+/* -------------------------------------------- placement: player lobby */
+
+/* The two profile cards and the about section in one box that asked to
+   scroll — the page still never does. Closed, there is nothing taller than
+   the frame and nothing to pull; open, the section below the cards is what
+   gives the thumb its travel. */
+.player-lobby__scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  overflow-y: hidden;
+  /* The cards carry a 6px offset shadow and the avatar strip its own; a
+     scroll box clipped exactly to their edges would shave both. */
+  margin: 0 -6px;
+  padding: 0 6px 6px;
+}
+
+.player-lobby__scroll--about {
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+/* Its own line under the avatar card. Indented to the card's own text rather
+   than to its edge — it is a caption on the pair above it, not a control on
+   the field. */
+.about-link--player {
+  align-self: flex-start;
+  padding-left: 12px;
+  font-size: 12px;
+  margin-top: -2px;
+}
+
+/* Fills the box, so opening it lands the panel's top edge at the top of the
+   frame with the whole panel below — and so there is always something to
+   scroll, which is what makes the return trip, and therefore the close,
+   possible on a screen where the two cards alone already fit.
+
+   `aboutFade` is mirrored by `ABOUT_FADE_MS` in src/components/About.tsx,
+   which is how long the panel is held mounted after it is closed. */
+.about-pane--player {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 100%;
+  padding-bottom: 4px;
+  animation: aboutFade 240ms ease-out both;
+}
+
+.about-pane--player.about-pane--leaving {
+  animation: aboutFade 240ms ease-in both reverse;
+}
+
+@keyframes aboutFade {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .about-pane--player { animation-name: aboutFadeFlat; }
+  .about-pane--player.about-pane--leaving { animation-name: aboutFadeFlat; }
+}
+
+@keyframes aboutFadeFlat {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.about-pane--player .about-pane__card { flex: 1; }
+
+/* Nothing to scroll inside the panel here: the box outside it is already the
+   scroll, and two nested ones on a phone means a thumb that stops halfway
+   down for no visible reason. */
+.about-pane--player .about-pane__body { overflow-y: visible; }

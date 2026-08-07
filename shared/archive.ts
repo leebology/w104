@@ -116,6 +116,13 @@ export function roundId(game: string, roundIndex: number): string {
 const scorerType = (colorIndex: number | null): "player" | "team" =>
   colorIndex === null ? "player" : "team";
 
+/**
+ * **Nothing populates this today**, and `public/privacy/index.html` says so in
+ * as many words: it tells players the game does not store their browser
+ * details or their country. `party/server.ts` never passes `meta`, so both
+ * columns are always null. Wiring it up is a change to what the game collects
+ * about people — update that page in the same commit.
+ */
 export type PlayerMeta = { userAgent?: string; country?: string };
 
 export type GameStartContext = {

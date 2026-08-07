@@ -2,6 +2,12 @@
 --
 -- See docs/superpowers/specs/2026-07-28-score-persistence-design.md.
 --
+-- THIS SCHEMA IS DESCRIBED TO PLAYERS. `public/privacy/index.html` is the
+-- page the About panel links to, and it lists what these tables hold in plain
+-- English. Adding a column that captures something new about a person means
+-- changing that page in the same commit, or the game is telling people
+-- something untrue about itself.
+--
 -- The whole point of this database is that the GAME NEVER READS IT. Every
 -- statement that runs against it is an INSERT or an UPDATE issued from
 -- party/archive.ts after play has already happened. If this database were

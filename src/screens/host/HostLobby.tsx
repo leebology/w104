@@ -5,6 +5,7 @@ import { roomStore } from "../../net/room";
 import { joinHost } from "../../joinhost";
 import { currentRound } from "../../../shared/state";
 import type { RoomState } from "../../../shared/state";
+import { AboutLink, AboutPanel } from "../../components/About";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { GetReady } from "../../components/GetReady";
 import { HostExit, HostHeader, HostHeaderRight, PlayerCount } from "./HostHeader";
@@ -30,6 +31,22 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
   const round = currentRound(room);
   const [drawer, setDrawer] = useState<OpenDrawer>(null);
   const [closing, setClosing] = useState(false);
+  /**
+   * The about panel, which is deliberately **not** a `Drawer`.
+   *
+   * A drawer is an overlay over a lobby that keeps its exact sizing, and that
+   * is right for the settings — a host reading a stepper is not also reading
+   * the room code. This is the opposite case: the room is still joining while
+   * somebody skims this, so nothing here may be covered. The panel takes width
+   * from the lobby instead and the lobby lays itself out narrower, which every
+   * part of it can do — the roster is a flex column, the code banner is
+   * negative-margined to whatever width it is given.
+   *
+   * It therefore sends no `setConfiguring`: reading the credits is not
+   * configuring the match, and holding the countdown down for it would stop a
+   * room that is ready to play.
+   */
+  const [about, setAbout] = useState(false);
 
   /**
    * Which ends of the roster have players past them.
@@ -86,6 +103,10 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
   }, []);
 
   return (
+    // A row rather than the bare screen: the about panel is a sibling of the
+    // lobby, not a layer over it, so opening it narrows the lobby instead of
+    // hiding any of it.
+    <div className={about ? "host-shell host-shell--about" : "host-shell"}>
     <main className="screen screen--host host-lobby">
       {/* The room chip other host screens carry would only repeat the code
           that is already the hero here, so the lobby leads with the wordmark
@@ -167,6 +188,12 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
       >
         Game settings
       </button>
+      {/* Opposite corner from the settings tab, and text on the field rather
+          than a second tab: two pills in the same corner would read as two
+          halves of one decision, and this one leads nowhere near the match.
+          The left is also the side the panel comes in from, so the link and
+          what it opens are on the same side of the screen. */}
+      <AboutLink className="about-link--host" onClick={() => setAbout(true)} />
 
       {/* The footer keeps its shape through the count rather than swapping its
           contents: it steps back with the rest of the screen and the countdown
@@ -221,5 +248,14 @@ export function HostLobby({ room, countdown, onLeave }: Props) {
         />
       )}
     </main>
+
+      {/* Always mounted, unlike `Drawer` — a panel that unmounts has nothing to
+          slide, and the slide here *is* the lobby's resize: the panel is a flex
+          child parked off the left edge on a negative margin, and animating
+          that margin re-lays the row out on every frame. Closed it contributes
+          no width and is `visibility: hidden`, so it is out of the tab order
+          the moment it finishes travelling. */}
+      <AboutPanel variant="host" onClose={() => setAbout(false)} />
+    </div>
   );
 }
