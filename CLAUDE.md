@@ -1059,6 +1059,18 @@ commit. `PlayerMeta` is the live example — the page tells players their browse
 details and country are not stored, which is true only because nothing passes
 `meta`.
 
+**Its URL is `/privacy` on both hosts, and neither host gives that for free.**
+Vite hands `public/` to sirv with extension resolution off, so in dev only the
+exact `/privacy/index.html` matches and `/privacy` falls through the HTML
+fallback — which looks in the project root, never in `public/` — to the SPA
+fallback, which serves the game. That is a broken link that renders as the
+landing page rather than as a 404, so it looks like the link did nothing. The
+`privacyPage()` plugin in `vite.config.ts` rewrites the path for the dev
+server; `vercel.json` pins the same mapping in production rather than trusting
+Vercel to resolve a directory index. Both exist because the page is meant to be
+*sent to somebody*, and a URL that only works with `/index.html` on the end is
+not one.
+
 `TRACKS` in that file is the one place in the audio system where **the
 filename matters**: `src/audio/tracks.ts` globs the folders precisely so a
 track can be swapped by dragging a file in, and a swap that does not also
