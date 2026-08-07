@@ -1,0 +1,292 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Data and privacy — Ok, Name One</title>
+    <meta name="theme-color" content="#E62E5C" />
+    <link rel="icon" href="/favicon.ico" sizes="16x16 32x32 48x48" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+    <!--
+      A standalone page, deliberately.
+
+      It lives in public/ rather than in the app because it is not part of the
+      game: it opens in its own tab, it has to scroll (the app's stylesheet
+      forbids the page scrolling anywhere, which is right for a screen with a
+      Ready button pinned to the bottom of it and wrong for a document), and if
+      the app breaks this page should not break with it.
+
+      The cost is that its CSS is a small self-contained copy of the design
+      tokens rather than the app's stylesheet, and that Bungee is not loaded —
+      the app bundles it through fontsource, which a static file cannot reach,
+      so the headings fall back to the same stack the app declares after it.
+      That is the trade: a duplicated 40KB font asset with no update path is
+      worse than a document that sets its headings in the fallback.
+
+      ** If what the archive stores ever changes, this page changes with it.**
+      shared/archive.ts and migrations/0001_create_archive.sql are what it
+      describes; there is a pointer back to this file from both.
+    -->
+    <style>
+      :root {
+        --pink: #e62e5c;
+        --cream: #fff7e8;
+        --ink: #1a0710;
+        --ink-dim: #7a6a5c;
+        --gold: #ffd400;
+        --cream-dim: rgba(255, 247, 232, 0.8);
+        --card-rule: #e7d3be;
+        --display: "Bungee", "Impact", ui-monospace, monospace;
+        --body: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+        color-scheme: light;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 40px 20px 64px;
+        background: var(--pink);
+        color: var(--ink);
+        font-family: var(--body);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      main {
+        width: 100%;
+        max-width: 720px;
+        margin: 0 auto;
+        background: var(--cream);
+        border: 3px solid var(--ink);
+        border-radius: 14px;
+        box-shadow: 6px 6px 0 var(--ink);
+        padding: 32px 28px 36px;
+      }
+
+      h1 {
+        font-family: var(--display);
+        font-size: 26px;
+        line-height: 1.15;
+        letter-spacing: 0.04em;
+        margin: 0 0 6px;
+      }
+
+      h2 {
+        font-family: var(--display);
+        font-size: 16px;
+        letter-spacing: 0.08em;
+        margin: 30px 0 10px;
+      }
+
+      p, li { font-size: 15px; line-height: 1.62; margin: 0 0 12px; }
+
+      ul { margin: 0 0 12px; padding-left: 20px; }
+      li { margin-bottom: 8px; }
+
+      .lede { color: var(--ink-dim); margin-bottom: 4px; }
+
+      .updated {
+        font-size: 12.5px;
+        letter-spacing: 0.06em;
+        color: var(--ink-dim);
+        margin-bottom: 24px;
+      }
+
+      strong { font-weight: 600; }
+
+      /* The one thing on the page that must not be skimmed past. */
+      .callout {
+        border: 3px solid var(--ink);
+        border-radius: 12px;
+        background: var(--gold);
+        padding: 16px 18px;
+        margin: 20px 0;
+      }
+
+      .callout p:last-child { margin-bottom: 0; }
+
+      hr {
+        border: none;
+        border-top: 3px solid var(--card-rule);
+        margin: 28px 0;
+      }
+
+      a { color: var(--ink); text-underline-offset: 3px; }
+
+      .back {
+        display: block;
+        width: 100%;
+        max-width: 720px;
+        margin: 20px auto 0;
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        color: var(--cream-dim);
+        text-align: center;
+      }
+
+      .back a { color: var(--cream-dim); }
+      .back a:hover { color: var(--cream); }
+
+      @media (max-width: 480px) {
+        body { padding: 24px 14px 48px; }
+        main { padding: 24px 18px 28px; }
+        h1 { font-size: 22px; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Data and privacy</h1>
+      <p class="lede">Ok, Name One</p>
+      <p class="updated">Last updated: 4 August 2026</p>
+
+      <p>
+        <strong>Ok, Name One</strong> keeps a record of the games people play on it. This page
+        describes what that record contains. This is not a legal document.
+      </p>
+
+      <p>
+        There are no accounts, no logins, no email addresses and no passwords.
+        You never tell the game who you are, and it never asks.
+      </p>
+
+      <h2>What identifies you</h2>
+
+      <p>
+        When you first open the game your browser generates a random ID and
+        stores it locally. That ID is what the game uses to tell one player
+        from another during a match, and it is what the stored games are keyed
+        on.
+      </p>
+
+      <p>
+        It identifies <strong>a browser, not a person</strong>. Clearing your
+        site data, using a different browser, using a different device, or
+        simply leaving it a week on an iPhone — Safari evicts unused storage —
+        all produce a new one. There is nothing behind it: no profile, no
+        account, nothing that links it to you or to any other ID it replaced.
+      </p>
+
+      <h2>What is stored when you play</h2>
+
+      <p>
+        Nothing is stored while you are just sitting in a room. A record is
+        written when a match actually starts, and it is added to as each round
+        finishes. It contains:
+      </p>
+
+      <ul>
+        <li>
+          The random browser ID above, and the name and avatar you typed for
+          that game.
+        </li>
+        <li>
+          The room code, when the match started and ended, the settings it was
+          played on, and whether it was finished or abandoned.
+        </li>
+        <li>
+          Which categories were on the ballot, which ones you voted for and how
+          many votes you put on each, and which ones ended up being played.
+        </li>
+        <li>
+          <strong>Every word you submitted</strong>, exactly as you typed it —
+          including blanks and repeats that never scored — along with how many
+          seconds into the round you sent it and whether anybody else wrote the
+          same thing. Keystrokes (and words that are typed out but not submitted) are not recorded.
+        </li>
+        <li>
+          Your score and placing for each round, and your final placing for the
+          match. If you played in a team, which team, and what it was called.
+        </li>
+      </ul>
+
+      <div class="callout">
+        <p>
+          <strong>The names and the words are stored as typed.</strong> If you
+          type something personal into the game — your real full name, an
+          address, anything about somebody else — it is saved along with
+          everything else.
+        </p>
+      </div>
+
+      <h2>What is not stored</h2>
+
+      <ul>
+        <li>
+          <strong>Your IP address.</strong> It is seen briefly, in memory, to
+          limit how many times one connection can hammer the server, and it is
+          not written down or retained.
+        </li>
+        <li>Your browser or device details, and what country you are in.</li>
+        <li>Anything at all about you outside of a game you played.</li>
+      </ul>
+
+      <p>
+        There are no advertising or analytics trackers on the game, and no
+        third-party cookies. The only thing kept in your browser's storage is
+        the random ID, your name and avatar so you do not have to retype them,
+        and — if you are the device hosting a room — the code of that room, so
+        that refreshing the page does not strand everybody.
+      </p>
+
+      <h2>What it is used for</h2>
+
+      <p>
+        Right now, nothing. The game never reads this record back. It is
+        written after play has already happened, it does not affect any match,
+        and if the database vanished tomorrow the game would play identically.
+      </p>
+
+      <p>
+        The intention is to use it for game statistics in the future, for fun — the sort of
+        thing that is only interesting in aggregate. Which categories the room
+        picks when given the choice, which answers everybody reaches for and
+        which ones nobody does, whether people play better in the first round
+        or the last.
+      </p>
+
+      <p>
+        It is <strong>not</strong> used to identify anybody, to build a profile
+        of anybody, or to work out who a player is. It is not (and will never be) sold, rented,
+        shared or given to anyone else.
+      </p>
+
+      <h2>How long it is kept</h2>
+
+      <p>
+        Indefinitely. Nothing deletes it automatically and there is no
+        expiry — the record of a game played today is intended to still be
+        there in a year, since longer-term statistics may be more interesting.
+      </p>
+
+      <h2>Requesting your data to be deleted</h2>
+
+      <p>
+        There is no way to do this for a specific person, since nothing connects the random ID to you.
+        However, if you are concerned, we will happily just wipe the entire database.
+      </p>
+
+      <p>
+        Clearing the site's cached data in your browser discards the ID, and everything after that is
+        recorded under a new one that nothing ties to the old.
+      </p>
+
+      <h2>Where it lives</h2>
+
+      <p>
+        The record is held in a Cloudflare D1 database. The game itself runs on
+        Cloudflare and Vercel, who process the traffic in order to serve the
+        game to you. Nobody else has access to any of it.
+      </p>
+
+      <hr />
+
+      <p class="lede">
+        This is not a legal document.
+      </p>
+    </main>
+
+    <p class="back"><a href="/">← Back to the game</a></p>
+  </body>
+</html>

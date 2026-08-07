@@ -1001,6 +1001,83 @@ nothing: `id-card__head` is `flex: 0 0 auto` above a list that takes the rest, s
 a line that came and went would push a whole column of words down the instant
 somebody readied, mid-reveal, on the screen built not to move under the eye.
 
+**"About the game" is one body of copy in three containers**
+(`src/components/About.tsx`). The prose and the credits live in `AboutContent`
+and nowhere else; Landing, `HostLobby` and `PlayerLobby` each own only how it
+arrives on screen. Three things about it are load-bearing:
+
+- **`WIDE_ABOUT` in `Landing.tsx` mirrors a media query in `style.css`, and
+  the two must agree.** The link reads it to decide which gesture it is: wide
+  and landscape, it raises a flag and CSS slides the pair sideways; anything
+  else, there *is* no flag — the panel is already the second pane of a
+  scroll-snapping column and the link only scrolls to it. That is the whole of
+  "swipe up and down to show and hide it"; nothing listens for a gesture. So
+  the panel is always mounted on Landing — rendering it only when open would
+  leave a phone with nothing to scroll to.
+- **The host panel is a push, not a `Drawer`.** A drawer is an overlay over a
+  lobby that keeps its exact sizing, which is right for the settings and wrong
+  here: the room is still joining, so nothing may be covered. `.host-shell`
+  makes the lobby a flex child that narrows. It sends **no `setConfiguring`** —
+  reading the credits is not configuring the match, and holding the countdown
+  down for it would stop a room that is ready to play. It is also the one
+  panel that is **always mounted**: closed it is parked off the left edge on a
+  negative `margin-left` of exactly its own width, and animating that margin is
+  what makes the slide and the lobby's resize one transition rather than a
+  slide beside a snap. Hence `--about-host-w` lives on the shell — the width
+  and the parked margin are derived from it and must not disagree — and hence
+  the panel carries right padding: the card's 6px offset shadow falls outside
+  the card box, and with no room for it inside the panel the lobby, which
+  paints after, covers it. **On a phone hosting a room (≤600px) the lobby
+  leaves instead of narrowing** — there is no width to squeeze it into — and
+  that is one declaration, `flex: 0 0 100%` on the lobby, not a second
+  animation: at full basis the panel's arrival pushes it out of the shell's
+  `overflow: hidden` on the same margin.
+- **On the player lobby scrolling back to the top is a close**, which is why
+  the effect keeps an `armed` ref. The container sits at scroll top for the
+  frame between the state flip and the programmatic scroll leaving it, and an
+  unguarded listener reads that as "scrolled back" and shuts what had not
+  opened. `.about-pane--player`'s `min-height: 100%` does two jobs: opening
+  lands the panel's *top* edge at the top of the frame rather than dropping to
+  the bottom of the scroll, and there is always something left to scroll, so
+  there is always a way back. That panel is the only one that **fades**, so it
+  outlives the flag that opened it — `leaving` keeps it mounted for exactly
+  `ABOUT_FADE_MS`, which is **mirrored by `aboutFade` in style.css**. A
+  stylesheet that disagreed would either cut the fade off or leave a fully
+  transparent panel holding the scroll box open behind it.
+
+**The panel's one link out is `/privacy`, and that page is a promise about the
+schema.** `public/privacy/index.html` is a standalone static file, not a screen:
+it opens in its own tab, it has to scroll — which the app's stylesheet forbids
+everywhere, rightly, since a phone screen has a Ready button pinned to the
+bottom of it — and it must not break when the app does. It carries its own copy
+of the design tokens for that reason, and sets its headings in the fallback
+stack rather than duplicating a 40KB font asset with no update path.
+**`migrations/0001_create_archive.sql` and `shared/archive.ts` are what it
+describes**, and both carry a pointer back to it: a column that captures
+something new about a person makes that page untrue, so it changes in the same
+commit. `PlayerMeta` is the live example — the page tells players their browser
+details and country are not stored, which is true only because nothing passes
+`meta`.
+
+**Its URL is `/privacy` on both hosts, and neither host gives that for free.**
+Vite hands `public/` to sirv with extension resolution off, so in dev only the
+exact `/privacy/index.html` matches and `/privacy` falls through the HTML
+fallback — which looks in the project root, never in `public/` — to the SPA
+fallback, which serves the game. That is a broken link that renders as the
+landing page rather than as a 404, so it looks like the link did nothing. The
+`privacyPage()` plugin in `vite.config.ts` rewrites the path for the dev
+server; `vercel.json` pins the same mapping in production rather than trusting
+Vercel to resolve a directory index. Both exist because the page is meant to be
+*sent to somebody*, and a URL that only works with `/index.html` on the end is
+not one.
+
+`TRACKS` in that file is the one place in the audio system where **the
+filename matters**: `src/audio/tracks.ts` globs the folders precisely so a
+track can be swapped by dragging a file in, and a swap that does not also
+update `TRACKS` leaves the wrong attribution on screen. A missing `by`/`from`
+renders nothing rather than a placeholder — an unverified credit does not
+discharge a licence obligation.
+
 Screens are a pure `switch` on `room.phase.name` in `HostView`/`PlayerView`.
 Both have an explicit `ReactElement` return type — **that annotation is what
 makes tsc flag an unhandled phase**; deleting a `default` branch alone does not
