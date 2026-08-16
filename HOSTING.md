@@ -219,6 +219,13 @@ done once:
    rooms — looks like a game bug, not a config one.
 5. **Settings → Deployment Protection → Vercel Authentication → off → Save.**
    Without this, staging is not public — see below.
+6. **Settings → Environment Variables** → add `STAGING_PASSWORD` scoped to
+   **Preview** (and **Development** if you want the gate when running
+   `vercel dev`). Any string; it is read out loud to people, so pick one that
+   survives being read out loud. **Do not scope it to Production** — the
+   middleware refuses to gate production anyway, but there is no reason for the
+   value to be there. **Do not prefix it `VITE_`** — Vite inlines those into the
+   client bundle, which would publish the password on the page it protects.
 
 ### Deployment protection must be off
 
@@ -250,8 +257,56 @@ Pro-only and this project stays on free tiers.
 > Protection leaves custom production domains public. It costs a duplicated
 > project and a duplicated `VITE_PARTYKIT_HOST`. Not worth it today.
 
-Staging is therefore publicly reachable. If you'd rather it not be indexed, add
-an `X-Robots-Tag: noindex` header for the staging domain in `vercel.json`.
+### The password gate
+
+Vercel's protection being unusable is why `middleware.ts` exists. It sits at
+the repo root, runs before every **document** request, and asks for one shared
+password:
+
+| Where | Gated? |
+| --- | --- |
+| `www.oknameone.com` (Production) | **No, never.** First line of the middleware. |
+| `staging.oknameone.com` | Yes |
+| PR preview URLs | Yes — same project, same `VERCEL_ENV`. |
+| `npm run dev` (Vite) | No. Middleware is a Vercel thing; Vite never runs it. |
+
+Two ways in, both the same secret:
+
+- Load the site and type it into the form.
+- Hand out `https://staging.oknameone.com/?key=<password>`, which unlocks and
+  strips the parameter. One tap in a group chat, which is what a room of people
+  about to play actually needs.
+
+Either sets an `HttpOnly` cookie for 30 days. The cookie holds a SHA-256 of the
+password rather than the password, which buys one useful property: **changing
+`STAGING_PASSWORD` signs everybody out**, because the expected cookie value is
+derived from the secret. There is no session list to clear.
+
+**A missing `STAGING_PASSWORD` means no gate.** It logs a warning to the
+function logs and lets the request through, the same call `JOIN_LIMITER` makes
+in `wrangler.jsonc`: an environment deployed before the variable existed must
+not fail closed and take every preview down with it. So if staging is wide
+open, that variable is the first thing to check.
+
+**What it does not cover.** The page, not the game. `w104-staging.liam-donaher.workers.dev`
+is a separate origin and stays open — a room is still protected by its code and
+the per-IP connect budget. Someone determined enough to build their own client
+against the staging Worker is not who this is for.
+
+**Verify it on `staging` before it reaches `main`.** The pass-through case
+returns nothing rather than importing `next()` from `@vercel/functions` — that
+helper costs 126 packages in a project with six runtime dependencies, and
+Vercel's own conditional-matcher example relies on falling off the end of the
+function for the paths it does not handle. It is the documented behaviour, but
+it is behaviour this repo has not exercised before, and staging is where it
+gets exercised: after the first deploy there, confirm the form appears, the
+password works, and the game loads behind it. Production is unaffected either
+way — it returns on line one.
+
+Staging also serves `X-Robots-Tag: noindex, nofollow` via `vercel.json`, scoped
+to that host. Vercel already sends it on `*.vercel.app` preview URLs; a custom
+branch domain does not get it for free. That matters mainly for the failure
+case above — a gated site cannot be crawled regardless.
 
 ---
 
@@ -379,18 +434,36 @@ metric. That is the glanceable form: noticing a bar has gone red is not a task,
 whereas reading the numbers is, so expanding it gives the full figures, the
 reset countdowns and a Refresh button.
 
-**Production included, deliberately.** It was staging-only at first, which meant
-the numbers worth watching were the only ones you could not see without
-deploying a branch. Two things follow from that and are worth knowing rather
-than discovering:
+**Hidden on production, one query string from the surface.** Local, LAN,
+staging and every PR preview show the triangle without being asked. On
+`oknameone.com` and `www.oknameone.com` they do not — that screen is a TV in
+front of a room of people who did not ask for a debug tab. To get it there,
+load any page of the site once with **`?debug=1`**:
 
-- The triangle is on the TV during a real party. It is 34px in a corner and
-  nothing opens it by accident, but it is there.
-- `https://w104.liam-donaher.workers.dev/debug/usage` is public and
-  unauthenticated. What it serves is a handful of account-level usage counts —
-  no tokens, no room state, no player data — and the API token never leaves the
-  Worker. If that trade stops holding, gate `handleUsage` in `party/server.ts`;
-  hiding the client button would not close the endpoint.
+```
+https://www.oknameone.com/?debug=1
+```
+
+That sets a flag in `localStorage` on that device only and it survives reloads;
+`?debug=0` clears it. The hatch matters — the gate here *was* a hostname
+allowlist once, and it was deleted because the production numbers are the only
+ones worth watching and reading them meant deploying a branch. So the triangle
+is off the TV and still on the laptop you drive the room from.
+
+Two things it does not do, and both are worth knowing rather than discovering:
+
+- **It closes nothing.** Every control that moves a live room is host-only and
+  rejected server-side in `shared/reduce.ts` and `party/server.ts`. Hiding the
+  panel is about what is on screen, not about what a client may send.
+- `https://w104.liam-donaher.workers.dev/debug/usage` stays public and
+  unauthenticated in every environment. What it serves is a handful of
+  account-level usage counts — no tokens, no room state, no player data — and
+  the API token never leaves the Worker. If that trade stops holding, gate
+  `handleUsage` in `party/server.ts`; hiding the client button does not close
+  the endpoint. It *is* metered: the route sits behind the same per-IP budget
+  room connects do, so an unauthenticated endpoint cannot be looped to spend
+  the account's daily request allowance out from under the games. The panel's
+  own draw is one poll a minute while it is open.
 
 #### Which numbers change between environments
 

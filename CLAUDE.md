@@ -42,7 +42,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (751 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (770 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -70,6 +70,18 @@ shared/   pure game logic — no DOM, no Cloudflare runtime, fully unit-tested
 party/    server.ts — thin DO shell: persist, broadcast, schedule alarms
 src/      React client — net/room.ts socket store + screens/{host,player}
 ```
+
+`middleware.ts` at the root is the fourth thing, and it is not part of either
+deployment's code: it is Vercel Routing Middleware that password-gates every
+**non-production** document request, because Hobby's own Deployment Protection
+allows one external user and so cannot guard a staging site people are meant to
+play on. It returns on line one when `VERCEL_ENV === "production"`, treats a
+missing `STAGING_PASSWORD` as no gate at all (the call `JOIN_LIMITER` makes),
+and imports nothing — returning `undefined` is the pass-through, which is what
+keeps `@vercel/functions` and its 126 packages out of a six-dependency project.
+It is named in `tsconfig.json`'s `include` so `npm run typecheck` covers it;
+the one file that can lock everybody out of a deployment is the wrong one to
+leave unchecked. See "The password gate" in `HOSTING.md`.
 
 `shared/rng.ts` is the one seeded generator, in a module of its own because its
 two callers sit on opposite sides of the codebase: the reveal, which needs the
@@ -306,8 +318,10 @@ a room. Those two constraints are fixed; the length of the list is not.
 - **No word list solves enumeration — the budget does.** A room's code *is* its
   DO name, so walking the code space enumerates every live lobby, and ~800
   codes is still only ~800 requests. `rateLimited()` in `party/server.ts`
-  meters room connects per client IP; growing `CODE_WORDS` only raises the cost
-  of a sweep, it never closes it.
+  meters **every** request per client IP — connects, which is what set the
+  number, and `/debug/usage`, which shares the counter rather than carrying a
+  second `namespace_id` tuned against nothing. Growing `CODE_WORDS` only raises
+  the cost of a sweep, it never closes it.
 - **`JOIN_LIMITER` is optional in `Env`, and a missing limiter means no
   limiting.** `wrangler dev` requests carry no `CF-Connecting-IP` and an
   environment deployed before the binding existed has none — neither may fail
@@ -787,7 +801,20 @@ The rest is off every game path, and deletable without the game noticing.
   unauthenticated, which is an accepted trade — it serves account-level usage
   counts, never tokens or room state. `handleUsage` in `party/server.ts` is
   where a gate goes if that changes; the client's `debugEnabled()` is a button,
-  not a boundary.
+  not a boundary. **Unauthenticated is not unmetered**: it sits behind
+  `rateLimited` with every other path, because an exempt route that spends
+  seven GraphQL queries per `?fresh=1` is a way to burn the account's daily
+  request allowance — the one the games run on — without joining a room.
+- **The triangle is hidden on the production hostnames, and `?debug=1` is the
+  way back in** (`debugEnabled()` in `src/net/usage.ts`, unlock flag in
+  `localStorage`, `?debug=0` to clear). The hatch is not an afterthought: this
+  gate *was* a hostname allowlist once and was deleted precisely because the
+  production numbers are the only ones worth watching and reading them meant
+  deploying a branch. Hiding it is about the TV in front of a room, so hiding
+  it from *that* screen while leaving it one query string away from the laptop
+  driving the room is the whole of what was wanted. The route stays open in
+  every environment either way — a hidden button closes nothing, which is also
+  why every mutating control stays host-only and server-enforced.
 - **`ENVIRONMENT` gates nothing** and is the only `var` left. It is the label in
   the panel footer, so a tab open against the wrong Worker is obvious.
 - **Every figure in the panel reads the same from every environment.** Nothing
@@ -1334,7 +1361,10 @@ card ends on. Rules to keep:
   debug menu. §§1–11 are the usage half: the `/debug/usage` route, why one
   GraphQL request per metric, the per-account Workers allowance, why Vercel is
   a link rather than a bar. **§12 is the round controls** — pause, skip,
-  auto-fill, experiment flags, and why each is host-only. Implemented.
+  auto-fill, experiment flags, and why each is host-only. Implemented. **§6 is
+  historical on its client half** — the triangle is hidden on the production
+  hostnames again, with `?debug=1` as a per-device unlock; the route it reads is
+  still live everywhere.
 - `docs/superpowers/specs/2026-07-29-host-scoring-reveal-design.md` — the host
   results screen and its three-frame reveal: the merged card, the derive-from-one-
   integer schedule, the strike/back-check rule, the measured swap, the podium and
