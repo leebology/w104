@@ -6293,8 +6293,9 @@ ul, ol { list-style: none; }
 
 /* ------------------------------------------------------------ debug panel */
 
-/* Staging and local only — `debugEnabled()` in src/net/usage.ts decides, and
-   the Worker route it reads 404s in production regardless.
+/* `debugEnabled()` in src/net/usage.ts decides where this renders: everywhere
+   except the production hostnames, and there too once `?debug=1` has unlocked
+   the device. The Worker route it reads is live in every environment.
 
    Everything below deliberately ignores the design system's tokens for colour
    and shape. The rest of the app is cream-on-pink with gold for "go"; this is

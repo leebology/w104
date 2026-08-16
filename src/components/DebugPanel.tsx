@@ -31,9 +31,11 @@ import { MAX_LINE_MS, MIN_LINE_MS, REVEAL_TIMING } from "../../shared/reveal";
  * Debug, Views and Bots all mutate the live room and are host-only, enforced on
  * the server. The other two touch nothing.
  *
- * **The tab itself is host-only too** — see the gate in `DebugPanel` below. The
- * server checks are still the boundary; this is just not putting the thing in
- * a player's hand at a party.
+ * **The tab itself is host-only too, and hidden outright on production** — see
+ * the gate in `DebugPanel` below and `debugEnabled()` in `src/net/usage.ts`,
+ * which takes `?debug=1` as the way back in. The server checks are still the
+ * boundary; this is just not putting the thing in a player's hand at a party,
+ * or on the TV of a room that did not ask for it.
  *
  * **Deliberately not in the game's visual language.** Every other surface in
  * this app is cream-on-pink with gold for "go"; this one is ink with a teal
@@ -98,7 +100,9 @@ export function useExperiment(id: ExperimentId): boolean {
 
 export function DebugPanel() {
   // Evaluated once: `location` cannot change without a reload, and calling it
-  // per render would run the check on every keystroke of a round.
+  // per render would run the check on every keystroke of a round. Once is also
+  // what the `?debug=1` unlock wants — it writes a localStorage flag, and a
+  // side effect on every render of a live round is not one.
   const [enabled] = useState(debugEnabled);
   const [open, setOpen] = useState(false);
   const [usageOpen, setUsageOpen] = useState(false);
@@ -212,8 +216,9 @@ export function DebugPanel() {
  * Every one of them is **host-only**, and this component only decides what to
  * *show*: `shared/reduce.ts` rejects the events from a non-host and from the
  * wrong phase, and `party/server.ts` rejects the fill the same way. A greyed-out
- * button is a courtesy, not the boundary — the panel renders in production, so
- * the server has to assume the buttons are missing.
+ * button is a courtesy, not the boundary — the panel can be unlocked on
+ * production with `?debug=1`, and a hidden panel is a hidden panel rather than
+ * an absent client, so the server has to assume the buttons are there.
  *
  * The phases differ between them, and the split is not arbitrary: hold and skip
  * act on a *deadline*, and every phase that runs one long enough to be caught
