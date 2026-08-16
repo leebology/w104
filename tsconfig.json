@@ -15,5 +15,9 @@
     "resolveJsonModule": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "shared"]
+  // `middleware.ts` is a root file belonging to neither src nor shared, and
+  // without it named here `npm run typecheck` would not look at it at all —
+  // which for the one file that can lock everybody out of a deployment is the
+  // wrong file to leave unchecked.
+  "include": ["src", "shared", "middleware.ts"]
 }
