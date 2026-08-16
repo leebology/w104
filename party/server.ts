@@ -1284,17 +1284,20 @@ export class W104 extends Server<Env> {
  * The endpoint is therefore unauthenticated on a public host. What it serves
  * is a handful of account-level usage counts — no tokens, no room state, no
  * player data — and the API token itself never leaves the Worker. This is the
- * place to add a gate if that trade ever stops holding; hiding the client
- * button would not close it.
+ * place to add an *auth* gate if that trade ever stops holding; hiding the
+ * client button would not close it. It is no longer the place to worry about
+ * volume: the route sits behind `rateLimited` with everything else.
  *
  * CORS is wide open because the caller is always a different origin — the app
  * is on Vercel, this is on workers.dev.
  *
  * `?fresh=1` skips the 60-second cache, for when you have just played a round
- * and want to watch the number move.
+ * and want to watch the number move. Takes the URL the entrypoint already
+ * parsed rather than re-parsing the request, since the path check upstream
+ * needs it anyway.
  */
-async function handleUsage(request: Request, env: Env): Promise<Response> {
-  const fresh = new URL(request.url).searchParams.get("fresh") === "1";
+async function handleUsage(url: URL, env: Env): Promise<Response> {
+  const fresh = url.searchParams.get("fresh") === "1";
   const report = await collectUsage(env, Date.now(), { fresh });
   return new Response(JSON.stringify(report), {
     headers: {
@@ -1308,8 +1311,10 @@ async function handleUsage(request: Request, env: Env): Promise<Response> {
 }
 
 /**
- * Whether this connect attempt has spent its caller's budget.
+ * Whether this caller has spent its budget. Every request the Worker serves
+ * goes through it — room connects and `/debug/usage` alike.
  *
+ * It was written for the connects, and they are still what sets the number.
  * Room codes are four-letter words so they can be read off a TV and shouted
  * across a room, and that ceiling is the whole point of them — no list anyone
  * can shout is large enough to hide in. At ~800 words the entire code space is
@@ -1332,6 +1337,15 @@ async function handleUsage(request: Request, env: Env): Promise<Response> {
  * The number itself is in `wrangler.jsonc` — it is configuration, and a
  * constant here that did not control it would only ever go stale.
  *
+ * The usage endpoint rides the same counter rather than getting its own
+ * `namespace_id`. One budget per address is the honest shape of what is being
+ * defended — the account's daily request allowance, which both paths spend out
+ * of — and the panel's draw on it is a rounding error: one poll a minute while
+ * it is open, plus refresh presses. Split them and the debug half would need a
+ * second number tuned against nothing in particular. Give it its own namespace
+ * only if the panel ever has to keep working *while* an address is being
+ * rate-limited for something else, which is not a situation this app has.
+ *
  * Two ways this declines to limit, both deliberate: no binding (see `Env`), and
  * no `CF-Connecting-IP`, which is every request in `wrangler dev` — there is no
  * caller to key on, and guessing one would rate-limit local development
@@ -1347,16 +1361,17 @@ async function rateLimited(request: Request, env: Env): Promise<boolean> {
 // Worker entrypoint: route /parties/:party/:room to the right room instance.
 export default {
   async fetch(request, env) {
-    // Checked before `routePartykitRequest`, which would otherwise 404 it
-    // itself — this path is not a party route and never reaches a room. Also
-    // before the budget below: the debug panel polls on its own schedule and
-    // is not what the budget is defending.
-    if (new URL(request.url).pathname === "/debug/usage") {
-      return handleUsage(request, env);
-    }
-
-    // Everything past here is a room connect, which is the only request that
-    // can tell an attacker whether a code is live.
+    // The budget is first, and it covers everything — room connects, which are
+    // what it was written for, and `/debug/usage`, which used to be checked
+    // above it on the grounds that the panel polls on its own schedule and is
+    // not what the budget defends against. That was true of the panel and
+    // beside the point for the route: unauthenticated, exempt from the only
+    // limiter in the app, and with `?fresh=1` skipping the 60-second cache, it
+    // was the cheapest way for anyone holding the Worker's address to spend the
+    // account's 100,000 requests a day — the same allowance the games run on —
+    // and to burn the GraphQL quota seven queries at a time. Nothing that opens
+    // the panel notices: a poll a minute is three orders of magnitude under the
+    // budget.
     if (await rateLimited(request, env)) {
       return new Response("Too Many Requests", {
         status: 429,
@@ -1364,12 +1379,19 @@ export default {
       });
     }
 
+    const url = new URL(request.url);
+
+    // Checked before `routePartykitRequest`, which would otherwise 404 it
+    // itself — this path is not a party route and never reaches a room.
+    if (url.pathname === "/debug/usage") {
+      return handleUsage(url, env);
+    }
+
     // PartyServer takes the connection id from `_pk`, and partysocket mints one
     // `_pk` per socket instance and reuses it on every auto-reconnect. Two
     // sockets would then share an id in a Map keyed by it, and the stale one's
     // cleanup would evict its live replacement. Dropping the parameter makes
     // PartyServer mint a fresh id per connection instead, so that cannot arise.
-    const url = new URL(request.url);
     let req = request;
     if (url.searchParams.has("_pk")) {
       url.searchParams.delete("_pk");
