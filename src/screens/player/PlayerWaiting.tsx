@@ -1,7 +1,11 @@
+import { useState } from "react";
 import { roomStore } from "../../net/room";
+import { AVATARS, AvatarPicker } from "../../components/AvatarPicker";
 import { GetReady } from "../../components/GetReady";
 import { TeamBadge } from "../../components/TeamBadge";
 import { TeamGrid } from "../../components/TeamGrid";
+import { saveProfile } from "../../net/identity";
+import { takenAvatars } from "../../../shared/avatars";
 import { currentRound, matchComplete } from "../../../shared/state";
 import type { PlayerId, RoomState } from "../../../shared/state";
 import { teamOf, teamsEnabled } from "../../../shared/teams";
@@ -84,6 +88,19 @@ export function PlayerWaiting({ room, playerId, countdown }: Props) {
   const eligible = !teams || mine !== undefined;
   const done = room.phase.name === "standings" && matchComplete(room);
 
+  // The same split the lobby makes, for the same reason: the name is typed and
+  // stays local, the avatar is the server's to refuse and is read back from the
+  // room. See `PlayerLobby`.
+  const me = room.players.find((p) => p.id === playerId);
+  const [name, setName] = useState(me?.name ?? "");
+  const emoji = me?.emoji ?? AVATARS[0];
+  const taken = takenAvatars(room.players, playerId);
+
+  const updateProfile = (nextName: string, nextEmoji: string) => {
+    roomStore.send({ type: "setProfile", name: nextName, emoji: nextEmoji });
+    saveProfile(nextName, nextEmoji);
+  };
+
   // The card only goes up for somebody it is actually about. An ineligible
   // player gets the picker, undimmed and still live: admission is read at the
   // whistle and nowhere earlier, so a tap that lands during the count still
@@ -132,6 +149,35 @@ export function PlayerWaiting({ room, playerId, countdown }: Props) {
               : "Sit tight. You'll be dealt in when the next round starts."}
           </p>
         )}
+
+        {/* Last on the screen, and deliberately below the team picker: with
+            teams on, picking one is what gets you into the round and this is
+            optional tinkering while you wait. It is here at all because the
+            waiting room is the *only* screen a latecomer ever sees before they
+            are dealt in — they never pass through the lobby, so without this
+            they would play their first round as whatever name and random face
+            they arrived with. */}
+        <section className="card player-waiting__profile">
+          <label className="field__label" htmlFor="waiting-name">Your name</label>
+          <input
+            id="waiting-name"
+            className="field__input"
+            value={name}
+            placeholder="Type a name"
+            onChange={(e) => {
+              const next = e.target.value;
+              setName(next);
+              updateProfile(next, emoji);
+            }}
+            maxLength={20}
+          />
+          <span className="field__label">Pick an avatar</span>
+          <AvatarPicker
+            value={emoji}
+            taken={taken}
+            onChange={(next) => updateProfile(name, next)}
+          />
+        </section>
       </div>
 
       {/* Literally the same card the TV and every other screen wear, with no
