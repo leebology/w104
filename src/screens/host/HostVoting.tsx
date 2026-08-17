@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
 import { prefersReducedMotion } from "../../reveal";
-import { BALLOT, RANDOM_CATEGORY } from "../../../shared/categories";
+import { RANDOM_CATEGORY, votableBallot } from "../../../shared/categories";
 import { tallyVotes, voteBudget, voteShares } from "../../../shared/voting";
 import { teamsEnabled } from "../../../shared/teams";
 import { customEnabled } from "../../../shared/gamemodes";
@@ -209,7 +209,8 @@ function HostVotingClosed({
   countdown: { endsAt: number; offset: number };
   cast: number;
 }) {
-  const shares = voteShares(room.votes);
+  const ballot = votableBallot(room);
+  const shares = voteShares(room.votes, ballot);
   // Survivors only, strongest first. Zero-vote options are gone. Off the
   // ballot, so a room that backed `random` sees its odds like any other.
   // One row, no rank split. A card's share
@@ -217,7 +218,7 @@ function HostVotingClosed({
   // percentage are drawn identically however far down the order they sit. Type
   // size comes from the CSS (see `--name-size` on `.host-voting__row--all`) so
   // the container-query ceiling still governs a narrow card.
-  const survivors = BALLOT
+  const survivors = ballot
     .filter((c) => (totals[c] ?? 0) > 0)
     .sort((a, b) => (totals[b] ?? 0) - (totals[a] ?? 0));
 

@@ -214,6 +214,11 @@ export class W104 extends Server<Env> {
       // denominator of every step in the reveal's schedule, and undefined there
       // would put every line of a stored room's next reveal on one millisecond.
       revealLineMs: clampLineMs(rest.revealLineMs ?? REVEAL_TIMING.LINE_INTERVAL),
+      // A room stored before per-match ballots existed has none. Empty is the
+      // honest value and a safe one: `ballotOf` answers an empty ballot with a
+      // deterministic draw off the room code, which the server and every phone
+      // reach independently.
+      ballot: rest.ballot ?? [],
       drafts: rest.drafts ?? {},
       cursors: rest.cursors ?? {},
       pool: rest.pool ?? null,
