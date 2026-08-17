@@ -83,6 +83,20 @@ It is named in `tsconfig.json`'s `include` so `npm run typecheck` covers it;
 the one file that can lock everybody out of a deployment is the wrong one to
 leave unchecked. See "The password gate" in `HOSTING.md`.
 
+**It is also the only reason this repo's TypeScript version matters to Vercel,
+and why `typescript` is held at `^5.9.3`.** A middleware file is the one thing
+Vercel compiles itself — `@vercel/node` builds it, and on the CLI version their
+build image currently runs (58.1.0) that compile drives the TypeScript *API*
+and dies on TypeScript 7 with `Cannot read properties of undefined (reading
+'readFile')`. CLI 59 shells out to the `tsc` executable and is fine, so this is
+a rollout window rather than a permanent incompatibility: when their builders
+reach 59, the pin can go. Nothing else in the repo cares — Vite transpiles
+through esbuild and `tsc` only ever typechecks. Two more traps live in that
+file's own comments, both of which cost a deploy each to find: a `/** */` block
+inside `config` fails Vercel's static analyser with `Unhandled type:
+"ColonToken"`, and a bare package name in `tsconfig.json`'s `types` cannot be
+resolved from the temp directory Vercel compiles in.
+
 `shared/rng.ts` is the one seeded generator, in a module of its own because its
 two callers sit on opposite sides of the codebase: the reveal, which needs the
 *same* deal on a replay, and `balanceTeams`, which needs a different one on every
