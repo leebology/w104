@@ -120,6 +120,12 @@ inferred from a number that will not move.
 
 ## 6. Live in production, on purpose
 
+> **Historical on the client half.** The route is still live in production and
+> everything below about it holds. The *triangle* is not: `debugEnabled()` hides
+> it on the production hostnames again, with `?debug=1` as a per-device unlock —
+> which is what keeps this section's actual argument true. See "Debug menu" in
+> CLAUDE.md and "Hidden on production" in HOSTING.md.
+
 The route originally 404'd when `ENVIRONMENT === "production"`, and the client
 gated on a hostname allowlist. Both are gone. The gate meant the numbers worth
 watching were the only ones you could not see without deploying a branch first.
@@ -133,6 +139,15 @@ The accepted consequences:
 
 `handleUsage` in `party/server.ts` is where a gate goes if that trade stops
 holding. The client's `debugEnabled()` is a button, not a boundary.
+
+**Amended after the fact:** the route was also exempt from `rateLimited`, on
+the grounds that the panel polls on its own schedule and is not what the
+per-IP budget defends against. True of the panel, wrong about the route —
+unauthenticated, unmetered, and with `?fresh=1` skipping the 60-second cache,
+it was the cheapest way to spend the account's 100,000 requests a day and to
+burn the GraphQL quota seven queries at a time. The budget now runs first in
+the Worker entrypoint and covers every path. Authentication is still the open
+question; volume is not.
 
 ## 7. Vercel is a link, not a bar
 

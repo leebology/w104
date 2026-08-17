@@ -1016,7 +1016,7 @@ describe("casting votes", () => {
     let room = seedVoting(2, 3); // budget 2
     room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
     expect(room.players.find((p) => p.id === "p0")!.ready).toBe(false);
-    room = reduce(room, { t: "castVote", playerId: "p0", category: "car", now: 3100 });
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "car make/model", now: 3100 });
     expect(room.players.find((p) => p.id === "p0")!.ready).toBe(true);
   });
 
@@ -1024,7 +1024,7 @@ describe("casting votes", () => {
     let room = seedVoting(2, 2); // budget 1
     room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
     const before = room;
-    room = reduce(room, { t: "castVote", playerId: "p0", category: "car", now: 3100 });
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "car make/model", now: 3100 });
     expect(room).toBe(before);
   });
 
@@ -1090,7 +1090,7 @@ describe("leaving voting", () => {
     let room = seedVoting(2, 2); // budget 1
     room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
     expect(room.phase.name).toBe("voting");
-    room = reduce(room, { t: "castVote", playerId: "p1", category: "car", now: 3100 });
+    room = reduce(room, { t: "castVote", playerId: "p1", category: "car make/model", now: 3100 });
     expect(room.phase).toEqual({
       name: "countdown", endsAt: 3100 + COUNTDOWN_MS, to: "playing",
     });
@@ -1156,7 +1156,7 @@ describe("abandoning a vote", () => {
   test("stopping the countdown out of voting discards the votes too", () => {
     let room = seedVoting(2, 2);
     room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
-    room = reduce(room, { t: "castVote", playerId: "p1", category: "car", now: 3100 });
+    room = reduce(room, { t: "castVote", playerId: "p1", category: "car make/model", now: 3100 });
     room = reduce(room, { t: "cancelStart", playerId: "host", now: 3200 });
     expect(room.phase.name).toBe("lobby");
     expect(room.votes).toEqual({});
@@ -1175,25 +1175,25 @@ describe("drawing the round's category", () => {
   }
 
   test("the whistle draws from the votes", () => {
-    let room = votedRoom("car");
+    let room = votedRoom("car make/model");
     const endsAt = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: endsAt, roll: 0.5 });
     expect(room.phase.name).toBe("playing");
-    expect(room.category).toBe("car");
+    expect(room.category).toBe("car make/model");
   });
 
   test("the countdown does not draw — the category is secret until the whistle", () => {
-    const room = votedRoom("car");
+    const room = votedRoom("car make/model");
     expect(room.phase.name).toBe("countdown");
     expect(room.category).toBe("woman"); // still the seeded default
   });
 
   test("a category already played is never drawn again", () => {
-    let room = votedRoom("car", 3);
-    room = { ...room, history: [{ category: "car", places: {} }] };
+    let room = votedRoom("car make/model", 3);
+    room = { ...room, history: [{ category: "car make/model", places: {} }] };
     const endsAt = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: endsAt, roll: 0.5 });
-    expect(room.category).not.toBe("car");
+    expect(room.category).not.toBe("car make/model");
   });
 
   test("a room that voted random still gets a real category at the whistle", () => {

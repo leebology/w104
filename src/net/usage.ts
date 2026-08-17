@@ -21,27 +21,70 @@ function usageUrl(fresh: boolean): string {
 }
 
 /**
- * Every environment, production included — a deliberate choice, not an
- * oversight, and the reason this function still exists instead of the call
- * sites simply dropping the check.
+ * Where the panel is hidden by default. Everywhere else — staging, PR
+ * previews, a LAN IP on somebody's wifi, localhost — it simply shows.
  *
- * It was originally a hostname allowlist covering local, LAN and staging. The
- * production numbers are the ones actually worth watching, and checking them
- * meant deploying a branch to see them, so the gate was doing the opposite of
- * its job. Two consequences, both accepted on purpose:
+ * A hostname list rather than a build-time flag on purpose. It is answerable
+ * from the browser that is drawing the triangle, so there is no Vercel setting
+ * to keep in step with a `define`, and it fails in the direction that matters:
+ * a build that reaches the production address by some route nobody planned
+ * still recognises the address bar it arrived at.
+ */
+const PRODUCTION_HOSTS = ["oknameone.com", "www.oknameone.com"];
+
+/**
+ * Set by `?debug=1`, cleared by `?debug=0`. Deliberately not namespaced by
+ * `?p=` the way `net/identity.ts` namespaces a seat: that exists so three tabs
+ * on one machine can be three players, and one machine's tabs are never the
+ * production site.
+ */
+const UNLOCK_KEY = "w104:debug";
+
+/**
+ * Whether this device gets the debug triangle at all.
  *
- * - The triangle is on the TV during a real party. It is 34px in a corner and
- *   nothing opens it by accident.
- * - `/debug/usage` is reachable on the production Worker without
- *   authentication. What it serves is a handful of account-level usage counts
- *   — no tokens, no room state, no player data. If that ever stops being an
- *   acceptable trade, gate the Worker route (party/server.ts) rather than this
- *   function: hiding the button does not close the endpoint.
+ * Hidden on production, because a 34px tab labelled "debug menu" sits on a TV
+ * in front of a room of people who did not ask for it. **Not hidden very
+ * hard**: `?debug=1` once on the production site unlocks it for that device
+ * until `?debug=0`, and the reason that hatch exists is the reason this
+ * function stopped being a hostname allowlist the first time. The production
+ * numbers are the only ones worth watching, and a gate that made checking them
+ * mean deploying a branch was doing the opposite of its job.
  *
- * Kept as a function so there is one place to put a condition back.
+ * It is a visibility gate and nothing more. Two things it does not do:
+ *
+ * - It does not close `/debug/usage`, which is reachable on the production
+ *   Worker without authentication. What it serves is a handful of
+ *   account-level usage counts — no tokens, no room state, no player data. If
+ *   that ever stops being an acceptable trade, gate the Worker route
+ *   (`handleUsage` in party/server.ts); hiding the button does not close the
+ *   endpoint.
+ * - It does not stop the events. Every control that mutates a live room is
+ *   host-only and rejected server-side in `shared/reduce.ts` and
+ *   `party/server.ts`. That is the boundary; this is the tab not being in a
+ *   stranger's hand at a party.
  */
 export function debugEnabled(): boolean {
-  return true;
+  if (!PRODUCTION_HOSTS.includes(location.hostname)) return true;
+
+  const asked = new URLSearchParams(location.search).get("debug");
+  if (asked !== null) {
+    const on = asked !== "0" && asked !== "false";
+    try {
+      if (on) localStorage.setItem(UNLOCK_KEY, "1");
+      else localStorage.removeItem(UNLOCK_KEY);
+    } catch {
+      // Storage can throw in a locked-down Safari. Honour the parameter for
+      // this page load rather than refusing to open at all.
+    }
+    return on;
+  }
+
+  try {
+    return localStorage.getItem(UNLOCK_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 export type UsageResult =
