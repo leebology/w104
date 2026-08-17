@@ -8,6 +8,7 @@ import { StandingsList } from "../../components/StandingsList";
 import { roomStore } from "../../net/room";
 import type { RoomState } from "../../../shared/state";
 import { rosterOf } from "../../../shared/teams";
+import { MuteButton } from "../../components/MuteButton";
 import { HostBackToRoom, HostHeader, HostHeaderRight } from "./HostHeader";
 
 type Props = {
@@ -51,7 +52,15 @@ export function HostStandings({ room, countdown, fromScoring }: Props) {
         <HostHeader
           left={<RoomChip room={room} />}
           right={
-            done ? null : (
+            // The one host screen with no exit — the match is over, and the
+            // footer's gold button already does what a back-out would. So it is
+            // also the one screen where the mute is not riding on an exit's
+            // left; see `HostExit`.
+            done ? (
+              <HostHeaderRight>
+                <MuteButton />
+              </HostHeaderRight>
+            ) : (
               <HostHeaderRight>
                 <div className="host-standings__title">
                   <h1>Standings</h1>
