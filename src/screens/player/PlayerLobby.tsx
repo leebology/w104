@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ABOUT_FADE_MS, AboutLink, AboutPanel } from "../../components/About";
 import { AVATARS, AvatarPicker } from "../../components/AvatarPicker";
+import { takenAvatars } from "../../../shared/avatars";
 import { GetReady } from "../../components/GetReady";
 import { saveProfile } from "../../net/identity";
 import { roomStore } from "../../net/room";
@@ -17,7 +18,20 @@ type Props = {
 export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
   const me = room.players.find((p) => p.id === playerId);
   const [name, setName] = useState(me?.name ?? "");
-  const [emoji, setEmoji] = useState(me?.emoji ?? AVATARS[0]);
+  /**
+   * The avatar is read from the room, not held here, and the name is the other
+   * way round.
+   *
+   * They differ because the server has an opinion about only one of them. It
+   * refuses an emoji somebody else is already wearing (`setProfile` in
+   * `shared/reduce.ts`), so a local copy could sit showing a face this player
+   * did not get — two thumbs landing on the same tile would leave both phones
+   * insisting they own it. Reading it back from `room` means the tile that
+   * lights up is the one the room agrees on. The name has no such rule and is
+   * typed a character at a time, so it stays local and responsive.
+   */
+  const emoji = me?.emoji ?? AVATARS[0];
+  const taken = takenAvatars(room.players, playerId);
 
   /**
    * The about section below the two cards, and the scroll that shows it.
@@ -179,10 +193,8 @@ export function PlayerLobby({ room, playerId, countdown, onLeave }: Props) {
           <span className="field__label">Pick an avatar</span>
           <AvatarPicker
             value={emoji}
-            onChange={(next) => {
-              setEmoji(next);
-              updateProfile(name, next);
-            }}
+            taken={taken}
+            onChange={(next) => updateProfile(name, next)}
           />
         </section>
 

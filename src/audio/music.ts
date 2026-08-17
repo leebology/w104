@@ -38,6 +38,21 @@ const HANDOFF_LEAD_MS = 10;
 const LEADS_TO: SceneId = "gameplay";
 
 /**
+ * The mute preference, per device. Not namespaced by `?p=` the way a seat is:
+ * that exists so three tabs on one machine can be three players, and the
+ * speakers are the machine's, not the tab's.
+ */
+const MUTE_KEY = "w104:muted";
+
+function storedMute(): boolean {
+  try {
+    return localStorage.getItem(MUTE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The room's music, as one imperative object outside React.
  *
  * Deliberately not state and not a ref: an `HTMLAudioElement` is a long-lived
@@ -71,6 +86,22 @@ class MusicPlayer {
   private interrupted: SceneId | null = null;
   /** Set while waiting for a gesture to unblock autoplay. See `arm`. */
   private armed = false;
+  /**
+   * Whether the room's speakers are off, and the one piece of this object a
+   * screen can set.
+   *
+   * `muted` on the element rather than a volume of zero, deliberately: every
+   * fade, trim and hand-off below writes `volume`, so a mute expressed there
+   * would be overwritten by the next scene change and would have to be
+   * re-applied at each of them. `muted` is a second, independent gate the rest
+   * of this class never touches, so the ramps keep running underneath and
+   * unmuting lands at exactly the level the scene was already at.
+   *
+   * Seeded from `localStorage`, because the device this runs on is a TV in a
+   * room: a host who muted it before the guests arrived should not have it come
+   * back on at the next reload or on the next room they open.
+   */
+  private muted = storedMute();
   /** The pending early hand-off out of the lead-in. See `HANDOFF_LEAD_MS`. */
   private join: number | null = null;
   /** `viewNonce` as of the last call. `-1` until the first. See `play`. */
@@ -157,6 +188,35 @@ class MusicPlayer {
     this.play(null);
   }
 
+  isMuted(): boolean {
+    return this.muted;
+  }
+
+  /**
+   * The mute button in the host header.
+   *
+   * Applied to every element that exists and remembered for every element that
+   * does not yet — `elementFor` stamps it at construction, so a scene reached
+   * for the first time while muted arrives silent rather than blaring one bar
+   * before this catches up.
+   *
+   * Nothing else in this class reads `muted`: playback, fades and the hand-off
+   * all carry on as if the room could hear them, so unmuting mid-round drops
+   * straight into wherever the track has got to rather than restarting it.
+   */
+  setMuted(muted: boolean): void {
+    if (muted === this.muted) return;
+    this.muted = muted;
+    for (const el of this.elements.values()) el.muted = muted;
+    try {
+      if (muted) localStorage.setItem(MUTE_KEY, "1");
+      else localStorage.removeItem(MUTE_KEY);
+    } catch {
+      // A locked-down Safari refuses storage. The mute still holds for this
+      // page; it just will not survive a reload, which beats not muting.
+    }
+  }
+
   /**
    * Silence, immediately, with no memory of what was playing.
    *
@@ -204,6 +264,10 @@ class MusicPlayer {
     const el = new Audio(src);
     el.preload = "auto";
     el.volume = 0;
+    // Stamped at construction, so a scene first reached while the room is
+    // muted starts silent instead of playing a bar before `setMuted` reaches
+    // an element that did not exist when it was pressed.
+    el.muted = this.muted;
     this.elements.set(scene, el);
     // Attached once, at creation, rather than per play: the element is cached
     // for the life of the page, so a listener added on each countdown would

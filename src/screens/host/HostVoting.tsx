@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
 import { prefersReducedMotion } from "../../reveal";
-import { BALLOT, RANDOM_CATEGORY } from "../../../shared/categories";
+import { RANDOM_CATEGORY, votableBallot } from "../../../shared/categories";
 import { tallyVotes, voteBudget, voteShares } from "../../../shared/voting";
 import { teamsEnabled } from "../../../shared/teams";
 import { customEnabled } from "../../../shared/gamemodes";
@@ -173,9 +173,14 @@ export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props)
       {/* The board itself stays hidden while voting is open — showing it
           live would let the room watch categories reorder and resize as
           votes land, mid-vote. It appears once for everyone, all at once,
-          in the closed reveal below. */}
+          in the closed reveal below.
+
+          So the line that fills the space says what to *do* rather than what
+          is being withheld. The ballot is on the phones and this screen has no
+          way in; a room looking up at the TV for sixty seconds needs pointing
+          back down at the device that can actually vote. */}
       <div className="host-voting__grid host-voting__grid--waiting">
-        <p className="host-voting__no-votes">Categories reveal once voting closes.</p>
+        <p className="host-voting__no-votes">Vote for categories on your device!</p>
       </div>
 
       <div className="host-voting__footer">
@@ -209,7 +214,8 @@ function HostVotingClosed({
   countdown: { endsAt: number; offset: number };
   cast: number;
 }) {
-  const shares = voteShares(room.votes);
+  const ballot = votableBallot(room);
+  const shares = voteShares(room.votes, ballot);
   // Survivors only, strongest first. Zero-vote options are gone. Off the
   // ballot, so a room that backed `random` sees its odds like any other.
   // One row, no rank split. A card's share
@@ -217,7 +223,7 @@ function HostVotingClosed({
   // percentage are drawn identically however far down the order they sit. Type
   // size comes from the CSS (see `--name-size` on `.host-voting__row--all`) so
   // the container-query ceiling still governs a narrow card.
-  const survivors = BALLOT
+  const survivors = ballot
     .filter((c) => (totals[c] ?? 0) > 0)
     .sort((a, b) => (totals[b] ?? 0) - (totals[a] ?? 0));
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatClock, useRemaining } from "../../net/clock";
-import { BALLOT, RANDOM_CATEGORY } from "../../../shared/categories";
+import { RANDOM_CATEGORY, votableBallot } from "../../../shared/categories";
 import { VOTING_MS } from "../../../shared/reduce";
 import { customEnabled } from "../../../shared/gamemodes";
 import type { Hand } from "../../../shared/customCategories";
@@ -58,7 +58,7 @@ export function PlayerVoting({ room, playerId, hands, offset, countdown, drafts 
   // and a percentage that ticks under the player's thumb reads as a score
   // rather than as the odds it is. Any badged category holds at least this
   // player's own vote, so this can never render 0%.
-  const shares = closed ? voteShares(room.votes) : {};
+  const shares = closed ? voteShares(room.votes, votableBallot(room)) : {};
 
   const votingEndsAt = room.phase.name === "voting" ? room.phase.endsAt : 0;
   // The voting window only. The countdown card counts itself off its own
@@ -113,7 +113,7 @@ export function PlayerVoting({ room, playerId, hands, offset, countdown, drafts 
           (closed ? " countdown-dim" : "")
         }
       >
-        {BALLOT.map((category) => {
+        {votableBallot(room).map((category) => {
           const n = mine[category] ?? 0;
           // Last on the ballot and the full width of the grid: it is on every
           // ballot every match, it is the one option that is not a subject, and
