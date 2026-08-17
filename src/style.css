@@ -6303,10 +6303,17 @@ ul, ol { list-style: none; }
   flex: 1 1 auto;
   overflow-y: auto;
   overflow-x: hidden;
-  /* Room for the cards' 6px offset shadow, which falls outside the card box
-     and would otherwise be clipped by this container's own overflow. */
-  padding-right: 8px;
-  margin-right: -8px;
+  /* A scrollport clips everything outside its padding box, and three things on
+     this screen deliberately sit outside their own: the cards' 6px offset
+     shadow, and the WAITING ROOM plaque's top-left corner and 4px ink shadow —
+     it is rotated -4deg and `align-self: flex-start`, so its high corner rides
+     up and left of the box it lays out in. Without the clearance the tilt is
+     shaved flat against the top edge.
+
+     Padding to make the room, negative margin to give it straight back, so the
+     stage keeps the position and width it had before it could scroll. */
+  padding: 12px 8px 0 10px;
+  margin: -12px -8px 0 -10px;
 }
 
 /* The avatar grid inside it scrolls sideways on its own, so the two must not

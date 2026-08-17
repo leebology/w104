@@ -173,9 +173,14 @@ export function HostVoting({ room, offset, countdown, creatingSnapshot }: Props)
       {/* The board itself stays hidden while voting is open — showing it
           live would let the room watch categories reorder and resize as
           votes land, mid-vote. It appears once for everyone, all at once,
-          in the closed reveal below. */}
+          in the closed reveal below.
+
+          So the line that fills the space says what to *do* rather than what
+          is being withheld. The ballot is on the phones and this screen has no
+          way in; a room looking up at the TV for sixty seconds needs pointing
+          back down at the device that can actually vote. */}
       <div className="host-voting__grid host-voting__grid--waiting">
-        <p className="host-voting__no-votes">Categories reveal once voting closes.</p>
+        <p className="host-voting__no-votes">Vote for categories on your device!</p>
       </div>
 
       <div className="host-voting__footer">
