@@ -36,18 +36,23 @@
 // `@types/node`, and one field of one global is not worth pulling them in.
 declare const process: { env: Record<string, string | undefined> };
 
+// NOTE: line comments, not a `/** */` block, and that is not a style choice.
+// Vercel reads this object with a static analyser before the file is ever
+// compiled, and a JSDoc block anywhere inside `config` fails that read with
+// `Error: Unhandled type: "ColonToken" :` — a build error naming no file, no
+// line, and nothing that suggests a comment. The comment needs no colon of its
+// own; the one it chokes on is `matcher:` below. Reproduce with `vercel build`.
+//
+// Documents only. Hashed bundles, fonts and audio all land under `/assets/`
+// and are not secret — gating them would spend a middleware invocation per
+// file per page load against Hobby's monthly allowance to protect a
+// stylesheet. The extension list catches anything served straight out of
+// `public/`, which `/assets/` does not cover.
+//
+// `.html` is deliberately absent from that list, so `/index.html` is gated
+// as well as `/`. A gate with the unminified front door left open beside it
+// is not a gate.
 export const config = {
-  /**
-   * Documents only. Hashed bundles, fonts and audio all land under `/assets/`
-   * and are not secret — gating them would spend a middleware invocation per
-   * file per page load against Hobby's monthly allowance to protect a
-   * stylesheet. The extension list catches anything served straight out of
-   * `public/`, which `/assets/` does not cover.
-   *
-   * `.html` is deliberately absent from that list, so `/index.html` is gated
-   * as well as `/`. A gate with the unminified front door left open beside it
-   * is not a gate.
-   */
   matcher: [
     "/((?!assets/|.*\\.(?:js|mjs|css|map|png|jpe?g|gif|svg|webp|avif|ico|woff2?|ttf|otf|mp3|ogg|wav|webmanifest|txt|xml)$).*)",
   ],

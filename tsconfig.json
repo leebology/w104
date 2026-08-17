@@ -4,7 +4,17 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
-    "types": ["vite/client"],
+    // Empty, not `["vite/client"]`, and it has to stay empty — the reference
+    // moved to `src/globals.d.ts`, which explains why. Short version: Vercel
+    // builds `middleware.ts` from a tsconfig it writes into the OS temp
+    // directory that `extends` this one, and a package name here is resolved
+    // from *that* directory, where `node_modules` does not exist.
+    //
+    // Empty is also doing a second job: it stops TypeScript auto-including
+    // every `@types` package it can find. There is no `@types/node` in this
+    // project, which is what lets `middleware.ts` declare the one field of
+    // `process` it uses without colliding with a global.
+    "types": [],
     "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
