@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { MuteButton } from "../../components/MuteButton";
 import { roomStore } from "../../net/room";
 
 type Props = {
@@ -68,6 +69,14 @@ export function HostHeaderRight({ children }: { children: ReactNode }) {
  * `active` holds it open and filled while the confirmation it opened is on
  * screen: the pointer has left the button by then, and a dialog whose opener
  * has silently collapsed behind it is a dialog with no subject.
+ *
+ * **It carries the room's mute on its left**, the arrangement `RoomChip` has
+ * with the waiting strip and `TeamBadge` with a team's name: the pair is one
+ * piece of corner furniture, so it is correct wherever the corner is drawn
+ * rather than being a line eight host screens each have to remember. Every host
+ * screen wears exactly one exit — with one exception, the *final* standings,
+ * where the match is over and there is nothing to back out of. That screen
+ * renders `MuteButton` by itself; it is the only place the two are apart.
  */
 export function HostExit({
   label, active, pinned, onClick,
@@ -88,6 +97,8 @@ export function HostExit({
   if (active) classes.push("host-exit--active");
 
   return (
+    <>
+    <MuteButton />
     <button
       type="button"
       className={classes.join(" ")}
@@ -113,6 +124,7 @@ export function HostExit({
       {/* `aria-hidden`, or a reader announces the label twice. */}
       <span className="host-exit__label" aria-hidden="true">{label}</span>
     </button>
+    </>
   );
 }
 

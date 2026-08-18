@@ -3,7 +3,8 @@ import { createRoom, currentRound, matchComplete, preRoundPhase } from "./state"
 import type { Room } from "./state";
 import { COUNTDOWN_MS, HOST_GRACE_MS, IDLE_REAP_MS, MAX_DURATION_SEC, MAX_ENTRIES, MAX_ENTRY_LEN, MAX_PLAYERS, MAX_ROUND_COUNT, MIN_DURATION_SEC, MIN_FLUSH_LEN, TIMESUP_MS, VOTING_MS, alarmOutcome, canEndGame, flushEntry, nextAlarmAt, reduce, submitEntry } from "./reduce";
 import { voteBudget, votesSpent } from "./voting";
-import { CATEGORIES, RANDOM_CATEGORY } from "./categories";
+import { BALLOT_SIZE, CATEGORIES, DEFAULT_CATEGORY, DEFAULT_DURATION_SEC, DEFAULT_ROUND_COUNT, RANDOM_CATEGORY } from "./categories";
+import { AVATARS } from "./avatars";
 import { MAX_TEAM_NAME_LEN, TEAM_COLORS } from "./teams";
 import { MAX_LINE_MS, MIN_LINE_MS, rowKey } from "./reveal";
 import { isSelfStruck } from "./selfstrike";
@@ -177,7 +178,7 @@ describe("round progression", () => {
   test("the countdown expiring starts the round", () => {
     const room = playing();
     expect(room.phase).toEqual({
-      name: "playing", endsAt: 2000 + COUNTDOWN_MS * 2 + 30_000,
+      name: "playing", endsAt: 2000 + COUNTDOWN_MS * 2 + DEFAULT_DURATION_SEC * 1000,
     });
   });
 
@@ -616,13 +617,19 @@ describe("setSettings", () => {
       values: { roundCount: 2.6, durationSec: Number.NaN }, choices: {},
       now: 2000,
     });
-    expect(room.settings).toMatchObject({ roundCount: 3, durationSec: 30 });
+    expect(room.settings).toMatchObject({ roundCount: 3, durationSec: DEFAULT_DURATION_SEC });
   });
 
   test("setting the values they already hold is a no-op", () => {
     const before = seed(2);
     const after = reduce(before, {
-      t: "setSettings", playerId: "host", values: { roundCount: 1, durationSec: 30 }, choices: {}, now: 2000,
+      t: "setSettings",
+      playerId: "host",
+      // The defaults themselves, read from the constants: this asserts the
+      // identity no-op, not any particular pair of numbers.
+      values: { roundCount: DEFAULT_ROUND_COUNT, durationSec: DEFAULT_DURATION_SEC },
+      choices: {},
+      now: 2000,
     });
     expect(after).toBe(before);
   });
@@ -889,11 +896,28 @@ describe("long rounds", () => {
 });
 
 /** A room that has reached the voting phase with `n` players. */
+/**
+ * A fixed ballot for the voting tests.
+ *
+ * The real one is drawn per match from `CATEGORY_POOL`, which is exactly what
+ * these tests must not depend on: a vote for a category this room was not
+ * offered is refused, so every literal below would be at the mercy of a
+ * shuffle. Overwriting it after the edge that draws it leaves the machinery
+ * under test untouched and gives the assertions names they can hold.
+ *
+ * Ten entries, so the ten-round draw tests still have one per round.
+ */
+const TEST_BALLOT = [
+  "song", "car make/model", "woman", "food", "job",
+  "bird", "island", "plant", "insect", "country",
+];
+
 function seedVoting(n: number, roundCount = 5, now = 1000): Room {
   let room = seed(n, now);
   room = reduce(room, { t: "setSettings", playerId: "host", values: { roundCount }, choices: {}, now });
   room = reduce(room, { t: "startGame", playerId: "host", now });
-  return reduce(room, { t: "tick", now: now + COUNTDOWN_MS, roll: 0 });
+  room = reduce(room, { t: "tick", now: now + COUNTDOWN_MS, roll: 0 });
+  return { ...room, ballot: [...TEST_BALLOT] };
 }
 
 describe("entering voting", () => {
@@ -997,6 +1021,69 @@ describe("leaving the room", () => {
   });
 });
 
+describe("the match's ballot", () => {
+  /** Drawn at the edge that opens voting, not when the countdown opened. */
+  test("voting opens with a ballot drawn for this match", () => {
+    let room = readyAll(seed(2), 2000);
+    expect(room.ballot).toEqual([]);
+    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
+    expect(room.phase.name).toBe("voting");
+    expect(room.ballot).toHaveLength(BALLOT_SIZE);
+    expect(new Set(room.ballot).size).toBe(room.ballot.length);
+  });
+
+  /**
+   * A ballot drawn when the countdown opened could be re-rolled by cancelling
+   * and readying up again until the room liked it — the same reason the
+   * category itself is drawn at the whistle.
+   */
+  test("a cancelled countdown draws nothing", () => {
+    let room = readyAll(seed(2), 2000);
+    room = reduce(room, { t: "cancelStart", playerId: "host", now: 2100 });
+    expect(room.phase.name).toBe("lobby");
+    expect(room.ballot).toEqual([]);
+  });
+
+  test("a long match gets a category per round", () => {
+    let room = seed(2);
+    room = reduce(room, {
+      t: "setSettings", playerId: "host", values: { roundCount: MAX_ROUND_COUNT }, choices: {}, now: 1500,
+    });
+    room = readyAll(room, 2000);
+    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
+    expect(room.ballot.length).toBeGreaterThanOrEqual(MAX_ROUND_COUNT);
+  });
+
+  test("going back to the room drops it, so the next match draws again", () => {
+    let room = seedVoting(2);
+    expect(room.ballot.length).toBeGreaterThan(0);
+    room = reduce(room, { t: "backToLobby", playerId: "host", now: 3100 });
+    expect(room.ballot).toEqual([]);
+  });
+
+  /** A vote for something this room was never shown is refused. */
+  test("a category off this ballot cannot be voted for", () => {
+    const room = seedVoting(2);
+    const absent = CATEGORIES.find((c) => !room.ballot.includes(c))!;
+    expect(reduce(room, {
+      t: "castVote", playerId: "p0", category: absent, now: 3000,
+    })).toBe(room);
+  });
+
+  /** And therefore cannot be played. */
+  test("the draw only ever lands on this match's ballot", () => {
+    let room = seedVoting(2);
+    room = { ...room, ballot: [...TEST_BALLOT] };
+    const endsAt = (room.phase as { endsAt: number }).endsAt;
+    room = reduce(room, { t: "tick", now: endsAt, roll: 0 });
+    const cdEnd = (room.phase as { endsAt: number }).endsAt;
+    for (const roll of [0, 0.25, 0.5, 0.75, 0.99]) {
+      const played = reduce(room, { t: "tick", now: cdEnd, roll });
+      expect(TEST_BALLOT).toContain(played.category);
+    }
+  });
+});
+
 describe("casting votes", () => {
   test("a vote lands and counts against the budget", () => {
     let room = seedVoting(2);
@@ -1016,7 +1103,7 @@ describe("casting votes", () => {
     let room = seedVoting(2, 3); // budget 2
     room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
     expect(room.players.find((p) => p.id === "p0")!.ready).toBe(false);
-    room = reduce(room, { t: "castVote", playerId: "p0", category: "car", now: 3100 });
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "car make/model", now: 3100 });
     expect(room.players.find((p) => p.id === "p0")!.ready).toBe(true);
   });
 
@@ -1024,7 +1111,7 @@ describe("casting votes", () => {
     let room = seedVoting(2, 2); // budget 1
     room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
     const before = room;
-    room = reduce(room, { t: "castVote", playerId: "p0", category: "car", now: 3100 });
+    room = reduce(room, { t: "castVote", playerId: "p0", category: "car make/model", now: 3100 });
     expect(room).toBe(before);
   });
 
@@ -1090,7 +1177,7 @@ describe("leaving voting", () => {
     let room = seedVoting(2, 2); // budget 1
     room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
     expect(room.phase.name).toBe("voting");
-    room = reduce(room, { t: "castVote", playerId: "p1", category: "car", now: 3100 });
+    room = reduce(room, { t: "castVote", playerId: "p1", category: "car make/model", now: 3100 });
     expect(room.phase).toEqual({
       name: "countdown", endsAt: 3100 + COUNTDOWN_MS, to: "playing",
     });
@@ -1156,7 +1243,7 @@ describe("abandoning a vote", () => {
   test("stopping the countdown out of voting discards the votes too", () => {
     let room = seedVoting(2, 2);
     room = reduce(room, { t: "castVote", playerId: "p0", category: "song", now: 3000 });
-    room = reduce(room, { t: "castVote", playerId: "p1", category: "car", now: 3100 });
+    room = reduce(room, { t: "castVote", playerId: "p1", category: "car make/model", now: 3100 });
     room = reduce(room, { t: "cancelStart", playerId: "host", now: 3200 });
     expect(room.phase.name).toBe("lobby");
     expect(room.votes).toEqual({});
@@ -1175,25 +1262,25 @@ describe("drawing the round's category", () => {
   }
 
   test("the whistle draws from the votes", () => {
-    let room = votedRoom("car");
+    let room = votedRoom("car make/model");
     const endsAt = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: endsAt, roll: 0.5 });
     expect(room.phase.name).toBe("playing");
-    expect(room.category).toBe("car");
+    expect(room.category).toBe("car make/model");
   });
 
   test("the countdown does not draw — the category is secret until the whistle", () => {
-    const room = votedRoom("car");
+    const room = votedRoom("car make/model");
     expect(room.phase.name).toBe("countdown");
-    expect(room.category).toBe("woman"); // still the seeded default
+    expect(room.category).toBe(DEFAULT_CATEGORY); // still the seeded default
   });
 
   test("a category already played is never drawn again", () => {
-    let room = votedRoom("car", 3);
-    room = { ...room, history: [{ category: "car", places: {} }] };
+    let room = votedRoom("car make/model", 3);
+    room = { ...room, history: [{ category: "car make/model", places: {} }] };
     const endsAt = (room.phase as { endsAt: number }).endsAt;
     room = reduce(room, { t: "tick", now: endsAt, roll: 0.5 });
-    expect(room.category).not.toBe("car");
+    expect(room.category).not.toBe("car make/model");
   });
 
   test("a room that voted random still gets a real category at the whistle", () => {
@@ -2222,7 +2309,9 @@ describe("the results screen", () => {
     // what `scored()` ticks it on. Spelled out from the constants rather than
     // as the absolute it works out to: `playing()` spends two countdowns
     // getting there, so a literal here silently becomes a test of COUNTDOWN_MS.
-    expect(phase.startedAt).toBe(2000 + COUNTDOWN_MS * 2 + 30_000 + TIMESUP_MS);
+    expect(phase.startedAt).toBe(
+      2000 + COUNTDOWN_MS * 2 + DEFAULT_DURATION_SEC * 1000 + TIMESUP_MS,
+    );
     expect(phase.skipped).toBe(false);
   });
 
@@ -2800,6 +2889,87 @@ describe("the readiness floor", () => {
   });
 });
 
+// ------------------------------------------------------------------ avatars
+
+describe("no two people wear the same avatar", () => {
+  /** `seed` joins everybody as 🐙, so the second one cannot have kept it. */
+  test("a join asking for a taken emoji is given a free one", () => {
+    const room = seed(2);
+    const [a, b] = room.players;
+    expect(a.emoji).toBe("🐙");
+    expect(b.emoji).not.toBe("🐙");
+    expect(AVATARS).toContain(b.emoji);
+  });
+
+  test("a join asking for a free one keeps it", () => {
+    const room = reduce(seed(1), {
+      t: "join", playerId: "p9", name: "Nine", emoji: "🦩", now: 1500,
+    });
+    expect(room.players.find((p) => p.id === "p9")!.emoji).toBe("🦩");
+  });
+
+  test("setProfile refuses a taken emoji but still takes the name", () => {
+    const room = reduce(seed(2), {
+      t: "setProfile", playerId: "p1", name: "Renamed", emoji: "🐙", now: 2000,
+    });
+    const p1 = room.players.find((p) => p.id === "p1")!;
+    expect(p1.name).toBe("Renamed");
+    expect(p1.emoji).not.toBe("🐙");
+  });
+
+  test("setProfile accepts a free emoji", () => {
+    const room = reduce(seed(2), {
+      t: "setProfile", playerId: "p1", name: "P1", emoji: "🪩", now: 2000,
+    });
+    expect(room.players.find((p) => p.id === "p1")!.emoji).toBe("🪩");
+  });
+
+  /** The lobby re-sends the pair on every keystroke of the name field. */
+  test("re-sending your own emoji is not a collision with yourself", () => {
+    let room = seed(2);
+    const mine = room.players[1].emoji;
+    room = reduce(room, {
+      t: "setProfile", playerId: "p1", name: "Typing", emoji: mine, now: 2000,
+    });
+    expect(room.players.find((p) => p.id === "p1")!.emoji).toBe(mine);
+  });
+
+  /**
+   * A locked phone keeps its seat and its words, so it keeps its face too:
+   * `takenAvatars` counts every player in the room, connected or not. The
+   * alternative is somebody coming back from a dead battery to find another
+   * player wearing them.
+   */
+  test("a disconnected player's avatar stays reserved", () => {
+    let room = seed(2);
+    room = reduce(room, {
+      t: "setProfile", playerId: "p1", name: "P1", emoji: "🦊", now: 2000,
+    });
+    room = reduce(room, { t: "disconnect", playerId: "p1", now: 2100 });
+    room = reduce(room, {
+      t: "setProfile", playerId: "p0", name: "P0", emoji: "🦊", now: 2200,
+    });
+    expect(room.players.find((p) => p.id === "p0")!.emoji).not.toBe("🦊");
+    room = reduce(room, {
+      t: "join", playerId: "p1", name: "P1", emoji: "🦊", now: 2300,
+    });
+    const p1 = room.players.find((p) => p.id === "p1")!;
+    expect(p1.connected).toBe(true);
+    expect(p1.emoji).toBe("🦊");
+  });
+
+  /** A kick frees the face with the seat, since the player is gone entirely. */
+  test("a kicked player's avatar is released", () => {
+    let room = seed(2);
+    const freed = room.players[1].emoji;
+    room = reduce(room, { t: "kick", playerId: "host", targetId: "p1", now: 2000 });
+    room = reduce(room, {
+      t: "setProfile", playerId: "p0", name: "P0", emoji: freed, now: 2100,
+    });
+    expect(room.players.find((p) => p.id === "p0")!.emoji).toBe(freed);
+  });
+});
+
 // ---------------------------------------------------------- the waiting room
 
 /** A latecomer joining the room as it stands. */
@@ -2816,8 +2986,8 @@ describe("joining past the lobby", () => {
   });
 
   test("every other phase seats them into the waiting room", () => {
-    // One rule rather than a list of phases, so this is the list of phases
-    // that rule has to be right about.
+    // One predicate rather than a list of phases, so this is the list of
+    // phases that predicate has to be right about.
     expect(seatOf(walkIn(playing()), "late").waiting).toBe(true);
     expect(seatOf(walkIn(scored()), "late").waiting).toBe(true);
     expect(seatOf(walkIn(inTeams(2)), "late").waiting).toBe(true);
@@ -2826,7 +2996,51 @@ describe("joining past the lobby", () => {
     });
     expect(voting.phase.name).toBe("voting");
     expect(seatOf(walkIn(voting), "late").waiting).toBe(true);
-    expect(seatOf(walkIn(readyAll(seed(2), 2000)), "late").waiting).toBe(true);
+  });
+
+  /**
+   * The lobby's own countdown is the lobby, not "past" it. This used to seat a
+   * latecomer into the waiting room, which put the room in two contradictory
+   * states at once: the arrival un-readied nobody but still tore the countdown
+   * down through `settle`, so the host was looking at a lobby containing a
+   * player whose phone was telling them they had missed the start of a match
+   * that had not begun.
+   */
+  test("the countdown into the vote seats them, and stands itself down", () => {
+    const room = walkIn(readyAll(seed(2), 2000), "late", 2100);
+    expect(seatOf(room, "late").waiting).toBe(false);
+    expect(seatOf(room, "late").ready).toBe(false);
+    expect(room.phase.name).toBe("lobby");
+  });
+
+  /**
+   * The count *out* of the vote is a different moment and keeps the old
+   * answer: the category has been chosen by then, that countdown is not
+   * readiness-cancellable at all, and seating somebody into it would put them
+   * in a round they had no vote in — with nothing able to stand it down.
+   */
+  test("the countdown into round one still seats them waiting", () => {
+    let room = readyAll(seed(2), 2000);
+    room = reduce(room, { t: "tick", now: 2000 + COUNTDOWN_MS, roll: 0 });
+    expect(room.phase.name).toBe("voting");
+    room = reduce(room, { t: "startGame", playerId: "host", now: 3000 });
+    expect(room.phase).toMatchObject({ name: "countdown", to: "playing" });
+    const after = walkIn(room, "late", 3100);
+    expect(seatOf(after, "late").waiting).toBe(true);
+    expect(after.phase).toMatchObject({ name: "countdown", to: "playing" });
+  });
+
+  /**
+   * With teams on, the same count falls back to team select rather than to the
+   * lobby, and a newcomer stays out of it: the room is picking, and a panel
+   * that moves under a thumb is what the uniform rule exists to prevent.
+   */
+  test("the teams countdown keeps them in the waiting room", () => {
+    let room = inTeams(2);
+    room = reduce(room, { t: "joinTeam", playerId: "p0", teamId: room.teams[0].id, now: 2100 });
+    room = reduce(room, { t: "joinTeam", playerId: "p1", teamId: room.teams[1].id, now: 2200 });
+    expect(room.phase).toMatchObject({ name: "countdown", to: "voting" });
+    expect(seatOf(walkIn(room, "late", 2300), "late").waiting).toBe(true);
   });
 
   test("they no longer bounce off a running game", () => {

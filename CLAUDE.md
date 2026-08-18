@@ -10,10 +10,12 @@ list items in a category before a timer runs out; scoring is Boggle rules — a
 word scores only if no other player wrote it.
 
 v1 scope is a match of 1–10 rounds, with the host setting round count and a
-per-round timer from 15 seconds to 10 minutes. The category is no longer
-fixed: up front, the room votes once on which of 10 categories to play, and
-each round draws from that pool weighted by vote share, spending a category
-once it has been played. This match structure and the voting phase have
+per-round timer from 15 seconds to 10 minutes. **Out of the box it is three
+rounds of three minutes, teams off, built-in categories** — the defaults live
+in `shared/categories.ts` and `shared/gamemodes.ts`. The category is no longer
+fixed: up front, the room votes once on a ballot of **8 categories drawn per
+match from `CATEGORY_POOL`**, and each round draws from that ballot weighted by
+vote share, spending a category once it has been played. This match structure and the voting phase have
 landed — see `docs/superpowers/specs/2026-07-26-match-structure-design.md` and
 `docs/superpowers/specs/2026-07-26-category-voting-design.md`. The long
 product wishlist (`Project W-104.md`, untracked) is deliberately *not* built —
@@ -42,7 +44,7 @@ npm run dev:party    # wrangler dev — realtime Worker on 0.0.0.0:8787
 npm run dev          # Vite web app on :5173 (binds all interfaces)
 ```
 
-- `npm test` — Vitest, runs `shared/**/*.test.ts` only (751 tests)
+- `npm test` — Vitest, runs `shared/**/*.test.ts` only (806 tests)
 - `npm run test:watch` — watch mode
 - `npx vitest run shared/scoring.test.ts` — one file
 - `npx vitest run -t "allowedEdits"` — one test/describe by name
@@ -70,6 +72,32 @@ shared/   pure game logic — no DOM, no Cloudflare runtime, fully unit-tested
 party/    server.ts — thin DO shell: persist, broadcast, schedule alarms
 src/      React client — net/room.ts socket store + screens/{host,player}
 ```
+
+`middleware.ts` at the root is the fourth thing, and it is not part of either
+deployment's code: it is Vercel Routing Middleware that password-gates every
+**non-production** document request, because Hobby's own Deployment Protection
+allows one external user and so cannot guard a staging site people are meant to
+play on. It returns on line one when `VERCEL_ENV === "production"`, treats a
+missing `STAGING_PASSWORD` as no gate at all (the call `JOIN_LIMITER` makes),
+and imports nothing — returning `undefined` is the pass-through, which is what
+keeps `@vercel/functions` and its 126 packages out of a six-dependency project.
+It is named in `tsconfig.json`'s `include` so `npm run typecheck` covers it;
+the one file that can lock everybody out of a deployment is the wrong one to
+leave unchecked. See "The password gate" in `HOSTING.md`.
+
+**It is also the only reason this repo's TypeScript version matters to Vercel,
+and why `typescript` is held at `^5.9.3`.** A middleware file is the one thing
+Vercel compiles itself — `@vercel/node` builds it, and on the CLI version their
+build image currently runs (58.1.0) that compile drives the TypeScript *API*
+and dies on TypeScript 7 with `Cannot read properties of undefined (reading
+'readFile')`. CLI 59 shells out to the `tsc` executable and is fine, so this is
+a rollout window rather than a permanent incompatibility: when their builders
+reach 59, the pin can go. Nothing else in the repo cares — Vite transpiles
+through esbuild and `tsc` only ever typechecks. Two more traps live in that
+file's own comments, both of which cost a deploy each to find: a `/** */` block
+inside `config` fails Vercel's static analyser with `Unhandled type:
+"ColonToken"`, and a bare package name in `tsconfig.json`'s `types` cannot be
+resolved from the temp directory Vercel compiles in.
 
 `shared/rng.ts` is the one seeded generator, in a module of its own because its
 two callers sit on opposite sides of the codebase: the reveal, which needs the
@@ -216,12 +244,34 @@ replaced wholesale on each `state` push; every client action is a *request*.
 - **`Room.history` holds aggregates only, never words.** It rides in
   `RoomState`, so an `entries` field on `RoundSummary` would leak every past
   round to every socket — the same boundary `toRoomState` exists to hold.
-- **`random` is on the ballot, never in the pool.** `BALLOT` is
-  `CATEGORIES + RANDOM_CATEGORY`, and only the ballot is what `castVote`
-  accepts, what the two voting grids render, what `voteShares` breaks ties by
-  and what the archive snapshots. `CATEGORIES` stays "the things a round can be
-  about", so the draw's pool, `spentCategories`, `playedCategories` and the
-  round header need no guard against it. If `random` wins the weighted draw it
+- **The ballot is per match, not per app.** `CATEGORY_POOL` in
+  `shared/categories.ts` is everything a stock round can be about; `Room.ballot`
+  is the `BALLOT_SIZE` of them this match votes between, drawn by `buildBallot`
+  at the tick that opens `voting` and cleared by `backToLobby`. Drawn *there*
+  rather than when the countdown opens, for the reason the category itself is
+  drawn at the whistle: otherwise cancelling and readying again re-rolls it
+  until the room likes the ballot. Two entries are **templates** resolved at
+  draw time (a random letter, a random colour), so one slot is a different round
+  every match.
+- **Everything reads it through `ballotOf(room)`, never `Room.ballot` raw.**
+  Three legitimate cases have an empty one — a room stored before the field
+  existed, a view jump that lands on a voting screen without passing the edge
+  that draws it, and the lobby — and every reader has to answer *something*.
+  The fallback is a pure function of the room code, so the server and every
+  phone reach the same ballot without it being broadcast first.
+- **The ballot is sized `max(BALLOT_SIZE, roundCount)`.** The draw spends one
+  category per round and never repeats, so a ten-round match on an eight-card
+  ballot would fall through `pickCategory`'s last-resort guard into a repeat.
+  Every ordinary match is eight.
+- **`random` is on the ballot, never in the pool.** `votableBallot(room)` is
+  `ballotOf(room) + RANDOM_CATEGORY`, and only that is what `castVote` accepts,
+  what the two voting grids render, what `voteShares` breaks ties by and what
+  the archive snapshots. `ballotOf` stays "the things a round can be about", so
+  the draw's pool, `spentCategories`, `playedCategories` and the round header
+  need no guard against it. **`voteShares`/`sharesOf` no longer default their
+  `order`** — a default would have been some *other* room's ballot, which gives
+  every category on this one an index of -1 and floats them all to the front of
+  every tie. If `random` wins the weighted draw it
   is spent on a uniform draw over what is left — `weightedPick` returns *where
   in the winning segment* the roll landed, which is itself uniform, so one
   `roll` still pays for both stages and `reduce` keeps its single source of
@@ -306,8 +356,10 @@ a room. Those two constraints are fixed; the length of the list is not.
 - **No word list solves enumeration — the budget does.** A room's code *is* its
   DO name, so walking the code space enumerates every live lobby, and ~800
   codes is still only ~800 requests. `rateLimited()` in `party/server.ts`
-  meters room connects per client IP; growing `CODE_WORDS` only raises the cost
-  of a sweep, it never closes it.
+  meters **every** request per client IP — connects, which is what set the
+  number, and `/debug/usage`, which shares the counter rather than carrying a
+  second `namespace_id` tuned against nothing. Growing `CODE_WORDS` only raises
+  the cost of a sweep, it never closes it.
 - **`JOIN_LIMITER` is optional in `Env`, and a missing limiter means no
   limiting.** `wrangler dev` requests carry no `CF-Connecting-IP` and an
   environment deployed before the binding existed has none — neither may fail
@@ -329,6 +381,23 @@ Three distinct ids, easy to confuse:
 
 - `playerId` — UUID in `localStorage`, stable across reloads so a locked phone
   reclaims its seat and its words.
+
+**No two people in a room wear the same avatar, and the server is what says
+so.** `shared/avatars.ts` holds the list — moved out of `AvatarPicker.tsx`,
+which re-exports it so no import site changed — plus `takenAvatars`,
+`avatarAvailable` and `avatarFor`. `join` keeps the requested emoji if it is
+free and is dealt a random free one if it is not (which is also the no-choice
+case, since a first-time phone arrives carrying a placeholder); `setProfile`
+**takes the name and refuses only the emoji**, because the lobby sends the pair
+on every keystroke and dropping the whole message over a taken avatar would
+make the name field stop working for reasons nobody can see. The picker fades
+what is taken and disables it, but that is a courtesy — the boundary is
+`reduce`. `avatarFor` seeds off the room code, the player id and the moment, so
+`reduce` stays pure without `join` growing a `roll` on the wire, and two phones
+joining on the same millisecond are not handed one face. A **disconnected**
+player keeps their avatar, the way they keep their seat and their words; a
+kicked one releases it. Bots count as wearers — a bot is meant to be
+indistinguishable from a player who picked well, which cuts both ways.
 **Losing the socket and giving up the seat are different things.** A disconnect
 leaves the player in the room, greyed out, so a locked phone reclaims its seat
 and its words — which is right for a phone that died and wrong for somebody who
@@ -588,12 +657,21 @@ See `docs/superpowers/specs/2026-07-31-waiting-room-design.md`.
 - **Not to be confused with `isWaiting` in `shared/bots.ts`**, which means
   "not the one everybody is waiting on" and is about readiness. Nothing in the
   waiting room is called `isWaiting` for that reason.
-- **The seating rule is `phase.name !== "lobby"`, with no phase list.** Uniform
-  is what stops a newcomer tearing down a live countdown, holding a vote open or
-  moving a team panel under a thumb — and it costs the common case nothing,
-  because admission is at the *whistle* and the whistle into round one is a
-  whistle. Somebody arriving during team select or the vote plays round one and
-  misses only the ballot.
+- **The seating rule is `seatsNewArrival(room)`: the lobby, plus the one
+  countdown that leads out of it.** Everything else waits, and that uniformity
+  is what stops a newcomer holding a vote open or moving a team panel under a
+  thumb — it costs the common case nothing, because admission is at the
+  *whistle* and the whistle into round one is a whistle. Somebody arriving
+  during team select or the vote plays round one and misses only the ballot.
+  **The lobby's own countdown is the exception, and it is a fix rather than a
+  carve-out**: no round has been played and no vote cast, so there is nothing to
+  disturb, and seating them un-ready lets `settle` stand the countdown down by
+  itself on the very next line. Seating them *waiting* put the room in two
+  contradictory states — the countdown torn down anyway, while the newcomer's
+  phone told them they had missed the start of a match that had not begun.
+  Scoped by `backPhase`, so with teams on it answers `teams` and they wait; the
+  count into round one is excluded by `to`, because the vote has happened, that
+  countdown is not readiness-cancellable, and nothing could stand it down.
 - **Inertness is four filters at the four places the rules already live.**
   `everyoneReady` drops them from `active` (both halves at once: not counted
   toward `readyFloor`, never asked whether they are ready); `rosterOf` drops
@@ -634,6 +712,14 @@ See `docs/superpowers/specs/2026-07-31-waiting-room-design.md`.
   faces only — five names would compete with the room code, which is the one
   thing in that corner that must not move. A hollow badge means "no team yet",
   which is the host's only view of what is holding somebody out.
+- **The waiting room carries the name field and the avatar picker**, because it
+  is the *only* screen a latecomer sees before they are dealt in — they never
+  pass through the lobby, so without it they would play their first round as
+  whatever name and random face they arrived with. It sits below the team
+  picker: with teams on, picking one is what gets you into the round and this is
+  optional tinkering while you wait. `.player-waiting__stage` scrolls, which no
+  other locked phone screen does — ten team tiles plus a 200px profile card has
+  nowhere else to go, so the box asks for the scroll rather than the page.
 - **`PlayerWaiting` renders ahead of `PlayerView`'s phase switch** — a waiting
   player is not on the room's screen at all. It has **no Ready button**, which
   is the design: the countdown that admits them was opened by the seated
@@ -787,7 +873,20 @@ The rest is off every game path, and deletable without the game noticing.
   unauthenticated, which is an accepted trade — it serves account-level usage
   counts, never tokens or room state. `handleUsage` in `party/server.ts` is
   where a gate goes if that changes; the client's `debugEnabled()` is a button,
-  not a boundary.
+  not a boundary. **Unauthenticated is not unmetered**: it sits behind
+  `rateLimited` with every other path, because an exempt route that spends
+  seven GraphQL queries per `?fresh=1` is a way to burn the account's daily
+  request allowance — the one the games run on — without joining a room.
+- **The triangle is hidden on the production hostnames, and `?debug=1` is the
+  way back in** (`debugEnabled()` in `src/net/usage.ts`, unlock flag in
+  `localStorage`, `?debug=0` to clear). The hatch is not an afterthought: this
+  gate *was* a hostname allowlist once and was deleted precisely because the
+  production numbers are the only ones worth watching and reading them meant
+  deploying a branch. Hiding it is about the TV in front of a room, so hiding
+  it from *that* screen while leaving it one query string away from the laptop
+  driving the room is the whole of what was wanted. The route stays open in
+  every environment either way — a hidden button closes nothing, which is also
+  why every mutating control stays host-only and server-enforced.
 - **`ENVIRONMENT` gates nothing** and is the only `var` left. It is the label in
   the panel footer, so a tab open against the wrong Worker is obvious.
 - **Every figure in the panel reads the same from every environment.** Nothing
@@ -888,6 +987,20 @@ outline on the field, deliberately not a `.btn`. Gold with a hard shadow means
 the button that abandons the phase is never beside it. The round marker is
 **omitted** on team select and voting: both only happen at `history.length ===
 0`, so `HostHeader`'s `round` is optional.
+
+**The room's mute rides on the exit's left**, as `MuteButton` inside `HostExit`
+— the `RoomChip`/`TeamBadge` arrangement, so the pair is one piece of corner
+furniture that is correct wherever the corner is drawn rather than a line eight
+host screens each have to remember. It is host-only by construction, like the
+music itself: `useMusic` is called from `HostView` alone, so a phone has
+nothing to mute and there is no per-device check to get wrong. The **final
+standings is the one screen with no exit** — the match is over — so it renders
+`MuteButton` on its own; that is the only place the two are apart.
+`music.setMuted` sets `muted` on the elements rather than dropping the volume,
+because every fade and hand-off writes `volume` and a mute expressed there
+would be overwritten by the next scene change. It persists in `localStorage`:
+the device is a TV in a room, and a host who muted it before the guests arrived
+should not have it come back on at the next reload.
 
 **It is a closed ✕ that opens into its words on hover**, and the label is the
 button's `aria-label` either way — which is the whole reason the collapse is
@@ -1334,7 +1447,10 @@ card ends on. Rules to keep:
   debug menu. §§1–11 are the usage half: the `/debug/usage` route, why one
   GraphQL request per metric, the per-account Workers allowance, why Vercel is
   a link rather than a bar. **§12 is the round controls** — pause, skip,
-  auto-fill, experiment flags, and why each is host-only. Implemented.
+  auto-fill, experiment flags, and why each is host-only. Implemented. **§6 is
+  historical on its client half** — the triangle is hidden on the production
+  hostnames again, with `?debug=1` as a per-device unlock; the route it reads is
+  still live everywhere.
 - `docs/superpowers/specs/2026-07-29-host-scoring-reveal-design.md` — the host
   results screen and its three-frame reveal: the merged card, the derive-from-one-
   integer schedule, the strike/back-check rule, the measured swap, the podium and

@@ -1,4 +1,5 @@
 import { describe, expect, it, test } from "vitest";
+import { DEFAULT_DURATION_SEC, DEFAULT_ROUND_COUNT } from "./categories";
 import { DEFAULT_MODE } from "./gamemodes";
 import { REVEAL_TIMING } from "./revealtiming";
 import { countdownScreen, createRoom, currentRound, matchComplete, preRoundPhase, toRoomState } from "./state";
@@ -37,6 +38,9 @@ describe("toRoomState", () => {
       // Withheld until `authorsRevealed` flips — see `toRoomState`'s pool
       // mapping — but the flag itself is not a secret.
       "authorsRevealed",
+      // This match's eight, which both voting grids render. No more secret
+      // than the tally beside it.
+      "ballot",
       "category",
       "code",
       "configuring",
@@ -95,6 +99,7 @@ describe("toRoomState", () => {
       },
       history: [],
       votes: {},
+      ballot: [],
       teams: [],
       configuring: false,
       paused: null,
@@ -128,8 +133,15 @@ describe("createRoom", () => {
 
   test("starts on the default settings with no rounds played", () => {
     const room = createRoom("PLUM", 1000);
+    // Read from the constants rather than written out: this pins that a fresh
+    // room starts on the *declared* defaults, which is the invariant. What
+    // those numbers should be is `shared/categories.ts`'s business.
     expect(room.settings).toEqual({
-      mode: DEFAULT_MODE, roundCount: 1, durationSec: 30, teamCount: 0, categorySource: "stock",
+      mode: DEFAULT_MODE,
+      roundCount: DEFAULT_ROUND_COUNT,
+      durationSec: DEFAULT_DURATION_SEC,
+      teamCount: 0,
+      categorySource: "stock",
     });
     expect(room.history).toEqual([]);
   });

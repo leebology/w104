@@ -8,7 +8,7 @@ import {
   roundRows,
   voteRows,
 } from "./archive";
-import { BALLOT, RANDOM_CATEGORY } from "./categories";
+import { RANDOM_CATEGORY } from "./categories";
 import { scoreRound } from "./scoring";
 import { placeRound } from "./standings";
 import { rosterOf } from "./teams";
@@ -110,12 +110,19 @@ describe("gameStartRows", () => {
 });
 
 describe("voteRows", () => {
+  /**
+   * This match's ballot, not the whole `CATEGORY_POOL`. What the snapshot is
+   * for is what this room was offered and what it did with it, so the length is
+   * the ballot's plus one for `random`.
+   */
   test("snapshots the whole ballot, including options nobody voted for", () => {
-    const r = room({ votes: { a: { movie: 2 }, b: { movie: 1, song: 1 } } });
+    const ballot = ["bird", "island", "job"];
+    const r = room({ ballot, votes: { a: { bird: 2 }, b: { bird: 1, island: 1 } } });
     const { categories } = voteRows(r, "g");
-    expect(categories).toHaveLength(BALLOT.length);
-    expect(categories.find((c) => c.category === "movie")!.vote_total).toBe(3);
-    expect(categories.find((c) => c.category === "car")!.vote_total).toBe(0);
+    expect(categories).toHaveLength(ballot.length + 1);
+    expect(categories.find((c) => c.category === "bird")!.vote_total).toBe(3);
+    expect(categories.find((c) => c.category === "job")!.vote_total).toBe(0);
+    expect(categories.find((c) => c.category === RANDOM_CATEGORY)).toBeDefined();
   });
 
   test("the random option gets a row like everything else on the ballot", () => {

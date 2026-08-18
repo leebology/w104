@@ -5,7 +5,8 @@ import { NO_SELF_MARKS, toggleMark } from "./selfstrike";
 import { placeRound } from "./standings";
 import { matchComplete, preRoundPhase } from "./state";
 import type { Entry, MatchSettings, Player, PlayerId, Room, RoundSummary } from "./state";
-import { BALLOT, CATEGORIES } from "./categories";
+import { BALLOT_SIZE, CATEGORIES, ballotOf, buildBallot, votableBallot } from "./categories";
+import { avatarAvailable, avatarFor } from "./avatars";
 import {
   customEnabled, isGameModeId, isNumericSpec, modeSpec, normalizeChoice, normalizeSetting,
 } from "./gamemodes";
@@ -545,7 +546,26 @@ function drawCategory(room: Room, roll: number): string {
   if (customEnabled(room.settings) && room.pool) {
     return pickCustomCategory(room.pool, room.votes, spentCategories(room), roll);
   }
-  return pickCategory(room.votes, spentCategories(room), roll);
+  return pickCategory(room.votes, spentCategories(room), roll, ballotOf(room));
+}
+
+/**
+ * This match's ballot, drawn once at the edge that opens voting.
+ *
+ * Here rather than when the countdown opens, for the reason the *category* draw
+ * happens at the whistle: a cancelled countdown must cost nothing to undo, and
+ * a ballot drawn early could be re-rolled by cancelling and readying again
+ * until the room liked it. By the time voting opens the room is committed.
+ *
+ * Seeded from the room code and the moment, neither client-controlled, so
+ * `reduce` stays pure and two rooms voting at the same instant still get
+ * different ballots.
+ */
+function drawBallot(room: Room, now: number): string[] {
+  return buildBallot(
+    `${room.code}:${now}`,
+    Math.max(BALLOT_SIZE, room.settings.roundCount),
+  );
 }
 
 /**
@@ -693,6 +713,42 @@ function inTeamSelect(room: Room): boolean {
     (room.phase.to === "voting" || room.phase.to === "creating") &&
     teamsEnabled(room.settings)
   );
+}
+
+/**
+ * Whether somebody arriving *now* is seated into the match or into the waiting
+ * room.
+ *
+ * The lobby, plus the one countdown that leads out of it — the count into the
+ * category vote, or into the writing window on a custom match. Nothing else.
+ *
+ * The countdown case is the exception to an otherwise uniform "not the lobby,
+ * so wait" rule, and it is the one place that rule gave the wrong answer rather
+ * than a conservative one. That count is the lobby still: no round has been
+ * played, no vote has been cast, and there is nothing in progress for a
+ * newcomer to disturb — the entire cost of admitting them is that the count
+ * stops, which is exactly what should happen. Seated and un-ready is all this
+ * has to say; `settle` reads that on the very next line and drops the room back
+ * to the lobby by itself, because a countdown answers for the phase it would
+ * fall back to. The alternative was the state the room actually reached: the
+ * countdown torn down by a player the host could see in the lobby, while that
+ * player sat on a waiting-room screen telling them they were in the *next*
+ * round of a match that had not started.
+ *
+ * Scoped by `backPhase`, not by a phase list, so the two halves cannot
+ * disagree. With teams on it answers `teams` and a newcomer waits, which is
+ * right: team select is a screen the room is acting on, and a panel that moves
+ * under a thumb is the thing the uniform rule exists to prevent. The count into
+ * round one is excluded by `to`, and deliberately: the vote has happened by
+ * then, that countdown is not readiness-cancellable at all, and seating someone
+ * into it would put them in a round whose category they had no say in.
+ */
+function seatsNewArrival(room: Room): boolean {
+  const phase = room.phase;
+  if (phase.name === "lobby") return true;
+  if (phase.name !== "countdown") return false;
+  if (phase.to !== "voting" && phase.to !== "creating") return false;
+  return backPhase(room).name === "lobby";
 }
 
 /** Whether this sender is sitting in the waiting room. */
@@ -962,10 +1018,21 @@ function apply(room: Room, ev: RoomEvent): Room {
       if (room.players.some((p) => p.id === ev.playerId)) {
         // `...p` carries `waiting` across, so a waiting player's reconnect
         // cannot smuggle them into the round in progress.
+        //
+        // The emoji is kept if it is still theirs to have and dropped in favour
+        // of what they already wear if it is not. A reconnect re-sends whatever
+        // is in this device's storage, which may well be an avatar somebody
+        // else took while the phone was in a pocket — and a reconnect must
+        // never be a way to end up wearing a face that is already in the room.
         return {
           ...room,
           players: mapPlayer(room.players, ev.playerId, (p) => ({
-            ...p, name: ev.name, emoji: ev.emoji, connected: true,
+            ...p,
+            name: ev.name,
+            emoji: avatarAvailable(room.players, ev.playerId, ev.emoji)
+              ? ev.emoji
+              : p.emoji,
+            connected: true,
           })),
         };
       }
@@ -977,27 +1044,53 @@ function apply(room: Room, ev: RoomEvent): Room {
       return {
         ...room,
         players: [...room.players, {
-          id: ev.playerId, name: ev.name, emoji: ev.emoji,
+          id: ev.playerId,
+          name: ev.name,
+          // What they asked for if nobody has it, and a random free one if they
+          // do — which is also the no-choice case, since a first-time player
+          // arrives carrying whatever `App` sent as a placeholder. Assigning
+          // rather than seating them under a duplicate is what makes the
+          // picker's faded tiles the truth rather than a suggestion.
+          emoji: avatarAvailable(room.players, ev.playerId, ev.emoji)
+            ? ev.emoji
+            : avatarFor(room.players, ev.playerId, room.code, ev.now),
           ready: false, connected: true, teamId: null,
-          // The lobby seats people into the match; every other phase seats
-          // them into the waiting room, where they sit out whatever is running
-          // and are dealt in at the next whistle. One rule rather than a list
-          // of phases: uniform is what stops a newcomer tearing down a live
-          // countdown, holding a vote open, or moving a team panel under
+          // The lobby — and the count out of it — seat people into the match;
+          // every other phase seats them into the waiting room, where they sit
+          // out whatever is running and are dealt in at the next whistle. One
+          // predicate rather than a list of phases: what it protects is a room
+          // in the middle of something, so a newcomer can never tear down a
+          // live countdown, hold a vote open, or move a team panel under
           // somebody's thumb. It costs the common case nothing, because
           // admission is at the *whistle* and the whistle into round one is a
           // whistle — somebody who arrives during team select or the category
-          // vote plays round one and misses only the ballot.
-          waiting: room.phase.name !== "lobby",
+          // vote plays round one and misses only the ballot. See
+          // `seatsNewArrival` for why the lobby's own countdown is on the
+          // other side of that line.
+          waiting: !seatsNewArrival(room),
         }],
       };
     }
 
+    /**
+     * Name and emoji, from the lobby or the waiting room.
+     *
+     * **The name always lands; the emoji only if it is free.** They arrive on
+     * one event because the lobby sends the pair on every keystroke, and
+     * refusing the whole message over a taken avatar would make the name field
+     * stop working for reasons the player cannot see. The picker fades what is
+     * taken, so a refusal here is either a race between two thumbs or a
+     * hand-rolled message — and a faded tile is not a boundary.
+     */
     case "setProfile":
       return {
         ...room,
         players: mapPlayer(room.players, ev.playerId, (p) => ({
-          ...p, name: ev.name, emoji: ev.emoji,
+          ...p,
+          name: ev.name,
+          emoji: avatarAvailable(room.players, ev.playerId, ev.emoji)
+            ? ev.emoji
+            : p.emoji,
         })),
       };
 
@@ -1238,7 +1331,10 @@ function apply(room: Room, ev: RoomEvent): Room {
         const dealt = hands.filter((h) => h.cardIds.includes(ev.category)).length;
         if (dealt === 0) return room;
         if ((row[ev.category] ?? 0) >= dealt) return room;
-      } else if (!(BALLOT as readonly string[]).includes(ev.category)) {
+      } else if (!votableBallot(room).includes(ev.category)) {
+        // This match's eight plus `random`, not the whole `CATEGORY_POOL`: a
+        // hand-rolled message must not be able to vote for — and so play — a
+        // category the room was never shown.
         return room;
       }
 
@@ -1517,6 +1613,11 @@ function apply(room: Room, ev: RoomEvent): Room {
         return {
           ...enterTeams(room),
           votes: {},
+          // Goes with the votes it was cast on. The next trip through voting
+          // draws a fresh eight, which is what "chosen randomly each game"
+          // means — a room stepping back and forward again is a new vote, not
+          // a rerun of the one it abandoned.
+          ballot: [],
           paused: null,
           drafts: {},
           cursors: {},
@@ -1551,6 +1652,7 @@ function apply(room: Room, ev: RoomEvent): Room {
         entries: {},
         history: [],
         votes: {},
+        ballot: [],
         teams: [],
         paused: null,
         drafts: {},
@@ -1707,6 +1809,9 @@ function tick(room: Room, now: number, roll: number): Room {
           phase.to === "creating"
             ? { name: "creating", endsAt: now + WRITE_MS }
             : { name: "voting", endsAt: now + VOTING_MS },
+        // A custom match writes its own and never reads this one. See
+        // `drawBallot` for why it is drawn here and not when the count opened.
+        ballot: phase.to === "creating" ? room.ballot : drawBallot(room, now),
         // Load-bearing, not housekeeping: `ready` means "has a team" on this
         // side of the edge and "votes spent" (or "every slot committed") on
         // the other.

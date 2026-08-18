@@ -191,6 +191,21 @@ export type Room = {
    */
   votes: VoteMap;
   /**
+   * The categories this match votes between — `BALLOT_SIZE` of them, drawn from
+   * `CATEGORY_POOL` when voting opens and spent one per round after that.
+   *
+   * Empty until a match opens one, and read through `ballotOf` rather than
+   * directly: that supplies a deterministic fallback for the three cases where
+   * it is legitimately empty — a room stored before this field existed, a view
+   * jump that lands on a voting screen without passing through the edge that
+   * builds one, and the lobby. Every reader agrees on the fallback because it
+   * is a pure function of the room code.
+   *
+   * Rides in `RoomState`, and must: it is what both voting grids render, and it
+   * is no more secret than the tally beside it.
+   */
+  ballot: string[];
+  /**
    * This match's teams, or empty when teams are off. Built when the room
    * enters the `teams` phase and torn down by `backToLobby`.
    *
@@ -342,6 +357,9 @@ export function createRoom(code: string, now: number): Room {
     category: DEFAULT_CATEGORY,
     settings: defaultSettings(DEFAULT_MODE),
     votes: {},
+    // Drawn when voting opens, not here: "chosen randomly each game" means the
+    // ballot belongs to a match, and a room outlives several.
+    ballot: [],
     teams: [],
     history: [],
     lastActivityAt: now,

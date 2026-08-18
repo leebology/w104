@@ -8,7 +8,7 @@
  * in milliseconds by the existing `shared/**` suite, which is also why the
  * mapping does not live in `party/` alongside the binding.
  */
-import { BALLOT } from "./categories";
+import { votableBallot } from "./categories";
 import { normalize } from "./scoring";
 import type { Results } from "./scoring";
 import { computeStandings } from "./standings";
@@ -214,7 +214,10 @@ export function voteRows(
   game: string,
 ): { categories: GameCategoryRow[]; votes: VoteRow[] } {
   const totals = tallyVotes(room.votes);
-  const categories: GameCategoryRow[] = BALLOT.map((category) => ({
+  // This match's ballot, not the whole pool: what is being snapshotted is what
+  // this room was offered and what it did with it, and rows for the thirty-odd
+  // categories nobody ever saw would be thirty rows of zero per game.
+  const categories: GameCategoryRow[] = votableBallot(room).map((category) => ({
     game_id: game,
     category,
     vote_total: totals[category] ?? 0,

@@ -627,6 +627,58 @@ ul, ol { list-style: none; }
   flex: 0 0 auto;
 }
 
+/* The room's mute, immediately left of the way out and drawn to match it: same
+   height, same cream outline, same fill-on-hover. It is a fixed circle and
+   never unrolls into words — unlike the exit, its state is the icon, and a
+   speaker with a line through it is not made clearer by a caption. The width
+   equals the height so it stays a circle rather than a rounded square. */
+.host-mute {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 3px solid var(--cream);
+  border-radius: 99px;
+  background: transparent;
+  color: var(--cream);
+  cursor: pointer;
+}
+
+.host-mute:hover,
+.host-mute:focus-visible {
+  background: var(--cream);
+  color: var(--ink);
+}
+
+.host-mute__icon {
+  width: 22px;
+  height: 22px;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* The cone is filled so the speaker reads as a solid at TV distance, where a
+   22px outline of it would be four hairlines. `currentColor` on both, so the
+   hover inversion takes the whole icon with it. */
+.host-mute__cone {
+  fill: currentColor;
+}
+
+/* Muted is the state worth noticing from across a room, so it is the one that
+   fills rather than the one that empties — the corner stops looking like every
+   other resting control the moment the sound is off. */
+.host-mute--muted {
+  background: var(--cream);
+  color: var(--ink);
+}
+
 /* Every host screen's way out, always in the same corner. Deliberately not a
    `.btn`: gold with a hard shadow is what "go forward" looks like in this
    app, and the button that abandons the phase must never be able to be
@@ -2597,6 +2649,22 @@ ul, ol { list-style: none; }
   box-shadow: 4px 4px 0 var(--gold);
 }
 
+/* Worn by somebody else in this room. Faded rather than hidden, so the grid
+   never reflows as people join and the tile a thumb was heading for does not
+   move — the same reasoning that keeps team panels fixed-width. The emoji
+   itself is what fades; the tile keeps its ground, or the row reads as a gap
+   in the list rather than as a face that is spoken for. */
+.avatar--taken {
+  cursor: default;
+  opacity: 0.28;
+}
+
+/* No hover lift and no pointer: `disabled` already refuses the press, and a
+   tile that still reacts to a thumb reads as one that ought to work. */
+.avatar--taken:hover {
+  background: var(--card-rule);
+}
+
 .player-lobby__footer { margin-top: auto; display: flex; flex-direction: column; gap: 14px; }
 
 /* ------------------------------------------------------- player: playing */
@@ -3780,9 +3848,11 @@ ul, ol { list-style: none; }
 }
 .standings-rows--split .standings-row__who { gap: 8px; }
 .standings-rows--split .standings-row--lead .standings-row__who { flex-wrap: nowrap; }
-/* Wider than it was: the two-column board still has to fit "+6pts 24 PTS". */
-.standings-rows--split .standings-row__score { width: clamp(92px, 9.5vw, 132px); gap: 5px; }
-.standings-rows--split .standings-row__delta { font-size: clamp(9px, 0.9vw, 12px); }
+/* Wider than it was: the two-column board still has to fit "+6pts 24 PTS", and
+   wider again now that the delta carries the same emphasis it does on the
+   single-column board. */
+.standings-rows--split .standings-row__score { width: clamp(110px, 11.5vw, 158px); gap: 5px; }
+.standings-rows--split .standings-row__delta { font-size: clamp(12px, 1.2vw, 16px); }
 .standings-rows--split .standings-row__points,
 .standings-rows--split .standings-row--lead .standings-row__points {
   font-size: clamp(22px, 2.3vw, 32px);
@@ -3987,7 +4057,7 @@ ul, ol { list-style: none; }
 /* --------------------------------------------------------------- score */
 
 .standings-row__score {
-  width: clamp(90px, 11vw, 150px);
+  width: clamp(112px, 13.5vw, 186px);
   flex: 0 0 auto;
   display: flex;
   align-items: baseline;
@@ -4009,7 +4079,12 @@ ul, ol { list-style: none; }
    the total and its PTS unit stay on one baseline. */
 .standings-row__delta {
   font-family: var(--display);
-  font-size: clamp(19px, 2vw, 26px);
+  /* Sized up from clamp(19px, 2vw, 26px). It is the one number on this board
+     that is news, and it was being read second after the total it sits beside.
+     `.standings-row__score` widened with it — that box is a fixed width with
+     its contents justified to the right edge, so a delta that outgrew it would
+     overflow *leftwards* over the name rather than wrapping. */
+  font-size: clamp(25px, 2.7vw, 36px);
   /* The round's payout and the running total are two different numbers; the
      gap is what stops them reading as one figure across the room. */
   margin-right: 20px;
@@ -6213,13 +6288,39 @@ ul, ol { list-style: none; }
 
 /* Everything the countdown card steps in front of. The footer stays outside
    it, as team select's does: changing your mind is the one thing that is still
-   legal while the count is running. */
+   legal while the count is running.
+
+   It scrolls, which none of the other locked phone screens do. The profile
+   card at the bottom is 200-odd pixels of name field and avatar grid, and on a
+   short phone with ten team tiles above it there is no height left to give it
+   — so the box asks for the scroll rather than the page, the arrangement the
+   word list and the lobby's about section already have. */
 .player-waiting__stage {
   display: flex;
   flex-direction: column;
   gap: 14px;
   min-height: 0;
   flex: 1 1 auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  /* A scrollport clips everything outside its padding box, and three things on
+     this screen deliberately sit outside their own: the cards' 6px offset
+     shadow, and the WAITING ROOM plaque's top-left corner and 4px ink shadow —
+     it is rotated -4deg and `align-self: flex-start`, so its high corner rides
+     up and left of the box it lays out in. Without the clearance the tilt is
+     shaved flat against the top edge.
+
+     Padding to make the room, negative margin to give it straight back, so the
+     stage keeps the position and width it had before it could scroll. */
+  padding: 12px 8px 0 10px;
+  margin: -12px -8px 0 -10px;
+}
+
+/* The avatar grid inside it scrolls sideways on its own, so the two must not
+   fight: without a floor the flex column would happily squeeze this card to
+   nothing before the stage ever offered a vertical scrollbar. */
+.player-waiting__profile {
+  flex: 0 0 auto;
 }
 
 .player-waiting__head {
@@ -6293,8 +6394,9 @@ ul, ol { list-style: none; }
 
 /* ------------------------------------------------------------ debug panel */
 
-/* Staging and local only — `debugEnabled()` in src/net/usage.ts decides, and
-   the Worker route it reads 404s in production regardless.
+/* `debugEnabled()` in src/net/usage.ts decides where this renders: everywhere
+   except the production hostnames, and there too once `?debug=1` has unlocked
+   the device. The Worker route it reads is live in every environment.
 
    Everything below deliberately ignores the design system's tokens for colour
    and shape. The rest of the app is cream-on-pink with gold for "go"; this is

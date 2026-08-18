@@ -1,4 +1,4 @@
-import { BALLOT, CATEGORIES, RANDOM_CATEGORY } from "./categories";
+import { RANDOM_CATEGORY } from "./categories";
 import type { MatchSettings, PlayerId, RoundSummary } from "./state";
 
 /**
@@ -49,11 +49,13 @@ export function tallyVotes(votes: VoteMap): Record<string, number> {
 export function voteShares(
   votes: VoteMap,
   /**
-   * Remainder tie-break order. Defaults to the built-in ballot; the custom
-   * pool passes its own card ids, because `BALLOT.indexOf` would hand every
-   * one of them -1 and float them all to the front of every tie.
+   * Remainder tie-break order — this match's votable ballot, or the custom
+   * pool's own card ids. Required rather than defaulted now that the ballot is
+   * per-match: a default would have been a *different* room's ballot, which
+   * gives every category on this one an index of -1 and floats them all to the
+   * front of every tie.
    */
-  order: readonly string[] = BALLOT,
+  order: readonly string[],
 ): Record<string, number> {
   return sharesOf(tallyVotes(votes), order);
 }
@@ -70,7 +72,7 @@ export function voteShares(
  */
 export function sharesOf(
   totals: Record<string, number>,
-  order: readonly string[] = BALLOT,
+  order: readonly string[],
 ): Record<string, number> {
   const entries = Object.entries(totals);
   const sum = entries.reduce((a, [, n]) => a + n, 0);
@@ -128,15 +130,20 @@ export function pickCategory(
   votes: VoteMap,
   spent: readonly string[],
   roll: number,
+  /**
+   * This match's ballot, from `ballotOf(room)` — the categories that were
+   * actually voted on, never the whole `CATEGORY_POOL`. Drawing from the pool
+   * would hand a round a category nobody was offered.
+   */
+  pool: readonly string[],
 ): string {
   const isSpent = new Set(spent);
-  const available = CATEGORIES.filter((c) => !isSpent.has(c));
+  const available = pool.filter((c) => !isSpent.has(c));
 
-  // Still unreachable at ten categories and MAX_ROUND_COUNT 10, but with no
-  // margin left: round ten draws with nine spent, so `available` is exactly
-  // one. A guard, not a case — and the reason a pool smaller than the round
-  // cap would be a real bug rather than a shorter game.
-  if (available.length === 0) return uniformPick(CATEGORIES, roll);
+  // Unreachable while the ballot is at least as long as the match: it is sized
+  // `max(BALLOT_SIZE, roundCount)` in `buildBallot` precisely so that the last
+  // round still draws with one left. A guard, not a case.
+  if (available.length === 0) return uniformPick(pool, roll);
 
   const totals = tallyVotes(votes);
   const ballot: Array<[string, number]> = available
